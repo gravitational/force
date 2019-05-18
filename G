@@ -1,0 +1,10 @@
+// Process specifies inputs that trigger it, using Watch parameter
+// and a series of Actions triggered in Run parameter
+// Name is an optional name of the process
+// In this example, this process watches all file changes matching glob *.go
+// and runs go install command whenever any change occurs
+Process(Spec{
+	Name: "all",
+	Watch: Files("*.go"),
+	Run: Command(`go install github.com/gravitational/force`),
+})

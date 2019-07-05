@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gravitational/force/pkg/builder"
 	"github.com/gravitational/trace"
 )
 
@@ -26,7 +27,9 @@ func Parse(input string, runner *Runner) error {
 		functions: map[string]interface{}{
 			"Process":             runner.Process,
 			functionName(Files):   Files,
-			functionName(Command): Command,
+			functionName(Shell):   Shell,
+			functionName(Oneshot): Oneshot,
+			functionName(Build):   Build,
 		},
 	}
 	_, err = g.parseNode(expr)
@@ -158,6 +161,8 @@ func (g *gParser) getStruct(name string) (interface{}, error) {
 	switch name {
 	case "Spec":
 		return Spec{}, nil
+	case "Image":
+		return builder.Image{}, nil
 	default:
 		return nil, trace.BadParameter("unsupported struct: %v", name)
 	}
@@ -166,7 +171,7 @@ func (g *gParser) getStruct(name string) (interface{}, error) {
 func (g *gParser) getFunction(name string) (interface{}, error) {
 	fn, exists := g.functions[name]
 	if !exists {
-		return nil, trace.BadParameter("unsupported function: %v", name, g.functions)
+		return nil, trace.BadParameter("unsupported function: %v", name)
 	}
 	return fn, nil
 }

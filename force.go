@@ -6,7 +6,7 @@ import (
 
 // Proc is a process that is triggered by the event
 type Proc interface {
-	EventSource() EventSource
+	Channel() Channel
 	Action() Action
 	// Events returns a channel to receive events
 	Events() chan<- Event
@@ -14,8 +14,8 @@ type Proc interface {
 	Start(ctx context.Context) error
 }
 
-// EventSource generates events
-type EventSource interface {
+// Channel produces events
+type Channel interface {
 	Start(ctx context.Context) error
 	Events() <-chan Event
 	Done() <-chan struct{}
@@ -30,7 +30,7 @@ type Action interface {
 // Spec is a process spec
 type Spec struct {
 	Name    string
-	Watch   EventSource
+	Watch   Channel
 	Run     Action
 	EventsC chan Event
 }

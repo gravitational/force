@@ -3,6 +3,8 @@ package force
 import (
 	"context"
 	"fmt"
+
+	"github.com/gravitational/trace"
 )
 
 // LocalProcess implements local process
@@ -16,8 +18,8 @@ func (l *LocalProcess) String() string {
 
 }
 
-// EventSource returns enent source
-func (l *LocalProcess) EventSource() EventSource {
+// EventSource returns channel
+func (l *LocalProcess) Channel() Channel {
 	return l.Watch
 }
 
@@ -44,7 +46,7 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 			fmt.Printf("   %v <- %v\n", l, event)
 			go func() {
 				if err := l.Run.Run(ctx); err != nil {
-					fmt.Printf("%v run completed with %v\n", l, err)
+					fmt.Printf("%v run completed with %v\n", l, trace.DebugReport(err))
 				} else {
 					fmt.Printf("%v run completed with success\n", l)
 				}

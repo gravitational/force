@@ -1,2 +1,63 @@
 # Force
 
+Gravitational Force is the thing that pulls things together.
+
+`Makefiles` create an easy way to build targets and projects.
+
+`G` files create an easy way to create event-driver workflows with multiple tools
+combined together: Github to Docker build, Webhooks to Deployments.
+
+## Goals
+
+It should be easy and fun to define declarative event-driven workflows for infrastructure
+projects.
+
+`Force` tooling will be tailored to detect loops, inefficiencies in event-drive workflows.
+
+`Force` should make it easy and manageable to have an even driven distributed system
+running on Kubernetes or on developer's laptop.
+
+`Force` should be a single binary with no external dependencies.
+
+`Force` should not invent a new syntax and use `Go` syntax for everything.
+
+It should be trivial to build a simple CI/CD system for a small project.
+
+## Non goals
+
+`Force` does not have a goal of becoming a turing complete interpreted language,
+the simpler the better.
+
+`Force` is not a general purpose event workflow tool, it's designed for common
+backend infrastructure projects.
+
+## Design concepts
+
+Force is modeled (and uses it's syntax) of Go programming language. Force
+could be used as a library in Go code, or as an interpreted files using `force`.
+
+The syntax is the same regardless of the usage mode.
+
+[Go](https://golang.org) makes it fun to work with concurrently running processes because it derives
+it's design from the [CSP](http://www.usingcsp.com/cspbook.pdf).
+
+## Batteries included
+
+Force includes out of the box workflows:
+
+* Docker builds that could be run in Kubernetes or locally.
+* Integration with Kubernetes.
+* Github and other popular source control and code sharing systems.
+* Event queues - Redis, Kafka, AWS SQS.
+
+For everything else, folks can create plugins using GRPC plugins system.
+
+## Examples
+
+```go
+Process(Spec{
+    Name: "all",
+    Watch: Files("*.go"),
+    Run: Command(`go install github.com/gravitational/force`),
+})
+```

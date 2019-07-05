@@ -10,8 +10,7 @@ import (
 	"github.com/gravitational/trace"
 )
 
-func Files(files ...string) (EventSource, error) {
-
+func Files(files ...string) (Channel, error) {
 	if len(files) == 0 {
 		return nil, trace.BadParameter("Files() needs at least one file")
 	}

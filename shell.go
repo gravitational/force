@@ -9,8 +9,8 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// Command
-func Command(script string) (Action, error) {
+// Shell runs shell
+func Shell(script string) (Action, error) {
 	if script == "" {
 		return nil, trace.BadParameter("missing script value")
 	}

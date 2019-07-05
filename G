@@ -5,6 +5,6 @@
 // and runs go install command whenever any change occurs
 Process(Spec{
 	Name: "all",
-	Watch: Files("*.go"),
-	Run: Command(`go install github.com/gravitational/force`),
+	Watch: Oneshot(),
+	Run: Shell(`go install github.com/gravitational/force/tool/force`),
 })

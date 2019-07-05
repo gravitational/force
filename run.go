@@ -12,12 +12,12 @@ import (
 // Runner listens for events and launches processes
 type Runner struct {
 	sync.RWMutex
-	processes    []Proc
-	eventSources []EventSource
-	eventsC      chan Event
-	cancel       context.CancelFunc
-	ctx          context.Context
-	runFlag      int32
+	processes []Proc
+	channels  []Channel
+	eventsC   chan Event
+	cancel    context.CancelFunc
+	ctx       context.Context
+	runFlag   int32
 }
 
 func (r *Runner) isRunning() bool {
@@ -41,27 +41,27 @@ func (r *Runner) AddProcess(p Proc) {
 	}
 }
 
-func (r *Runner) AddEventSource(e EventSource) {
+func (r *Runner) AddChannel(e Channel) {
 	r.Lock()
 	defer r.Unlock()
-	r.eventSources = append(r.eventSources, e)
+	r.channels = append(r.channels, e)
 	if r.isRunning() {
 		go r.fanInEvents(e)
 	}
 }
 
-func (r *Runner) fanInEvents(source EventSource) {
-	fmt.Printf("Fan in events: %v\n", source)
-	if err := source.Start(r.ctx); err != nil {
-		fmt.Printf("%v has failed to start: %v\n", source, err)
+func (r *Runner) fanInEvents(channel Channel) {
+	fmt.Printf("Fan in events: %v\n", channel)
+	if err := channel.Start(r.ctx); err != nil {
+		fmt.Printf("%v has failed to start: %v\n", channel, err)
 	}
 	for {
 		select {
 		case <-r.Done():
 			return
-		case <-source.Done():
+		case <-channel.Done():
 			return
-		case event := <-source.Events():
+		case event := <-channel.Events():
 			select {
 			case r.eventsC <- event:
 				fmt.Printf("<- %v\n", event)
@@ -122,8 +122,8 @@ func (r *Runner) Start() {
 		return
 	}
 	r.start()
-	for i := range r.eventSources {
-		go r.fanInEvents(r.eventSources[i])
+	for i := range r.channels {
+		go r.fanInEvents(r.channels[i])
 	}
 	go r.fanOutEvents()
 	for _, p := range r.processes {
@@ -149,7 +149,7 @@ func (r *Runner) Process(spec Spec) Proc {
 	// TODO: how to deduplicate event sources?
 	if spec.Watch != nil {
 		fmt.Printf("Add event source %v\n", spec.Watch)
-		r.AddEventSource(spec.Watch)
+		r.AddChannel(spec.Watch)
 	}
 	return l
 }

@@ -33,7 +33,7 @@ backend infrastructure projects.
 
 ## Design concepts
 
-Force is modeled (and uses it's syntax) of Go programming language. Force
+Force is modeled (and uses it's syntax) ater Go programming language. Force
 could be used as a library in Go code, or as an interpreted files using `force`.
 
 The syntax is the same regardless of the usage mode.

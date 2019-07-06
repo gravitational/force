@@ -43,11 +43,16 @@ it's design from the [CSP](http://www.usingcsp.com/cspbook.pdf).
 
 ## Batteries included
 
-Force includes out of the box workflows:
+Force already includes of the box plugins for:
 
-* Docker builds that could be run in Kubernetes or locally.
-* Integration with Kubernetes.
-* Github and other popular source control and code sharing systems.
+* Local linux Docker builds.
+* Github.
+
+Soon force will include out of the box plugins for:
+
+* Docker builds that could be run in Kubernetes.
+* More integration with Kubernetes.
+* Other popular source control and code sharing systems - Bitbucket, Gitlab.
 * Event queues - Redis, Kafka, AWS SQS.
 
 For everything else, folks can create plugins using GRPC plugins system.

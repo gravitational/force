@@ -9,39 +9,53 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/gravitational/force"
+	"github.com/gravitational/force/pkg/runner"
+
 	_ "github.com/gravitational/force/internal/unshare"
 
 	"github.com/gravitational/trace"
 	"github.com/opencontainers/runc/libcontainer/system"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {
 	reexec()
+	initLogger()
 	ctx := setupSignalHandlers()
-	if err := generateAndStart(ctx); err != nil {
-		logrus.Errorf("Error: %v", trace.DebugReport(err))
+	run, err := generateAndStart(ctx)
+	if err != nil {
+		log.Errorf("Force exited with error: %v", trace.DebugReport(err))
 		os.Exit(1)
 	}
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+		return
+	case <-run.Done():
+		event := run.ExitEvent()
+		if event == nil {
+			log.Debugf("Process group has shut down with unkown status.")
+		} else {
+			log.Debugf("Process group has shut down with event: %v.", event)
+			os.Exit(event.ExitCode())
+		}
+	}
 }
 
 // GFile is a special file defining process
 const GFile = "G"
 
-func generateAndStart(ctx context.Context) error {
+func generateAndStart(ctx context.Context) (*runner.Runner, error) {
 	data, err := ioutil.ReadFile(GFile)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
-	runner := force.NewRunner(ctx)
-	err = force.Parse(string(data), runner)
+	run := runner.New(ctx)
+	err = runner.Parse(string(data), run)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
-	runner.Start()
-	return nil
+	run.Start()
+	return run, nil
 }
 
 // setupSignalHandlers sets up a handler to handle common unix process signal traps.
@@ -62,6 +76,15 @@ func setupSignalHandlers() context.Context {
 	return ctx
 }
 
+func initLogger() {
+	log.SetLevel(log.DebugLevel)
+	log.SetFormatter(&trace.TextFormatter{
+		DisableTimestamp: true,
+		EnableColors:     trace.IsTerminal(os.Stderr),
+	})
+	log.SetOutput(os.Stderr)
+}
+
 func reexec() {
 	// TODO(jessfraz): This is a hack to re-exec our selves and wait for the
 	// process since it was not exiting correctly with the constructor.
@@ -76,9 +99,9 @@ func reexec() {
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		go func() {
 			for sig := range c {
-				logrus.Infof("Received %s, exiting.", sig.String())
+				log.Infof("Received %s, exiting.", sig.String())
 				if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
-					logrus.Fatalf("syscall.Kill %d error: %v", pgid, err)
+					log.Fatalf("syscall.Kill %d error: %v", pgid, err)
 					continue
 				}
 				os.Exit(0)
@@ -87,7 +110,7 @@ func reexec() {
 
 		// If newuidmap is not present re-exec will fail
 		if _, err := exec.LookPath("newuidmap"); err != nil {
-			logrus.Fatalf("newuidmap not found (install uidmap package?): %v", err)
+			log.Fatalf("newuidmap not found (install uidmap package?): %v", err)
 		}
 
 		// Initialize and re-exec with our unshare.
@@ -100,12 +123,12 @@ func reexec() {
 			Setpgid: true,
 		}
 		if err := cmd.Start(); err != nil {
-			logrus.Fatalf("cmd.Start error: %v", err)
+			log.Fatalf("cmd.Start error: %v", err)
 		}
 
 		pgid, err = syscall.Getpgid(cmd.Process.Pid)
 		if err != nil {
-			logrus.Fatalf("getpgid error: %v", err)
+			log.Fatalf("getpgid error: %v", err)
 		}
 
 		var (
@@ -123,7 +146,7 @@ func reexec() {
 					os.Exit(exitCode)
 				}
 
-				logrus.Fatalf("wait4 error: %v", err)
+				log.Fatalf("wait4 error: %v", err)
 			}
 		}
 	}

@@ -17,3 +17,9 @@ tidy:
 	go mod tidy
 
 
+
+.PHONY: github
+github:
+	$(MAKE) all
+	cd examples/github && force
+

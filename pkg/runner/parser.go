@@ -1,17 +1,21 @@
-package force
+package runner
 
 import (
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/gravitational/force"
 	"github.com/gravitational/force/pkg/builder"
+	"github.com/gravitational/force/pkg/github"
+
 	"github.com/gravitational/trace"
 )
 
@@ -25,11 +29,16 @@ func Parse(input string, runner *Runner) error {
 	g := &gParser{
 		runner: runner,
 		functions: map[string]interface{}{
-			"Process":             runner.Process,
-			functionName(Files):   Files,
-			functionName(Shell):   Shell,
-			functionName(Oneshot): Oneshot,
-			functionName(Build):   Build,
+			"Process":  runner.Process,
+			"Sequence": force.Sequence,
+			"Pass":     force.Pass,
+			"Files":    force.Files,
+			"Shell":    force.Shell,
+			"Oneshot":  force.Oneshot,
+			"build":    builder.Build,
+			"Exit":     force.Exit,
+			"Env":      os.Getenv,
+			"Github":   github.Github,
 		},
 	}
 	_, err = g.parseNode(expr)
@@ -95,7 +104,7 @@ func (g *gParser) evaluateStructFields(nodes []ast.Expr) (map[string]interface{}
 		}
 		key, ok := kv.Key.(*ast.Ident)
 		if !ok {
-			return nil, trace.BadParameter("expected value identifier, got %v", n)
+			return nil, trace.BadParameter("expected value identifier, got %#v", n)
 		}
 		val, err := g.evaluateExpr(kv.Value)
 		if err != nil {
@@ -160,9 +169,11 @@ func (g *gParser) evaluateExpr(n ast.Expr) (interface{}, error) {
 func (g *gParser) getStruct(name string) (interface{}, error) {
 	switch name {
 	case "Spec":
-		return Spec{}, nil
+		return force.Spec{}, nil
 	case "Image":
 		return builder.Image{}, nil
+	case "Source":
+		return github.Source{}, nil
 	default:
 		return nil, trace.BadParameter("unsupported struct: %v", name)
 	}
@@ -181,7 +192,7 @@ func getIdentifier(node ast.Node) (string, error) {
 	if ok {
 		id, ok := sexpr.X.(*ast.Ident)
 		if !ok {
-			return "", trace.BadParameter("expected selector identifier, got: %T", sexpr.X)
+			return "", trace.BadParameter("expected selector identifier, got: %T in %#v", sexpr.X, sexpr.X)
 		}
 		return fmt.Sprintf("%s.%s", id.Name, sexpr.Sel.Name), nil
 	}

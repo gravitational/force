@@ -1,12 +1,11 @@
 package force
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"os/exec"
 
 	"github.com/gravitational/trace"
+	log "github.com/sirupsen/logrus"
 )
 
 // Shell runs shell
@@ -23,15 +22,22 @@ type ShellAction struct {
 	Command string
 }
 
-func (s *ShellAction) Run(ctx context.Context) error {
-	fmt.Printf("Running %v\n", s.Command)
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", s.Command)
+const (
+	// ExitCode is a shell exit code
+	ExitCode = "Shell.ExitCode"
+)
+
+func (s *ShellAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+	log.Debugf("Running %q", s.Command)
+	cmd := exec.CommandContext(ctx.Context(), "/bin/sh", "-c", s.Command)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	err := cmd.Run()
+	return ctx.WithValue(ExitCode, cmd.ProcessState.ExitCode()), err
 }
 
-// Sequence groups sequence of commands together
+// Sequence groups sequence of commands together,
+// if one fails, the chain stop execution
 func Sequence(actions ...Action) Action {
 	return &SequenceAction{
 		Actions: actions,
@@ -42,11 +48,33 @@ type SequenceAction struct {
 	Actions []Action
 }
 
-func (s *SequenceAction) Run(ctx context.Context) error {
+func (s *SequenceAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+	var err error
 	for _, action := range s.Actions {
-		if err := action.Run(ctx); err != nil {
-			return trace.Wrap(err)
+		ctx, err = action.Run(ctx)
+		if err != nil {
+			return nil, trace.Wrap(err)
 		}
 	}
-	return nil
+	return ctx, err
+}
+
+// Pass groups sequence of commands together,
+// but, if one fails, the next will continue
+func Pass(actions ...Action) Action {
+	return &PassAction{
+		Actions: actions,
+	}
+}
+
+type PassAction struct {
+	Actions []Action
+}
+
+func (s *PassAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+	var err error
+	for _, action := range s.Actions {
+		ctx, err = action.Run(ctx)
+	}
+	return ctx, err
 }

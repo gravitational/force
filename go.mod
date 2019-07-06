@@ -14,6 +14,8 @@ require (
 	github.com/docker/go-units v0.3.3 // indirect
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/gogo/googleapis v1.1.0 // indirect
+	github.com/google/go-github v17.0.0+incompatible
+	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/gravitational/trace v0.0.0-20190612100216-931bb2abd388
 	github.com/jonboulle/clockwork v0.1.0 // indirect
 	github.com/mitchellh/hashstructure v1.0.0 // indirect
@@ -23,9 +25,12 @@ require (
 	github.com/opencontainers/runtime-spec v1.0.1 // indirect
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20180702182724-07a764486eb1 // indirect
 	github.com/opentracing/opentracing-go v1.0.2 // indirect
+	github.com/shurcooL/githubv4 v0.0.0-20190625031733-ee671ab25ff0
+	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
 	github.com/sirupsen/logrus v1.3.0
 	go.etcd.io/bbolt v1.3.2
 	golang.org/x/net v0.0.0-20180925072008-f04abc6bdfa7 // indirect
+	golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
 	golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	google.golang.org/genproto v0.0.0-20180924164928-221a8d4f7494 // indirect

@@ -6,5 +6,8 @@
 Process(Spec{
 	Name: "all",
 	Watch: Oneshot(),
-	Run: Shell(`go install github.com/gravitational/force/tool/force`),
+	Run: Pass(
+		Shell(`go install -mod=vendor github.com/gravitational/force/tool/force`),
+		Exit(),
+	),
 })

@@ -3,5 +3,5 @@ Process(Spec{
 		Repo: "gravitational/force",
 		Token: Env("GITHUB_ACCESS_TOKEN"),
 	}),
-	Run: Shell(`echo "New Pull Request!"`),
+	Run: Shell(`echo "New Pull Request Update!"`),
 })

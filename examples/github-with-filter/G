@@ -1,0 +1,20 @@
+Process(Spec{
+	Watch: Github(Source{
+		Repo: "gravitational/force",
+		Token: Env("GITHUB_ACCESS_TOKEN"),
+	}),
+	// If action applies some condition
+	// to the event and only runs if it matches
+	// If is a filter on the action, because
+	// then individual pull request can be filtered
+	// in parallel, because there is an execution context
+	// (unlike in Watch)
+	Run: If(
+		// If skip ci is present in the commit, skip
+		// the action.
+		Not(
+			MatchesRegexp(event.Get("Commit"), `/(?i)\[skip ci\]/i`),
+		),
+		Shell(`echo "New Pull Request!"`),
+	),
+})

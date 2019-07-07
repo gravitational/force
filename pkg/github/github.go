@@ -49,18 +49,17 @@ func (r *RepoWatcher) pollRepo(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(5 * time.Second):
-			versions, err := r.check(afterDate)
+			pulls, err := r.updatedPullRequests(afterDate)
 			if err != nil {
-				log.Warningf("Pull request check failed: %v", err)
+				log.Warningf("Pull request check failed: %v", trace.DebugReport(err))
 				continue
 			}
-			if len(versions) == 0 {
-				log.Debugf("No new pull request versions: %v", err)
+			if len(pulls) == 0 {
 				continue
 			}
-			afterDate = versions[len(versions)-1].CommittedDate
-			for _, version := range versions {
-				event := &RepoEvent{Version: version}
+			afterDate = pulls[len(pulls)-1].LastUpdated()
+			for _, pr := range pulls {
+				event := &RepoEvent{PR: pr}
 				select {
 				case r.eventsC <- event:
 					log.Infof("-> %v", event)
@@ -72,29 +71,29 @@ func (r *RepoWatcher) pollRepo(ctx context.Context) {
 	}
 }
 
-// check returns all versions after given version
-func (r *RepoWatcher) check(afterDate time.Time) (Versions, error) {
-	var versions Versions
+// updatedPullRequests returns all pull requests updated after given date
+func (r *RepoWatcher) updatedPullRequests(afterDate time.Time) (PullRequests, error) {
+	var updatedPulls PullRequests
 
-	pulls, err := r.client.ListOpenPullRequests()
+	pulls, err := r.client.GetOpenPullRequests()
 	if err != nil {
-		return nil, trace.Wrap(err, "failed to get last commits")
+		return nil, trace.Wrap(err)
 	}
 
-	for _, p := range pulls {
-		if p.PullRequestObject.BaseRefName != r.Source.Branch {
+	for _, pr := range pulls {
+		if pr.PullRequestObject.BaseRefName != r.Source.Branch {
 			continue
 		}
-		if !p.Tip.CommittedDate.Time.After(afterDate) {
+		if !pr.LastUpdated().After(afterDate) {
 			continue
 		}
-		versions = append(versions, NewVersion(p))
+		updatedPulls = append(updatedPulls, pr)
 	}
 
 	// Sort the commits by date
-	sort.Sort(versions)
+	sort.Sort(updatedPulls)
 
-	return versions, nil
+	return updatedPulls, nil
 }
 
 func (r *RepoWatcher) Events() <-chan force.Event {
@@ -106,10 +105,10 @@ func (r *RepoWatcher) Done() <-chan struct{} {
 }
 
 type RepoEvent struct {
-	Version Version
+	PR PullRequest
 }
 
 func (r *RepoEvent) String() string {
-	return fmt.Sprintf("RepoEvent(PR=%v, commit=%v, date=%v)",
-		r.Version.PR, r.Version.Commit, r.Version.CommittedDate)
+	return fmt.Sprintf("RepoEvent(PR=%v, commit=%v, last updated=%v, comment=%q)",
+		r.PR.Number, r.PR.LastCommit, r.PR.LastUpdated(), r.PR.LastComment)
 }

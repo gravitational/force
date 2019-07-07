@@ -25,7 +25,6 @@ SOFTWARE.
 package github
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/gravitational/trace"
@@ -61,55 +60,38 @@ func (s *Source) CheckAndSetDefaults() error {
 	return nil
 }
 
-// Metadata output from get/put steps.
-type Metadata []*MetadataField
+// PullRequests is a list of pull request
+type PullRequests []PullRequest
 
-// Add a MetadataField to the Metadata.
-func (m *Metadata) Add(name, value string) {
-	*m = append(*m, &MetadataField{Name: name, Value: value})
+func (p PullRequests) Len() int {
+	return len(p)
 }
 
-// MetadataField ...
-type MetadataField struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+func (p PullRequests) Less(i, j int) bool {
+	return p[j].LastUpdated().After(p[i].LastUpdated())
 }
 
-// Version communicated with Concourse.
-type Version struct {
-	PR            string    `json:"pr"`
-	Commit        string    `json:"commit"`
-	CommittedDate time.Time `json:"committed,omitempty"`
+func (p PullRequests) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
 }
 
-// NewVersion constructs a new Version.
-func NewVersion(p *PullRequest) Version {
-	return Version{
-		PR:            strconv.Itoa(p.Number),
-		Commit:        p.Tip.OID,
-		CommittedDate: p.Tip.CommittedDate.Time,
-	}
-}
-
-// Versions
-type Versions []Version
-
-func (v Versions) Len() int {
-	return len(v)
-}
-
-func (v Versions) Less(i, j int) bool {
-	return v[j].CommittedDate.After(v[i].CommittedDate)
-}
-
-func (v Versions) Swap(i, j int) {
-	v[i], v[j] = v[j], v[i]
-}
-
-// PullRequest represents a pull request and includes the tip (commit).
+// PullRequest represents a pull request and includes the last commit
+// and the last comment
 type PullRequest struct {
 	PullRequestObject
-	Tip CommitObject
+	LastCommit  CommitObject
+	LastComment CommentObject
+}
+
+// LastUpdated returns either the last commit date
+// or the last comment date whatever happened later
+func (p *PullRequest) LastUpdated() time.Time {
+	a := p.LastCommit.CommittedDate.Time
+	b := p.LastComment.CreatedAt.Time
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 // PullRequestObject represents the GraphQL commit node.
@@ -138,5 +120,17 @@ type CommitObject struct {
 		User struct {
 			Login string
 		}
+	}
+}
+
+// CommentObject represents the GraphQL commit node.
+// https://developer.github.com/v4/object/commit/
+type CommentObject struct {
+	ID        string
+	CreatedAt githubv4.DateTime
+	UpdatedAt githubv4.DateTime
+	Body      string
+	Author    struct {
+		Login string
 	}
 }

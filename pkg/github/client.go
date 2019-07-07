@@ -65,8 +65,8 @@ func NewGithubClient(ctx context.Context, s Source) (*GithubClient, error) {
 	}, nil
 }
 
-// ListOpenPullRequests gets the last commit on all open pull requests.
-func (m *GithubClient) ListOpenPullRequests() ([]*PullRequest, error) {
+// GetOpenPullRequests gets the last commit on all open pull requests.
+func (m *GithubClient) GetOpenPullRequests() ([]PullRequest, error) {
 	var query struct {
 		Repository struct {
 			PullRequests struct {
@@ -80,6 +80,13 @@ func (m *GithubClient) ListOpenPullRequests() ([]*PullRequest, error) {
 								}
 							}
 						} `graphql:"commits(last:$commitsLast)"`
+						Comments struct {
+							Edges []struct {
+								Node struct {
+									CommentObject
+								}
+							}
+						} `graphql:"comments(last:$commentsLast)"`
 					}
 				}
 				PageInfo struct {
@@ -97,27 +104,32 @@ func (m *GithubClient) ListOpenPullRequests() ([]*PullRequest, error) {
 		"prStates":        []githubv4.PullRequestState{githubv4.PullRequestStateOpen},
 		"prCursor":        (*githubv4.String)(nil),
 		"commitsLast":     githubv4.Int(1),
+		"commentsLast":    githubv4.Int(1),
 	}
 
-	var response []*PullRequest
+	var pullRequests []PullRequest
 	for {
 		if err := m.V4.Query(context.TODO(), &query, vars); err != nil {
 			return nil, err
 		}
-		for _, p := range query.Repository.PullRequests.Edges {
-			for _, c := range p.Node.Commits.Edges {
-				response = append(response, &PullRequest{
-					PullRequestObject: p.Node.PullRequestObject,
-					Tip:               c.Node.Commit,
-				})
+		for _, pr := range query.Repository.PullRequests.Edges {
+			pullRequest := PullRequest{
+				PullRequestObject: pr.Node.PullRequestObject,
 			}
+			for _, commit := range pr.Node.Commits.Edges {
+				pullRequest.LastCommit = commit.Node.Commit
+			}
+			for _, comment := range pr.Node.Comments.Edges {
+				pullRequest.LastComment = comment.Node.CommentObject
+			}
+			pullRequests = append(pullRequests, pullRequest)
 		}
 		if !query.Repository.PullRequests.PageInfo.HasNextPage {
 			break
 		}
 		vars["prCursor"] = query.Repository.PullRequests.PageInfo.EndCursor
 	}
-	return response, nil
+	return pullRequests, nil
 }
 
 // ListModifiedFiles in a pull request (not supported by V4 API).
@@ -153,7 +165,7 @@ func (m *GithubClient) ListModifiedFiles(prNumber int) ([]string, error) {
 func (m *GithubClient) PostComment(prNumber, comment string) error {
 	pr, err := strconv.Atoi(prNumber)
 	if err != nil {
-		return fmt.Errorf("failed to convert pull request number to int: %s", err)
+		return trace.Wrap(err, "failed to convert pull request number to int")
 	}
 
 	_, _, err = m.V3.Issues.CreateComment(
@@ -166,53 +178,6 @@ func (m *GithubClient) PostComment(prNumber, comment string) error {
 		},
 	)
 	return err
-}
-
-// GetPullRequest ...
-func (m *GithubClient) GetPullRequest(prNumber, commitRef string) (*PullRequest, error) {
-	pr, err := strconv.Atoi(prNumber)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert pull request number to int: %s", err)
-	}
-
-	var query struct {
-		Repository struct {
-			PullRequest struct {
-				PullRequestObject
-				Commits struct {
-					Edges []struct {
-						Node struct {
-							Commit CommitObject
-						}
-					}
-				} `graphql:"commits(last:$commitsLast)"`
-			} `graphql:"pullRequest(number:$prNumber)"`
-		} `graphql:"repository(owner:$repositoryOwner,name:$repositoryName)"`
-	}
-
-	vars := map[string]interface{}{
-		"repositoryOwner": githubv4.String(m.Owner),
-		"repositoryName":  githubv4.String(m.Repository),
-		"prNumber":        githubv4.Int(pr),
-		"commitsLast":     githubv4.Int(100),
-	}
-
-	// TODO: Pagination - in case someone pushes > 100 commits before the build has time to start :p
-	if err := m.V4.Query(context.TODO(), &query, vars); err != nil {
-		return nil, err
-	}
-	for _, c := range query.Repository.PullRequest.Commits.Edges {
-		if c.Node.Commit.OID == commitRef {
-			// Return as soon as we find the correct ref.
-			return &PullRequest{
-				PullRequestObject: query.Repository.PullRequest.PullRequestObject,
-				Tip:               c.Node.Commit,
-			}, nil
-		}
-	}
-
-	// Return an error if the commit was not found
-	return nil, trace.NotFound("commit with ref %q does not exist", commitRef)
 }
 
 // UpdateCommitStatus for a given commit (not supported by V4 API).

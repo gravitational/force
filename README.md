@@ -1,11 +1,11 @@
 # Force
 
-Gravitational Force is the thing that pulls things together.
+`Force` is an event processing and infrastructure automation framework.
 
 `Makefiles` create an easy way to build targets and projects.
 
-`G` files create an easy way to create event-driver workflows with multiple tools
-combined together: Github to Docker build, Webhooks to Deployments.
+`G` files create an easy way to create event-driven workflows with multiple services
+combined together: Github to Docker builds, Webhooks to Kubernetes Deployments.
 
 ## Goals
 
@@ -43,7 +43,7 @@ it's design from the [CSP](http://www.usingcsp.com/cspbook.pdf).
 
 ## Batteries included
 
-Force already includes of the box plugins for:
+Force already includes out of the box plugins for:
 
 * Local linux Docker builds.
 * Github.

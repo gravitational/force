@@ -52,15 +52,10 @@ func (b *Builder) solve(ctx context.Context, req *controlapi.SolveRequest, ch ch
 	return eg.Wait()
 }
 
-func (b *Builder) createController() (*control.Controller, error) {
-	// Create the worker opts.
-	opt, err := b.createWorkerOpt(b.Context, true)
-	if err != nil {
-		return nil, trace.Wrap(err, "creating worker opt failed")
-	}
+func (b *Builder) createController(opt *base.WorkerOpt) (*control.Controller, error) {
 
 	// Create the new worker.
-	w, err := base.NewWorker(opt)
+	w, err := base.NewWorker(*opt)
 	if err != nil {
 		return nil, trace.Wrap(err, "creating worker failed")
 	}

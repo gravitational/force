@@ -1,6 +1,7 @@
 package force
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -22,21 +23,23 @@ type ShellAction struct {
 	Command string
 }
 
-const (
-	// ExitCode is a shell exit code
-	ExitCode = "Shell.ExitCode"
-)
-
 func (s *ShellAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
-	log.Debugf("Running %q", s.Command)
+	log.Debugf("Running %q.", s.Command)
 	cmd := exec.CommandContext(ctx.Context(), "/bin/sh", "-c", s.Command)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-	return ctx.WithValue(ExitCode, cmd.ProcessState.ExitCode()), err
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return ctx, nil
 }
 
-// Sequence groups sequence of commands together,
+func (s *ShellAction) String() string {
+	return fmt.Sprintf("Shell(command=%v)", s.Command)
+}
+
+// Chain groups sequence of commands together,
 // if one fails, the chain stop execution
 func Sequence(actions ...Action) Action {
 	return &SequenceAction{
@@ -51,30 +54,45 @@ type SequenceAction struct {
 func (s *SequenceAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
 	var err error
 	for _, action := range s.Actions {
-		ctx, err = action.Run(ctx)
+		newCtx, err := action.Run(ctx)
+		// context was updated, with some metadata, update it
+		if newCtx != nil {
+			ctx = newCtx
+		}
+		// error is not nil, stop sequence execution
 		if err != nil {
-			return nil, trace.Wrap(err)
+			ctx = WithError(ctx, err)
+			return ctx, trace.Wrap(err)
 		}
 	}
 	return ctx, err
 }
 
-// Pass groups sequence of commands together,
+// Continue groups sequence of commands together,
 // but, if one fails, the next will continue
-func Pass(actions ...Action) Action {
-	return &PassAction{
+func Continue(actions ...Action) Action {
+	return &ContinueAction{
 		Actions: actions,
 	}
 }
 
-type PassAction struct {
+type ContinueAction struct {
 	Actions []Action
 }
 
-func (s *PassAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+func (s *ContinueAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
 	var err error
 	for _, action := range s.Actions {
-		ctx, err = action.Run(ctx)
+		log.Debugf("Running action %v.", action)
+		newCtx, err := action.Run(ctx)
+		// context was updated, with some metadata, update it
+		if newCtx != nil {
+			ctx = newCtx
+		}
+		// error is not nil, continue sequence execution
+		if err != nil {
+			ctx = WithError(ctx, err)
+		}
 	}
 	return ctx, err
 }

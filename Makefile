@@ -21,5 +21,5 @@ tidy:
 .PHONY: github
 github:
 	$(MAKE) all
-	cd examples/github && force
+	cd examples/github && force ci.force
 

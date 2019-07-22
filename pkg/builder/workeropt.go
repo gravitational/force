@@ -64,7 +64,6 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 	if err != nil {
 		return opt, err
 	}
-
 	snapshotRoot := filepath.Join(b.root, "snapshots")
 	unprivileged := system.GetParentNSeuid() != 0
 

@@ -38,6 +38,7 @@ import (
 	"github.com/gravitational/force/internal/utils"
 	"github.com/moby/buildkit/control"
 	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/worker/base"
 
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
@@ -67,6 +68,14 @@ type Config struct {
 	Backend string
 	// SessionName is a default build session name
 	SessionName string
+	// Server is an optional registry server to login into
+	Server string
+	// Username is the registry username
+	Username string
+	// Secret is a registry secret
+	Secret string
+	// Insecure turns off security for image pull/pushs
+	Insecure bool
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -165,11 +174,18 @@ func New(cfg Config) (*Builder, error) {
 		sessManager: sessManager,
 		root:        root,
 	}
-	controller, err := b.createController()
+	// Create the worker opts.
+	opt, err := b.createWorkerOpt(b.Context, true)
 	if err != nil {
+		return nil, trace.Wrap(err, "creating worker opt failed")
+	}
+	controller, err := b.createController(&opt)
+	if err != nil {
+		// TODO: cleanup resources e.g. opt close?
 		return nil, trace.Wrap(err)
 	}
 	b.controller = controller
+	b.opt = &opt
 	return b, nil
 }
 
@@ -179,4 +195,5 @@ type Builder struct {
 	sessManager *session.Manager
 	root        string
 	controller  *control.Controller
+	opt         *base.WorkerOpt
 }

@@ -83,7 +83,13 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 				return
 			}
 			go func() {
-				if _, err := l.Run.Run(&LocalContext{context: ctx, process: l}); err != nil {
+				execContext := &LocalContext{
+					context: ctx,
+					process: l,
+					event:   event,
+				}
+				_, err := l.Run.Run(execContext)
+				if err != nil {
 					log.Debugf("%v run completed with %v", l, trace.DebugReport(err))
 				} else {
 					log.Debugf("%v run completed with success", l)
@@ -97,6 +103,12 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 type LocalContext struct {
 	context context.Context
 	process force.Process
+	event   force.Event
+}
+
+// Event is an event that generated the action
+func (c *LocalContext) Event() force.Event {
+	return c.event
 }
 
 func (c *LocalContext) Context() context.Context {
@@ -108,15 +120,16 @@ func (c *LocalContext) Process() force.Process {
 }
 
 // Get returns a value in the execution context
-func (c *LocalContext) Value(val string) interface{} {
+func (c *LocalContext) Value(val interface{}) interface{} {
 	return c.context.Value(val)
 }
 
 // WithValue extends (without modifying) the execution context
 // with a single key value pair
-func (c *LocalContext) WithValue(key string, val interface{}) force.ExecutionContext {
+func (c *LocalContext) WithValue(key interface{}, val interface{}) force.ExecutionContext {
 	return &LocalContext{
 		context: context.WithValue(c.context, key, val),
 		process: c.process,
+		event:   c.event,
 	}
 }

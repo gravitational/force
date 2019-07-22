@@ -23,6 +23,29 @@ type Runner struct {
 	ctx       context.Context
 	runFlag   int32
 	exitEvent force.ExitEvent
+	vars      map[interface{}]interface{}
+}
+
+// SetVar sets process group-local variable
+// all setters and getters are thread safe
+func (r *Runner) SetVar(key interface{}, val interface{}) {
+	r.Lock()
+	defer r.Unlock()
+	r.vars[key] = val
+}
+
+// GetVar returns a process group local variable
+// all setters and getters are thread safe
+func (r *Runner) GetVar(key interface{}) (interface{}, bool) {
+	r.RLock()
+	defer r.RUnlock()
+	val, ok := r.vars[key]
+	return val, ok
+}
+
+// Context returns a process group context
+func (r *Runner) Context() context.Context {
+	return r.ctx
 }
 
 func (r *Runner) isRunning() bool {
@@ -241,5 +264,6 @@ func New(ctx context.Context) *Runner {
 		cancel:  cancel,
 		ctx:     ctx,
 		eventsC: make(chan force.Event, 1024),
+		vars:    make(map[interface{}]interface{}),
 	}
 }

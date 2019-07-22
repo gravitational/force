@@ -2,8 +2,8 @@ package force
 
 import (
 	"fmt"
-
-	log "github.com/sirupsen/logrus"
+	"os/exec"
+	//	log "github.com/sirupsen/logrus"
 )
 
 // Exit exits, if the exit code has been supplied
@@ -17,11 +17,17 @@ func Exit() (Action, error) {
 type GetEventFunc func(ctx ExecutionContext) Event
 
 func GetExitEventFromContext(ctx ExecutionContext) Event {
-	val := ctx.Context().Value(ExitCode)
 	event := &LocalExitEvent{}
-	if code, ok := val.(int); ok {
-		log.Debugf("Found code: %v.", code)
-		event.Code = code
+	err := GetError(ctx)
+	if err == nil {
+		return event
+	}
+
+	exitErr, ok := err.(*exec.ExitError)
+	if ok && exitErr.ProcessState != nil {
+		event.Code = exitErr.ProcessState.ExitCode()
+	} else {
+		event.Code = -1
 	}
 	return event
 }
@@ -67,6 +73,5 @@ func (e LocalExitEvent) String() string {
 // IsExit returns true if it's an exit event
 func IsExit(event Event) bool {
 	_, ok := event.(ExitEvent)
-	log.Debugf("Is exit %v -> %v.", event, ok)
 	return ok
 }

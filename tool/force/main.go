@@ -22,7 +22,7 @@ func main() {
 	reexec()
 	initLogger()
 	ctx := setupSignalHandlers()
-	run, err := generateAndStart(ctx)
+	run, err := generateAndStart(ctx, os.Args[1:])
 	if err != nil {
 		log.Errorf("Force exited with error: %v", trace.DebugReport(err))
 		os.Exit(1)
@@ -42,12 +42,21 @@ func main() {
 }
 
 // GFile is a special file defining process
-const GFile = "G"
+const (
+	GFile = "G"
+	// DotForce is a force file extension
+	DotForce = "github-ci.force"
+)
 
-func generateAndStart(ctx context.Context) (*runner.Runner, error) {
-	data, err := ioutil.ReadFile(GFile)
+func generateAndStart(ctx context.Context, args []string) (*runner.Runner, error) {
+	file := GFile
+	if len(args) > 0 {
+		file = args[0]
+	}
+	log.Debugf("Processing file %q.", file)
+	data, err := ioutil.ReadFile(file)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, trace.ConvertSystemError(err)
 	}
 	run := runner.New(ctx)
 	err = runner.Parse(string(data), run)

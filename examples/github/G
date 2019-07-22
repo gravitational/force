@@ -1,7 +1,0 @@
-Process(Spec{
-	Watch: Github(Source{
-		Repo: "gravitational/force",
-		Token: Env("GITHUB_ACCESS_TOKEN"),
-	}),
-	Run: Shell(`echo "New Pull Request Update!"`),
-})

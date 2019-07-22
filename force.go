@@ -13,6 +13,17 @@ type Group interface {
 	// ExitEvent is set and returned when the group stop execution,
 	// otherwise is nil, so callers should check for validity
 	ExitEvent() ExitEvent
+
+	// Context returns a process group context
+	Context() context.Context
+
+	// SetVar sets process group-local variable
+	// all setters and getters are thread safe
+	SetVar(key interface{}, val interface{})
+
+	// GetVar returns a process group local variable
+	// all setters and getters are thread safe
+	GetVar(key interface{}) (val interface{}, exists bool)
 }
 
 // Process is a process that is triggered by the event
@@ -63,7 +74,43 @@ type Event interface {
 // ExecutionContext represents an execution context
 // of a certain action execution chain,
 type ExecutionContext interface {
+	// Event is an event that generated the action
+	Event() Event
 	Process() Process
 	Context() context.Context
-	WithValue(key string, value interface{}) ExecutionContext
+	WithValue(key interface{}, value interface{}) ExecutionContext
+	Value(key interface{}) interface{}
+}
+
+// ContextKey is a special type used to set force-related
+// context value, is recommended by context package to use
+// separate type for context values to prevent
+// namespace clash
+type ContextKey string
+
+const (
+	// Error is an error value
+	Error = ContextKey("error")
+)
+
+// WithError is a helper function that wraps execution context
+func WithError(ctx ExecutionContext, err error) ExecutionContext {
+	if err == nil {
+		return ctx
+	}
+	return ctx.WithValue(Error, err)
+}
+
+// GetError is a helper function that finds and returns
+// an error
+func GetError(ctx ExecutionContext) error {
+	out := ctx.Value(Error)
+	if out == nil {
+		return nil
+	}
+	err, ok := out.(error)
+	if !ok {
+		return nil
+	}
+	return err
 }

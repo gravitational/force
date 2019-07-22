@@ -17,7 +17,16 @@ import (
 	"github.com/gravitational/force/pkg/github"
 
 	"github.com/gravitational/trace"
+	log "github.com/sirupsen/logrus"
 )
+
+// Group does nothing for now, used to logically group
+// processes together
+func NewGroup(runner *Runner) func(vars ...interface{}) force.Group {
+	return func(vars ...interface{}) force.Group {
+		return runner
+	}
+}
 
 // Parse returns a new instance of runner
 // using G file input
@@ -29,16 +38,53 @@ func Parse(input string, runner *Runner) error {
 	g := &gParser{
 		runner: runner,
 		functions: map[string]interface{}{
+
+			// Standard library functions
 			"Process":  runner.Process,
 			"Sequence": force.Sequence,
-			"Pass":     force.Pass,
+			"Continue": force.Continue,
 			"Files":    force.Files,
 			"Shell":    force.Shell,
 			"Oneshot":  force.Oneshot,
-			"build":    builder.Build,
 			"Exit":     force.Exit,
 			"Env":      os.Getenv,
-			"Github":   github.Github,
+			"ExpectEnv": func(key string) (string, error) {
+				val := os.Getenv(key)
+				if val == "" {
+					return "", trace.NotFound("define environment variable %q", key)
+				}
+				return val, nil
+			},
+
+			// Github functions
+			"Github":       github.NewPlugin(runner),
+			"Group":        NewGroup(runner),
+			"PullRequests": github.NewWatch(runner),
+			"PostStatus":   github.NewPostStatus(runner),
+			"Pending":      github.NewPostPending(runner),
+			"Result":       github.NewPostResult(runner),
+
+			// Container Builder functions
+			"Builder": builder.NewPlugin(runner),
+			"Build":   builder.NewBuild(runner),
+			"Push":    builder.NewPush(runner),
+		},
+		getStruct: func(name string) (interface{}, error) {
+			switch name {
+			// Standard library structs
+			case "Spec":
+				return force.Spec{}, nil
+				// Github structs
+			case "GithubConfig":
+				return github.Config{}, nil
+				// Container builder struct
+			case "BuilderConfig":
+				return builder.Config{}, nil
+			case "Image":
+				return builder.Image{}, nil
+			default:
+				return nil, trace.BadParameter("unsupported struct: %v", name)
+			}
 		},
 	}
 	_, err = g.parseNode(expr)
@@ -52,6 +98,8 @@ func Parse(input string, runner *Runner) error {
 type gParser struct {
 	runner    *Runner
 	functions map[string]interface{}
+	structs   map[string]interface{}
+	getStruct func(name string) (interface{}, error)
 }
 
 func (g *gParser) parseNode(node ast.Node) (interface{}, error) {
@@ -126,6 +174,9 @@ func (g *gParser) evaluateExpr(n ast.Expr) (interface{}, error) {
 			return nil, trace.BadParameter("unsupported composite literal: %v", l.Type)
 		}
 		structProto, err := g.getStruct(ident.Name)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
 		fields, err := g.evaluateStructFields(l.Elts)
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -163,19 +214,6 @@ func (g *gParser) evaluateExpr(n ast.Expr) (interface{}, error) {
 		return callFunction(fn, arguments)
 	default:
 		return nil, trace.BadParameter("%T is not supported", n)
-	}
-}
-
-func (g *gParser) getStruct(name string) (interface{}, error) {
-	switch name {
-	case "Spec":
-		return force.Spec{}, nil
-	case "Image":
-		return builder.Image{}, nil
-	case "Source":
-		return github.Source{}, nil
-	default:
-		return nil, trace.BadParameter("unsupported struct: %v", name)
 	}
 }
 
@@ -263,6 +301,7 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 			err = trace.BadParameter("%s", r)
 		}
 	}()
+	log.Debugf("Create struct: %T with args %v", val, args)
 	structType := reflect.TypeOf(val)
 	st := reflect.New(structType)
 	for key, val := range args {

@@ -47,14 +47,14 @@ type GithubClient struct {
 }
 
 // NewGithubClient ...
-func NewGithubClient(ctx context.Context, s Source) (*GithubClient, error) {
-	owner, repository, err := parseRepository(s.Repo)
+func NewGithubClient(ctx context.Context, cfg Config) (*GithubClient, error) {
+	owner, repository, err := parseRepository(cfg.Repo)
 	if err != nil {
 		return nil, err
 	}
 
 	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: s.Token},
+		&oauth2.Token{AccessToken: cfg.Token},
 	))
 
 	return &GithubClient{

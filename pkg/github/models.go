@@ -27,38 +27,13 @@ package github
 import (
 	"time"
 
-	"github.com/gravitational/trace"
 	"github.com/shurcooL/githubv4"
 )
-
-// Source represents the configuration for the resource.
-type Source struct {
-	// Repo is a repository to watch
-	Repo string
-	// Token is a github security access token
-	Token string
-	// Branch is a branch to check PRs against
-	Branch string
-}
 
 const (
 	// MasterBranch is a default github master branch to watch
 	MasterBranch = "master"
 )
-
-// CheckAndSetDefaults checks and sets default values
-func (s *Source) CheckAndSetDefaults() error {
-	if s.Token == "" {
-		return trace.BadParameter("set Source{Token:``} parameter")
-	}
-	if s.Repo == "" {
-		return trace.BadParameter("set Source{Token:``} parameter")
-	}
-	if s.Branch == "" {
-		s.Branch = MasterBranch
-	}
-	return nil
-}
 
 // PullRequests is a list of pull request
 type PullRequests []PullRequest

@@ -49,3 +49,7 @@ type OneshotEvent struct {
 func (o *OneshotEvent) String() string {
 	return fmt.Sprintf("Oneshot(time=%v)", o.Time)
 }
+
+func (e OneshotEvent) Wrap(ctx ExecutionContext) ExecutionContext {
+	return ctx
+}

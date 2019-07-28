@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/gravitational/force"
+	"github.com/gravitational/force/pkg/logging"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/gravitational/trace"
 )
 
 // Runner listens for events and launches processes
@@ -24,6 +25,34 @@ type Runner struct {
 	runFlag   int32
 	exitEvent force.ExitEvent
 	vars      map[interface{}]interface{}
+	logger    force.Logger
+}
+
+// Logger returns a logger associated with this runner
+// if the plugin is set, it will use the plugin to instantiate
+// the logger
+func (r *Runner) Logger() force.Logger {
+	r.Lock()
+	defer r.Unlock()
+	if r.logger != nil {
+		return r.logger
+	}
+	// if logger is not setup, initialize
+	// it from the plugin
+	// if the plugin is not set yet, use
+	// temporary default one
+	pluginI, ok := r.vars[logging.LoggingPlugin]
+	if !ok {
+		return (&logging.Plugin{}).NewLogger()
+	}
+	plugin, ok := pluginI.(*logging.Plugin)
+	if !ok {
+		temp := (&logging.Plugin{}).NewLogger()
+		temp.Warningf("Wrong type: %T.", pluginI)
+		return temp
+	}
+	r.logger = plugin.NewLogger()
+	return r.logger
 }
 
 // SetVar sets process group-local variable
@@ -83,6 +112,7 @@ func (r *Runner) remove(p force.Process) bool {
 }
 
 func (r *Runner) wait(p force.Process) {
+	log := r.Logger()
 	log.Debugf("%v waiting for %v", r, p)
 	select {
 	case <-r.ctx.Done():
@@ -118,6 +148,7 @@ func (r *Runner) BroadcastEvents() chan<- force.Event {
 }
 
 func (r *Runner) fanInEvents(channel force.Channel) {
+	log := r.Logger()
 	log.Debugf("Fan in events: %v", channel)
 	if err := channel.Start(r.ctx); err != nil {
 		log.Errorf("%v has failed to start: %v", channel, err)
@@ -160,6 +191,7 @@ func (r *Runner) String() string {
 }
 
 func (r *Runner) fanOutEvents() {
+	log := r.Logger()
 	var shutdownC <-chan time.Time
 	for {
 		select {
@@ -196,16 +228,17 @@ func (r *Runner) fanOutEvents() {
 }
 
 func (r *Runner) sendEvent(event force.Event) bool {
+	log := r.Logger()
 	r.RLock()
 	defer r.RUnlock()
 	for _, proc := range r.processes {
 		select {
 		case proc.Events() <- event:
-			log.Infof("%v <- %v", proc, event)
+			log.Infof("%v triggered by %v", proc, event)
 		case <-r.Done():
 			return false
 		default:
-			log.Warningf("Overflow, dropping event %v for proc", event, proc)
+			log.Warningf("Overflow, dropping event %v for proc %v", event, proc)
 		}
 	}
 	return true
@@ -218,6 +251,7 @@ func (r *Runner) Done() <-chan struct{} {
 
 // Start is a non blocking call
 func (r *Runner) Start() {
+	log := r.Logger()
 	r.Lock()
 	defer r.Unlock()
 	if r.isRunning() {
@@ -230,7 +264,7 @@ func (r *Runner) Start() {
 	go r.fanOutEvents()
 	for _, p := range r.processes {
 		if err := p.Start(r.ctx); err != nil {
-			log.Errorf("%v has failed to start: %v", p, err)
+			log.Errorf("%v has failed to start: %v.", p, err)
 		}
 		go r.wait(p)
 	}
@@ -243,18 +277,28 @@ func (r *Runner) Close() error {
 }
 
 // Process creates a local process
-func (r *Runner) Process(spec force.Spec) force.Process {
+func (r *Runner) Process(spec force.Spec) (force.Process, error) {
+	if err := spec.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
 	if spec.Group == nil {
 		spec.Group = r
 	}
-	l := NewLocalProcess(spec)
+	logger := r.Logger().AddFields(map[string]interface{}{
+		force.KeyProc:   spec.Name,
+		trace.Component: spec.Name,
+	})
+	l, err := NewLocalProcess(r.Context(), logger, spec)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	r.AddProcess(l)
 	// TODO: how to deduplicate event sources?
 	if spec.Watch != nil {
-		log.Debugf("Add event source %v", spec.Watch)
+		r.Logger().Debugf("Add event source %v.", spec.Watch)
 		r.AddChannel(spec.Watch)
 	}
-	return l
+	return l, nil
 }
 
 // New returns a new instance of runner

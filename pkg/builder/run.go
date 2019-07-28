@@ -2,13 +2,14 @@ package builder
 
 import (
 	"context"
-	"os"
+	"io"
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/containerd/namespaces"
+	"github.com/gravitational/force"
 
 	"github.com/containerd/console"
+	"github.com/containerd/containerd/namespaces"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/identity"
@@ -18,16 +19,16 @@ import (
 	"github.com/moby/buildkit/util/progress/progressui"
 
 	"github.com/gravitational/trace"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
-func (b *Builder) Run(ctx context.Context, img Image) error {
+func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	if err := img.CheckAndSetDefaults(); err != nil {
 		return trace.Wrap(err)
 	}
 
-	log.Infof("Build %v.", img.String())
+	log := force.Log(ectx)
+	log.Infof("Building %v.", img.String())
 
 	// create and execute a build session
 	frontendAttrs := map[string]string{
@@ -41,13 +42,13 @@ func (b *Builder) Run(ctx context.Context, img Image) error {
 		frontendAttrs["no-cache"] = ""
 	}
 
-	sess, sessDialer, err := b.Session(ctx, img)
+	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
 		return trace.Wrap(err, "failed to create session")
 	}
 
 	id := identity.NewID()
-	ctx = session.NewContext(ctx, sess.ID())
+	ctx := session.NewContext(ectx, sess.ID())
 	ctx = namespaces.WithNamespace(ctx, "buildkit")
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -70,13 +71,15 @@ func (b *Builder) Run(ctx context.Context, img Image) error {
 			FrontendAttrs: frontendAttrs,
 		}, statusC)
 	})
+	writer := force.Writer(log)
+	defer writer.Close()
 	eg.Go(func() error {
-		return showProgress(ctx, statusC, true)
+		return showProgress(ctx, statusC, writer)
 	})
 	if err := eg.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Successfully built %v.", img.Tag)
+	log.Infof("Successfully built %v.", img)
 
 	return nil
 }
@@ -107,7 +110,7 @@ func (b *Builder) Session(ctx context.Context, img Image) (*session.Session, ses
 	return sess, sessDialer, nil
 }
 
-func showProgress(ctx context.Context, ch chan *controlapi.StatusResponse, noConsole bool) error {
+func showProgress(ctx context.Context, ch chan *controlapi.StatusResponse, writer io.Writer) error {
 	displayCh := make(chan *bkclient.SolveStatus)
 	go func() {
 		for resp := range ch {
@@ -148,10 +151,5 @@ func showProgress(ctx context.Context, ch chan *controlapi.StatusResponse, noCon
 		close(displayCh)
 	}()
 	var c console.Console
-	if !noConsole {
-		if cf, err := console.ConsoleFromFile(os.Stderr); err == nil {
-			c = cf
-		}
-	}
-	return progressui.DisplaySolveStatus(ctx, "", c, os.Stdout, displayCh)
+	return progressui.DisplaySolveStatus(ctx, "", c, writer, displayCh)
 }

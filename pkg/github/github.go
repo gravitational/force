@@ -199,7 +199,23 @@ type RepoEvent struct {
 	PR PullRequest
 }
 
-func (r *RepoEvent) String() string {
-	return fmt.Sprintf("RepoEvent(PR=%v, commit=%v, updated=%v, comment=%q by %v)",
-		r.PR.Number, r.PR.LastCommit.OID, r.PR.LastUpdated(), r.PR.LastComment.Body, r.PR.LastComment.Author.Login)
+// Wrap adds metadata to the execution context
+func (r *RepoEvent) Wrap(ctx force.ExecutionContext) force.ExecutionContext {
+	logger := force.Log(ctx)
+	logger = logger.AddFields(log.Fields{
+		KeyCommit: r.PR.LastCommit.OID[:9],
+		KeyPR:     r.PR.Number,
+	})
+	return force.WithLog(ctx, logger)
 }
+
+func (r *RepoEvent) String() string {
+	return fmt.Sprintf("github pr %v, commit %v, updated %v with comment %q by %v",
+		r.PR.Number, r.PR.LastCommit.OID[:9], r.PR.LastUpdated().Format(force.HumanDateFormat),
+		r.PR.LastComment.Body, r.PR.LastComment.Author.Login)
+}
+
+const (
+	KeyCommit = "commit"
+	KeyPR     = "pr"
+)

@@ -5,7 +5,6 @@ import (
 
 	"github.com/gravitational/trace"
 	"github.com/moby/buildkit/session/auth"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 )
 
@@ -14,7 +13,8 @@ func (b *Builder) Register(server *grpc.Server) {
 }
 
 func (b *Builder) Credentials(ctx context.Context, req *auth.CredentialsRequest) (*auth.CredentialsResponse, error) {
-	log.Debugf("Credentials request %v.", req)
+	logger := b.Group.Logger()
+	logger.Debugf("Credentials request %v.", req)
 
 	// default registry - no login supported
 	if req.Host == "registry-1.docker.io" {
@@ -29,7 +29,7 @@ func (b *Builder) Credentials(ctx context.Context, req *auth.CredentialsRequest)
 		return nil, trace.NotFound("no credentials found for %q, only for %q", req.Host, b.Config.Server)
 	}
 
-	log.Debugf("Authorized as %v in %v -> %#v", b.Config.Username, req.Host, b.Config)
+	logger.Debugf("Authorized as %v in %v.", b.Config.Username, req.Host)
 	return &auth.CredentialsResponse{
 		Username: b.Config.Username,
 		Secret:   b.Config.Secret,

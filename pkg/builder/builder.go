@@ -27,11 +27,14 @@ package builder
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/snapshots/overlay"
+
+	"github.com/gravitational/force"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/docker/distribution/reference"
@@ -41,7 +44,6 @@ import (
 	"github.com/moby/buildkit/worker/base"
 
 	"github.com/gravitational/trace"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -74,14 +76,21 @@ type Config struct {
 	Username string
 	// Secret is a registry secret
 	Secret string
-	// Insecure turns off security for image pull/pushs
+	// SecretFile is a path to secret
+	SecretFile string
+	// Insecure turns off security for image pull/push
 	Insecure bool
+	// Group is a builder plugin group
+	Group force.Group
 }
 
 // CheckAndSetDefaults checks and sets default values
 func (i *Config) CheckAndSetDefaults() error {
 	if i.Context == nil {
 		i.Context = context.TODO()
+	}
+	if i.Group == nil {
+		return trace.BadParameter("missing parameter Group")
 	}
 	if i.GlobalContext == "" {
 		baseDir := os.Getenv("HOME")
@@ -96,11 +105,18 @@ func (i *Config) CheckAndSetDefaults() error {
 			i.Backend = OverlayFSBackend
 		} else {
 			i.Backend = NativeBackend
-			logrus.Infof("Picking native backend, overlayfs is not supported: %v", err)
+			force.Debugf("Picking native backend, overlayfs is not supported: %v.", err)
 		}
 	}
 	if i.SessionName == "" {
 		i.SessionName = SessionName
+	}
+	if i.SecretFile != "" {
+		data, err := ioutil.ReadFile(i.SecretFile)
+		if err != nil {
+			return trace.ConvertSystemError(err)
+		}
+		i.Secret = string(data)
 	}
 	return nil
 }
@@ -145,8 +161,8 @@ func (i *Image) CheckAndSetDefaults() error {
 	return nil
 }
 
-func (i *Image) String() string {
-	return fmt.Sprintf("Image(dockerfile=%v, tag=%v)", i.Dockerfile, i.Tag)
+func (i Image) String() string {
+	return fmt.Sprintf("image tag %v, dockerfile %v", i.Tag, i.Dockerfile)
 }
 
 // New returns a new builder
@@ -192,6 +208,7 @@ func New(cfg Config) (*Builder, error) {
 // Builder is a new container image builder
 type Builder struct {
 	Config
+	logger      force.Logger
 	sessManager *session.Manager
 	root        string
 	controller  *control.Controller

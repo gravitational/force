@@ -6,7 +6,6 @@ import (
 	"os/exec"
 
 	"github.com/gravitational/trace"
-	log "github.com/sirupsen/logrus"
 )
 
 // Shell runs shell
@@ -24,8 +23,9 @@ type ShellAction struct {
 }
 
 func (s *ShellAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
-	log.Debugf("Running %q.", s.Command)
-	cmd := exec.CommandContext(ctx.Context(), "/bin/sh", "-c", s.Command)
+	log := Log(ctx)
+	log.Infof("Running %q.", s.Command)
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", s.Command)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
@@ -81,18 +81,16 @@ type ContinueAction struct {
 }
 
 func (s *ContinueAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
-	var err error
 	for _, action := range s.Actions {
-		log.Debugf("Running action %v.", action)
 		newCtx, err := action.Run(ctx)
 		// context was updated, with some metadata, update it
 		if newCtx != nil {
 			ctx = newCtx
 		}
-		// error is not nil, continue sequence execution
+		// error is not nil, but continue sequence execution
 		if err != nil {
 			ctx = WithError(ctx, err)
 		}
 	}
-	return ctx, err
+	return ctx, Error(ctx)
 }

@@ -6,7 +6,6 @@ import (
 	"github.com/gravitational/force"
 
 	"github.com/gravitational/trace"
-	log "github.com/sirupsen/logrus"
 )
 
 // BuilderKey is a wrapper around string
@@ -20,6 +19,7 @@ const BuilderPlugin = BuilderKey("builder")
 func NewPlugin(group force.Group) func(cfg Config) (*Builder, error) {
 	return func(cfg Config) (*Builder, error) {
 		cfg.Context = group.Context()
+		cfg.Group = group
 		if err := cfg.CheckAndSetDefaults(); err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -38,9 +38,10 @@ func NewBuild(group force.Group) func(Image) (force.Action, error) {
 		pluginI, ok := group.GetVar(BuilderPlugin)
 		if !ok {
 			// plugin is not initialized, use defaults
-			log.Debugf("Builder plugin is not initialized, using default.")
+			group.Logger().Debugf("Builder plugin is not initialized, using default.")
 			builder, err := New(Config{
 				Context: group.Context(),
+				Group:   group,
 			})
 			if err != nil {
 				return nil, trace.Wrap(err)
@@ -68,7 +69,7 @@ type BuildAction struct {
 }
 
 func (b *BuildAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
-	return ctx, b.Builder.Run(ctx.Context(), b.Image)
+	return ctx, b.Builder.Run(ctx, b.Image)
 }
 
 func (b *BuildAction) String() string {

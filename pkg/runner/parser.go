@@ -15,9 +15,9 @@ import (
 	"github.com/gravitational/force"
 	"github.com/gravitational/force/pkg/builder"
 	"github.com/gravitational/force/pkg/github"
+	"github.com/gravitational/force/pkg/logging"
 
 	"github.com/gravitational/trace"
-	log "github.com/sirupsen/logrus"
 )
 
 // Group does nothing for now, used to logically group
@@ -30,15 +30,10 @@ func NewGroup(runner *Runner) func(vars ...interface{}) force.Group {
 
 // Parse returns a new instance of runner
 // using G file input
-func Parse(input string, runner *Runner) error {
-	expr, err := parser.ParseExpr(input)
-	if err != nil {
-		return trace.Wrap(err)
-	}
+func Parse(inputs []string, runner *Runner) error {
 	g := &gParser{
 		runner: runner,
 		functions: map[string]interface{}{
-
 			// Standard library functions
 			"Process":  runner.Process,
 			"Sequence": force.Sequence,
@@ -58,7 +53,7 @@ func Parse(input string, runner *Runner) error {
 
 			// Github functions
 			"Github":       github.NewPlugin(runner),
-			"Group":        NewGroup(runner),
+			"Setup":        NewGroup(runner),
 			"PullRequests": github.NewWatch(runner),
 			"PostStatus":   github.NewPostStatus(runner),
 			"Pending":      github.NewPostPending(runner),
@@ -68,6 +63,9 @@ func Parse(input string, runner *Runner) error {
 			"Builder": builder.NewPlugin(runner),
 			"Build":   builder.NewBuild(runner),
 			"Push":    builder.NewPush(runner),
+
+			// Log functions
+			"Log": logging.NewPlugin(runner),
 		},
 		getStruct: func(name string) (interface{}, error) {
 			switch name {
@@ -82,14 +80,32 @@ func Parse(input string, runner *Runner) error {
 				return builder.Config{}, nil
 			case "Image":
 				return builder.Image{}, nil
+				// Log structs
+			case "LogConfig":
+				return logging.Config{}, nil
+			case "Output":
+				return logging.Output{}, nil
 			default:
 				return nil, trace.BadParameter("unsupported struct: %v", name)
 			}
 		},
 	}
-	_, err = g.parseNode(expr)
-	if err != nil {
-		return trace.Wrap(err)
+	for _, input := range inputs {
+		expr, err := parser.ParseExpr(input)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		_, err = g.parseNode(expr)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+	}
+
+	// if after parsing, logging plugin is not set up
+	// set it up with default plugin instance
+	_, ok := runner.GetVar(logging.LoggingPlugin)
+	if !ok {
+		runner.SetVar(logging.LoggingPlugin, &logging.Plugin{})
 	}
 	return nil
 }
@@ -169,23 +185,52 @@ func (g *gParser) evaluateStructFields(nodes []ast.Expr) (map[string]interface{}
 func (g *gParser) evaluateExpr(n ast.Expr) (interface{}, error) {
 	switch l := n.(type) {
 	case *ast.CompositeLit:
-		ident, ok := l.Type.(*ast.Ident)
-		if !ok {
-			return nil, trace.BadParameter("unsupported composite literal: %v", l.Type)
+		switch literal := l.Type.(type) {
+		case *ast.Ident:
+			structProto, err := g.getStruct(literal.Name)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			fields, err := g.evaluateStructFields(l.Elts)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			st, err := createStruct(structProto, fields)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			return st, nil
+		case *ast.ArrayType:
+			arrayType, ok := literal.Elt.(*ast.Ident)
+			if !ok {
+				return nil, trace.BadParameter("unsupported composite literal: %v %T", literal.Elt, literal.Elt)
+			}
+			structProto, err := g.getStruct(arrayType.Name)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			slice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(structProto)), len(l.Elts), len(l.Elts))
+			for i, el := range l.Elts {
+				member, ok := el.(*ast.CompositeLit)
+				if !ok {
+					return nil, trace.BadParameter("unsupported composite literal type: %T", l.Type)
+				}
+				fields, err := g.evaluateStructFields(member.Elts)
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				st, err := createStruct(structProto, fields)
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				v := slice.Index(i)
+				v.Set(reflect.ValueOf(st))
+			}
+			return slice.Interface(), nil
+		default:
+			return nil, trace.BadParameter("unsupported composite literal: %v %T", l.Type, l.Type)
 		}
-		structProto, err := g.getStruct(ident.Name)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		fields, err := g.evaluateStructFields(l.Elts)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		st, err := createStruct(structProto, fields)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return st, nil
+
 	case *ast.BasicLit:
 		val, err := literalToValue(l)
 		if err != nil {
@@ -301,7 +346,6 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 			err = trace.BadParameter("%s", r)
 		}
 	}()
-	log.Debugf("Create struct: %T with args %v", val, args)
 	structType := reflect.TypeOf(val)
 	st := reflect.New(structType)
 	for key, val := range args {

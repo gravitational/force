@@ -18,7 +18,7 @@ type GetEventFunc func(ctx ExecutionContext) Event
 
 func GetExitEventFromContext(ctx ExecutionContext) Event {
 	event := &LocalExitEvent{}
-	err := GetError(ctx)
+	err := Error(ctx)
 	if err == nil {
 		return event
 	}
@@ -46,8 +46,8 @@ func (e *SendAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
 	select {
 	case proc.Group().BroadcastEvents() <- e.GetEvent(ctx):
 		return ctx, nil
-	case <-ctx.Context().Done():
-		return ctx, ctx.Context().Err()
+	case <-ctx.Done():
+		return ctx, ctx.Err()
 	}
 }
 
@@ -63,6 +63,10 @@ type LocalExitEvent struct {
 
 func (e LocalExitEvent) ExitCode() int {
 	return e.Code
+}
+
+func (e LocalExitEvent) Wrap(ctx ExecutionContext) ExecutionContext {
+	return ctx
 }
 
 // String returns a string description of the event

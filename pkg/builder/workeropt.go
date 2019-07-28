@@ -83,8 +83,6 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 		return opt, trace.BadParameter("creating %s snapshotter failed: %v", b.Backend, err)
 	}
 
-	logrus.Infof("Unprivileged: %v, backend: %v", unprivileged, b.Backend)
-
 	var exe executor.Executor
 	if withExecutor {
 		exeOpt := runcexecutor.Opt{

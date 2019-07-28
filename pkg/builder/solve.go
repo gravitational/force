@@ -35,7 +35,7 @@ func (b *Builder) solve(ctx context.Context, req *controlapi.SolveRequest, ch ch
 		}()
 		_, err := b.controller.Solve(ctx, req)
 		if err != nil {
-			return trace.Wrap(err, "failed to solve")
+			return trace.Wrap(err, "failed to parse dockerfile")
 		}
 		return nil
 	})

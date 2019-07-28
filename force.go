@@ -2,6 +2,11 @@ package force
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"sync/atomic"
+
+	"github.com/gravitational/trace"
 )
 
 // Group represents a group of processes
@@ -24,10 +29,16 @@ type Group interface {
 	// GetVar returns a process group local variable
 	// all setters and getters are thread safe
 	GetVar(key interface{}) (val interface{}, exists bool)
+
+	// Logger returns a logger associated with this group
+	Logger() Logger
 }
 
 // Process is a process that is triggered by the event
 type Process interface {
+	// Name returns a process name
+	Name() string
+	// Channel returns a process channel
 	Channel() Channel
 	// Action returns actions assigned to the process
 	Action() Action
@@ -41,6 +52,8 @@ type Process interface {
 	// Done signals that process has completed
 	// handling channel events and exited
 	Done() <-chan struct{}
+	// String returns user friendly process name
+	String() string
 }
 
 // Channel produces events
@@ -68,43 +81,54 @@ type Spec struct {
 	Group Group
 }
 
+// processNumber is a helper number to generate
+// meaningful process numbers in case if user did not specify one
+var processNumber = int64(0)
+
+func (s *Spec) CheckAndSetDefaults() error {
+	if s.Name == "" {
+		num := atomic.AddInt64(&processNumber, 1)
+		host, _ := os.Hostname()
+		s.Name = fmt.Sprintf("%v-%v", host, num)
+	}
+	if s.Watch == nil {
+		return trace.BadParameter("the Process is missing Spec{Watch:}, in case if you need an unconditional execution, use Spec{Watch: Oneshot()}")
+	}
+	if s.Run == nil {
+		return trace.BadParameter("the Process needs Spec{Run:} parameter")
+	}
+	return nil
+}
+
 type Event interface {
+	// Wrap adds metadada to the execution context
+	Wrap(ctx ExecutionContext) ExecutionContext
 }
 
 // ExecutionContext represents an execution context
 // of a certain action execution chain,
 type ExecutionContext interface {
+	context.Context
 	// Event is an event that generated the action
 	Event() Event
 	Process() Process
-	Context() context.Context
 	WithValue(key interface{}, value interface{}) ExecutionContext
-	Value(key interface{}) interface{}
+	// ID is an execution unique identifier
+	ID() string
 }
-
-// ContextKey is a special type used to set force-related
-// context value, is recommended by context package to use
-// separate type for context values to prevent
-// namespace clash
-type ContextKey string
-
-const (
-	// Error is an error value
-	Error = ContextKey("error")
-)
 
 // WithError is a helper function that wraps execution context
 func WithError(ctx ExecutionContext, err error) ExecutionContext {
 	if err == nil {
 		return ctx
 	}
-	return ctx.WithValue(Error, err)
+	return ctx.WithValue(KeyError, err)
 }
 
-// GetError is a helper function that finds and returns
+// Error is a helper function that finds and returns
 // an error
-func GetError(ctx ExecutionContext) error {
-	out := ctx.Value(Error)
+func Error(ctx ExecutionContext) error {
+	out := ctx.Value(KeyError)
 	if out == nil {
 		return nil
 	}

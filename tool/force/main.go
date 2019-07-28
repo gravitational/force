@@ -20,7 +20,10 @@ import (
 
 func main() {
 	reexec()
-	initLogger()
+	if err := initLogger(); err != nil {
+		fmt.Printf("Failed to init logger: %v", err)
+		os.Exit(1)
+	}
 	ctx := setupSignalHandlers()
 	run, err := generateAndStart(ctx, os.Args[1:])
 	if err != nil {
@@ -44,8 +47,9 @@ func main() {
 // GFile is a special file defining process
 const (
 	GFile = "G"
-	// DotForce is a force file extension
-	DotForce = "github-ci.force"
+	// SetupForce is a special file
+	// with setup for the properties
+	SetupForce = "setup.force"
 )
 
 func generateAndStart(ctx context.Context, args []string) (*runner.Runner, error) {
@@ -53,13 +57,19 @@ func generateAndStart(ctx context.Context, args []string) (*runner.Runner, error
 	if len(args) > 0 {
 		file = args[0]
 	}
-	log.Debugf("Processing file %q.", file)
-	data, err := ioutil.ReadFile(file)
+	var inputs []string
+	data, err := ioutil.ReadFile(SetupForce)
+	if err == nil {
+		log.Debugf("Found setup file %q.", SetupForce)
+		inputs = append(inputs, string(data))
+	}
+	data, err = ioutil.ReadFile(file)
 	if err != nil {
 		return nil, trace.ConvertSystemError(err)
 	}
+	inputs = append(inputs, string(data))
 	run := runner.New(ctx)
-	err = runner.Parse(string(data), run)
+	err = runner.Parse(inputs, run)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -85,13 +95,14 @@ func setupSignalHandlers() context.Context {
 	return ctx
 }
 
-func initLogger() {
+func initLogger() error {
 	log.SetLevel(log.DebugLevel)
 	log.SetFormatter(&trace.TextFormatter{
 		DisableTimestamp: true,
 		EnableColors:     trace.IsTerminal(os.Stderr),
 	})
 	log.SetOutput(os.Stderr)
+	return nil
 }
 
 func reexec() {

@@ -10,9 +10,8 @@ import (
 	"github.com/docker/distribution/reference"
 	"github.com/gravitational/trace"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/util/progress"
 	"github.com/moby/buildkit/util/push"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -22,7 +21,7 @@ func NewPush(group force.Group) func(Image) (force.Action, error) {
 		pluginI, ok := group.GetVar(BuilderPlugin)
 		if !ok {
 			// plugin is not initialized, use defaults
-			log.Debugf("Builder plugin is not initialized, using default")
+			logrus.Debugf("Builder plugin is not initialized, using default")
 			builder, err := New(Config{
 				Context: group.Context(),
 			})
@@ -53,7 +52,7 @@ type PushAction struct {
 }
 
 func (b *PushAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
-	return ctx, b.Builder.Push(ctx.Context(), b.Image)
+	return ctx, b.Builder.Push(ctx, b.Image)
 }
 
 func (b *PushAction) String() string {
@@ -61,19 +60,20 @@ func (b *PushAction) String() string {
 }
 
 // Push pushes image to remote registry
-func (b *Builder) Push(ctx context.Context, img Image) error {
+func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	if err := img.CheckAndSetDefaults(); err != nil {
 		return trace.Wrap(err)
 	}
 
+	log := force.Log(ectx)
 	log.Infof("Pushing %v.", img.String())
 
-	sess, sessDialer, err := b.Session(ctx, img)
+	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
 		return trace.Wrap(err, "failed to create session")
 	}
 
-	ctx = session.NewContext(ctx, sess.ID())
+	ctx := session.NewContext(ectx, sess.ID())
 	ctx = namespaces.WithNamespace(ctx, "buildkit")
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -107,19 +107,6 @@ func (b *Builder) push(ctx context.Context, image string, insecure bool) error {
 	if err != nil {
 		return trace.BadParameter("getting image %q failed: %v", image, err)
 	}
-	ctxWithProgress := progress.WithProgress(ctx, &progressWriter{})
-	return push.Push(ctxWithProgress, b.sessManager, b.opt.ContentStore,
+	return push.Push(ctx, b.sessManager, b.opt.ContentStore,
 		imgObj.Target.Digest, image, insecure, b.opt.ResolveOptionsFunc, false)
-}
-
-type progressWriter struct {
-}
-
-func (p *progressWriter) Write(id string, value interface{}) error {
-	log.Infof("Progress -> %v %v.", id, value)
-	return nil
-}
-
-func (p *progressWriter) Close() error {
-	return nil
 }

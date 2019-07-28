@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/go-github/github"
 	"github.com/gravitational/trace"
-	log "github.com/sirupsen/logrus"
 )
 
 // PostStatus updates pull request status
@@ -61,9 +60,11 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) (force.ExecutionConte
 		return nil, trace.BadParameter("PostStatus can only be executed with Watch")
 	}
 
+	log := force.Log(ctx)
+
 	status := p.Status
 	if p.GetStatusFromContext {
-		err := force.GetError(ctx)
+		err := force.Error(ctx)
 		if err == nil {
 			status.State = StateSuccess
 			status.Description = "CI executed successfully"
@@ -76,13 +77,13 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) (force.ExecutionConte
 	commitRef := event.PR.LastCommit.OID
 
 	_, _, err := p.plugin.client.V3.Repositories.CreateStatus(
-		ctx.Context(),
+		ctx,
 		p.plugin.client.Owner,
 		p.plugin.client.Repository,
 		commitRef,
 		&github.RepoStatus{
 			State:       github.String(status.State),
-			TargetURL:   github.String(status.URL),
+			TargetURL:   github.String(log.URL(ctx)),
 			Description: github.String(status.Description),
 			Context:     github.String(status.Context),
 		},

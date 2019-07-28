@@ -1,0 +1,43 @@
+// Setup configures force plugins, configurations
+// all other force files share the configuration defined in this file
+Setup(
+	// Github is a setup of the github plugin valid in the
+	// context of this group, all calls to github methods will be using
+	// this syntax
+	Github(GithubConfig{
+		// Token is a github access token
+		// passed to all callers in the group
+		Token: ExpectEnv("GITHUB_ACCESS_TOKEN"),
+		// Repo is a repository to process
+		Repo: "gravitational/force",
+		// Default branch is master, so this is for demo purposes
+		Branch: "master",
+	}),
+
+	// Builder configures docker builder
+	Builder(BuilderConfig{
+		// Logs into quay io server
+		Server: "gcr.io",
+		// Username is a username to login with the registry server
+		// TODO: think how to best check for defined values?
+		Username: ExpectEnv("REGISTRY_USERNAME"),
+		// SecretFile is a registry password
+		SecretFile: ExpectEnv("REGISTRY_SECRET"),
+	}),
+
+ 	// Logging sets up logging to stackdriver
+	// and stdout as well, with the current implementation,
+	// it should go first so other plugins can use it
+	Log(LogConfig{
+		Level: "info",
+		Outputs: []Output{
+			{
+				Type: "stdout",
+			},
+			{
+				Type: "stackdriver",
+				CredentialsFile: ExpectEnv("LOGGING_CREDENTIALS"),
+			},
+		},
+	}),
+)

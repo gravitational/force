@@ -43,6 +43,7 @@ func Parse(inputs []string, runner *Runner) error {
 			"Oneshot":  force.Oneshot,
 			"Exit":     force.Exit,
 			"Env":      os.Getenv,
+			"ID":       force.ID,
 			"ExpectEnv": func(key string) (string, error) {
 				val := os.Getenv(key)
 				if val == "" {
@@ -75,11 +76,15 @@ func Parse(inputs []string, runner *Runner) error {
 				// Github structs
 			case "GithubConfig":
 				return github.Config{}, nil
-				// Container builder struct
+				// Container builder structs
 			case "BuilderConfig":
 				return builder.Config{}, nil
 			case "Image":
 				return builder.Image{}, nil
+			case "Secret":
+				return builder.Secret{}, nil
+			case "Arg":
+				return builder.Arg{}, nil
 				// Log structs
 			case "LogConfig":
 				return logging.Config{}, nil
@@ -351,15 +356,20 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 	for key, val := range args {
 		field := st.Elem().FieldByName(key)
 		if !field.IsValid() {
-			return nil, trace.BadParameter("field %q not valid", key)
+			return nil, trace.BadParameter("field %q is not found", key)
 		}
 		if !field.CanSet() {
 			return nil, trace.BadParameter("can't set value of %v", field)
 		}
-		// TODO: fix this check to avoid potential panic below
-		/*if !field.Type().AssignableTo(reflect.TypeOf(val)) {
-			return nil, trace.BadParameter("can't assign %v to %v", reflect.TypeOf(val), field.Type())
-		}*/
+		// StringVar field is not directly assignable to string,
+		// this is a syntax sugar to convert string constants on the fly
+		// to the string, this is equivalent of:
+		// type S struct{ Field StringVar}
+		// s := S{Field: String("my string")}
+		if field.Type() == reflect.TypeOf((*force.StringVar)(nil)).Elem() && reflect.TypeOf(val).Kind() == reflect.String {
+			field.Set(reflect.ValueOf(force.String(val.(string))))
+			continue
+		}
 		field.Set(reflect.ValueOf(val))
 	}
 	return st.Elem().Interface(), nil

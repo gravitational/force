@@ -8,12 +8,12 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// BuilderKey is a wrapper around string
+// Key is a wrapper around string
 // to namespace a variable
-type BuilderKey string
+type Key string
 
-// BuilderPlugin is a name of the github plugin variable
-const BuilderPlugin = BuilderKey("builder")
+// Plugin is a name of the github plugin variable
+const Plugin = Key("builder")
 
 // NewPlugin returns a new builder with some configuration
 func NewPlugin(group force.Group) func(cfg Config) (*Builder, error) {
@@ -27,7 +27,7 @@ func NewPlugin(group force.Group) func(cfg Config) (*Builder, error) {
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		group.SetVar(BuilderPlugin, builder)
+		group.SetVar(Plugin, builder)
 		return builder, nil
 	}
 }
@@ -35,7 +35,7 @@ func NewPlugin(group force.Group) func(cfg Config) (*Builder, error) {
 // NewBuild returns a new Build action
 func NewBuild(group force.Group) func(Image) (force.Action, error) {
 	return func(img Image) (force.Action, error) {
-		pluginI, ok := group.GetVar(BuilderPlugin)
+		pluginI, ok := group.GetVar(Plugin)
 		if !ok {
 			// plugin is not initialized, use defaults
 			group.Logger().Debugf("Builder plugin is not initialized, using default.")

@@ -138,3 +138,33 @@ func Error(ctx ExecutionContext) error {
 	}
 	return err
 }
+
+// StringVar is a context string variable
+// that returns a string value from the execution context
+type StringVar interface {
+	// Value returns a string
+	Value(ctx ExecutionContext) string
+}
+
+// String is a constant string variable
+type String string
+
+// Value returns a string value
+func (s String) Value(ctx ExecutionContext) string {
+	return string(s)
+}
+
+// StringVarFunc wraps function and returns an interface VarString
+type StringVarFunc func(ctx ExecutionContext) string
+
+// Value returns a string value
+func (f StringVarFunc) Value(ctx ExecutionContext) string {
+	return f(ctx)
+}
+
+// ID returns a current Force execution ID
+func ID() StringVar {
+	return StringVarFunc(func(ctx ExecutionContext) string {
+		return ctx.ID()
+	})
+}

@@ -18,7 +18,7 @@ import (
 // NewPush returns a new push action
 func NewPush(group force.Group) func(Image) (force.Action, error) {
 	return func(img Image) (force.Action, error) {
-		pluginI, ok := group.GetVar(BuilderPlugin)
+		pluginI, ok := group.GetVar(Plugin)
 		if !ok {
 			// plugin is not initialized, use defaults
 			logrus.Debugf("Builder plugin is not initialized, using default")

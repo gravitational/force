@@ -15,6 +15,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/session/testutil"
 	"github.com/moby/buildkit/util/progress/progressui"
 
@@ -40,6 +41,11 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	}
 	if img.NoCache {
 		frontendAttrs["no-cache"] = ""
+	}
+
+	// Get the build args and add them to frontend attrs.
+	for _, a := range img.Args {
+		frontendAttrs["build-arg:"+a.Key] = a.Val.Value(ectx)
 	}
 
 	sess, sessDialer, err := b.Session(ectx, img)
@@ -86,7 +92,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 
 // Session creates the session manager and returns the session and it's
 // dialer.
-func (b *Builder) Session(ctx context.Context, img Image) (*session.Session, session.Dialer, error) {
+func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Session, session.Dialer, error) {
 	sess, err := session.NewSession(ctx, b.SessionName, "")
 	if err != nil {
 		return nil, nil, trace.Wrap(err, "failed to create session")
@@ -104,6 +110,19 @@ func (b *Builder) Session(ctx context.Context, img Image) (*session.Session, ses
 	// before it was sess.Allow(authprovider.NewDockerAuthProvider())
 	sess.Allow(b)
 
+	// Allow secrets! This was usually a big pain point in all docker
+	// builds, because the context was a part of the image, so this is exciting
+	if len(img.Secrets) > 0 {
+		files := make([]secretsprovider.FileSource, len(img.Secrets))
+		for i, s := range img.Secrets {
+			files[i] = secretsprovider.FileSource{ID: s.ID, FilePath: s.File.Value(ctx)}
+		}
+		secretStore, err := secretsprovider.NewFileStore(files)
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+		sess.Allow(secretsprovider.NewSecretProvider(secretStore))
+	}
 	sessDialer := session.Dialer(
 		testutil.TestStream(testutil.Handler(b.sessManager.HandleConn)))
 

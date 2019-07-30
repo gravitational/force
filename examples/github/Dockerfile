@@ -1,4 +1,8 @@
+# syntax = docker/dockerfile:experimental
+
 FROM quay.io/gravitational/debian-tall:latest
 
-RUN echo "Hello, world!"
-RUN date
+ARG FORCE_ID
+RUN echo "This is Force CI job ${FORCE_ID}, hello."
+RUN --mount=type=secret,id=logging-creds,target=/run/secrets/logging-creds.json ls /run/secrets/logging-creds.json
+

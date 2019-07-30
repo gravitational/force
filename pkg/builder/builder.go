@@ -135,6 +135,45 @@ type Image struct {
 	Platforms []string
 	// Target is the target build stage to build
 	Target string
+	// Secrets is a list of secrets
+	// mounted in the build container
+	Secrets []Secret
+	// Args is a list of the build arguments
+	Args []Arg
+}
+
+// Secret is a secret passed to docker builds
+type Secret struct {
+	ID string
+	// File is a path to a secret
+	File force.StringVar
+}
+
+func (s *Secret) CheckAndSetDefaults() error {
+	if s.ID == "" {
+		return trace.BadParameter("missing ID value of the secret")
+	}
+	if s.File == nil {
+		return trace.BadParameter("missing File of the secret %q", s.ID)
+	}
+	return nil
+}
+
+type Arg struct {
+	// Key is a build argument key
+	Key string
+	// Val is a build argument value
+	Val force.StringVar
+}
+
+func (a *Arg) CheckAndSetDefaults() error {
+	if a.Key == "" {
+		return trace.BadParameter("missing Key value of the build argument")
+	}
+	if a.Val == nil {
+		return trace.BadParameter("missing Val value of the build argument %q", a.Key)
+	}
+	return nil
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -157,6 +196,16 @@ func (i *Image) CheckAndSetDefaults() error {
 	}
 	if len(i.Platforms) == 0 {
 		i.Platforms = []string{platforms.DefaultString()}
+	}
+	for _, s := range i.Secrets {
+		if err := s.CheckAndSetDefaults(); err != nil {
+			return trace.Wrap(err)
+		}
+	}
+	for _, a := range i.Args {
+		if err := a.CheckAndSetDefaults(); err != nil {
+			return trace.Wrap(err)
+		}
 	}
 	return nil
 }

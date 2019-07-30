@@ -18,7 +18,25 @@ Process(Spec{
 		// previous has resulted in success
 		Sequence(
 			// Build builds dockerfile and tags it in the local storage
-			Build(Image{Tag: `gcr.io/kubeadm-167321/example:latest`}),
+			Build(Image{
+				Tag: `gcr.io/kubeadm-167321/example:latest`,
+				// Secrets are build secrets exposed to docker
+				// container during the run
+				Secrets: []Secret{
+					{
+						ID: "logging-creds",
+						File: ExpectEnv("LOGGING_CREDENTIALS"),
+					},
+				},
+				// Args are build arguments
+				Args: []Arg{
+					{
+						// FORCE_ID is a force run ID
+						Key: "FORCE_ID",
+						Val: ID(),
+					},
+				},
+			}),
 			// Push the built image
 			Push(Image{Tag: `gcr.io/kubeadm-167321/example:latest`}),
 		),

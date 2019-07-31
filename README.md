@@ -12,7 +12,7 @@ combined together: Github to Docker builds, Webhooks to Kubernetes Deployments.
 It should be easy and fun to define declarative event-driven workflows for infrastructure
 projects.
 
-`Force` tooling will be tailored to detect loops, inefficiencies in event-drive workflows.
+`Force` tooling will be tailored to detect loops, inefficiencies in event-driven workflows.
 
 `Force` should make it easy and manageable to have an even driven distributed system
 running on Kubernetes or on developer's laptop.

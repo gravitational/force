@@ -5,6 +5,7 @@ replace github.com/hashicorp/go-immutable-radix => github.com/tonistiigi/go-immu
 replace github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305
 
 require (
+	cloud.google.com/go v0.38.0
 	github.com/containerd/console v0.0.0-20181022165439-0650fd9eeb50
 	github.com/containerd/containerd v1.3.0-0.20190426060238-3a3f0aac8819
 	github.com/containerd/go-runc v0.0.0-20180907222934-5a6d9f37cfa3
@@ -13,12 +14,15 @@ require (
 	github.com/docker/go-units v0.3.3 // indirect
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/gogo/googleapis v1.1.0 // indirect
+	github.com/golang/protobuf v1.3.1 // indirect
+	github.com/google/go-cmp v0.3.0 // indirect
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/google/uuid v1.0.0
 	github.com/gravitational/trace v0.0.0-20190612100216-931bb2abd388
+	github.com/hashicorp/golang-lru v0.5.1 // indirect
 	github.com/jonboulle/clockwork v0.1.0 // indirect
-	github.com/knq/sdhook v0.0.0-20190622001945-6b499b9e5467
+	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/mitchellh/hashstructure v1.0.0 // indirect
 	github.com/moby/buildkit v0.5.1
 	github.com/opencontainers/image-spec v1.0.1
@@ -30,7 +34,13 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
 	github.com/sirupsen/logrus v1.4.1
 	go.etcd.io/bbolt v1.3.2
+	golang.org/x/net v0.0.0-20190509222800-a4d6f7feada5 // indirect
 	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
 	golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
+	golang.org/x/sys v0.0.0-20190509141414-a5b02f93d862 // indirect
+	golang.org/x/text v0.3.2 // indirect
+	google.golang.org/api v0.5.0
+	google.golang.org/appengine v1.5.0 // indirect
+	google.golang.org/genproto v0.0.0-20190508193815-b515fa19cec8 // indirect
 	google.golang.org/grpc v1.20.1
 )

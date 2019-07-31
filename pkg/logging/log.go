@@ -2,12 +2,14 @@ package logging
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 
 	"github.com/gravitational/force"
+	"github.com/gravitational/force/pkg/logging/stack"
+
 	"github.com/gravitational/trace"
-	"github.com/knq/sdhook"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -37,6 +39,8 @@ type Output struct {
 	// CredentialsFile is a path to credentials file,
 	// used in case of stackdriver plugin
 	CredentialsFile string
+	// Credentials is a string with creds
+	Credentials string
 }
 
 func (cfg *Config) CheckAndSetDefaults() error {
@@ -49,13 +53,24 @@ func (cfg *Config) CheckAndSetDefaults() error {
 		}
 	}
 
-	for _, o := range cfg.Outputs {
+	for i := range cfg.Outputs {
+		o := &cfg.Outputs[i]
 		switch o.Type {
 		case TypeStackdriver:
-			if o.CredentialsFile == "" {
+			if o.Credentials == "" && o.CredentialsFile == "" {
 				return trace.BadParameter(
-					"provide CredentialsFile in LoggingConfig when using %q logging,"+
+					"provide Credentials or CredentialsFile in LoggingConfig when using %q logging,"+
 						" read https://cloud.google.com/logging/docs/agent/authorization for more details.", o.Type)
+			}
+			if o.Credentials != "" && o.CredentialsFile != "" {
+				return trace.BadParameter("provide either Credentials or CredentialsFile, not both for %q logger", o.Type)
+			}
+			if o.CredentialsFile != "" {
+				data, err := ioutil.ReadFile(o.CredentialsFile)
+				if err != nil {
+					return trace.Wrap(trace.ConvertSystemError(err), "could not read credentials file")
+				}
+				o.Credentials = string(data)
 			}
 		case TypeStdout:
 		default:
@@ -123,9 +138,10 @@ func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
 		for _, o := range cfg.Outputs {
 			switch o.Type {
 			case TypeStackdriver:
-				h, err := sdhook.New(
-					sdhook.GoogleServiceAccountCredentialsFile(o.CredentialsFile),
-				)
+				h, err := stack.NewHook(stack.Config{
+					Context: group.Context(),
+					Creds:   []byte(o.Credentials),
+				})
 				if err != nil {
 					return nil, trace.Wrap(err)
 				}

@@ -1,5 +1,9 @@
 # cloud.google.com/go v0.38.0
+cloud.google.com/go/logging
 cloud.google.com/go/compute/metadata
+cloud.google.com/go/internal/version
+cloud.google.com/go/logging/apiv2
+cloud.google.com/go/logging/internal
 # github.com/Microsoft/go-winio v0.4.13-0.20190408173621-84b4ab48a507
 github.com/Microsoft/go-winio
 # github.com/Microsoft/hcsshim v0.8.5
@@ -111,10 +115,6 @@ github.com/docker/go-units
 github.com/docker/libnetwork/resolvconf
 github.com/docker/libnetwork/resolvconf/dns
 github.com/docker/libnetwork/types
-# github.com/facebookgo/stack v0.0.0-20160209184415-751773369052
-github.com/facebookgo/stack
-# github.com/fluent/fluent-logger-golang v1.4.0
-github.com/fluent/fluent-logger-golang/fluent
 # github.com/fsnotify/fsnotify v1.4.7
 github.com/fsnotify/fsnotify
 # github.com/gofrs/flock v0.7.0
@@ -130,9 +130,12 @@ github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 # github.com/golang/protobuf v1.3.1
 github.com/golang/protobuf/ptypes/timestamp
 github.com/golang/protobuf/proto
-github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes
+github.com/golang/protobuf/ptypes/struct
+github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes/duration
+github.com/golang/protobuf/ptypes/empty
+github.com/golang/protobuf/protoc-gen-go/descriptor
 # github.com/google/go-github v17.0.0+incompatible
 github.com/google/go-github/github
 # github.com/google/go-querystring v1.0.0
@@ -141,6 +144,8 @@ github.com/google/go-querystring/query
 github.com/google/shlex
 # github.com/google/uuid v1.0.0
 github.com/google/uuid
+# github.com/googleapis/gax-go/v2 v2.0.4
+github.com/googleapis/gax-go/v2
 # github.com/gravitational/trace v0.0.0-20190612100216-931bb2abd388
 github.com/gravitational/trace
 # github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645
@@ -155,14 +160,6 @@ github.com/ishidawataru/sctp
 github.com/jaguilar/vt100
 # github.com/jonboulle/clockwork v0.1.0
 github.com/jonboulle/clockwork
-# github.com/knq/jwt v0.0.0-20180925223530-fc44a4704737
-github.com/knq/jwt/gserviceaccount
-github.com/knq/jwt
-github.com/knq/jwt/bearer
-# github.com/knq/pemutil v0.0.0-20181215144041-fb6fad722528
-github.com/knq/pemutil
-# github.com/knq/sdhook v0.0.0-20190622001945-6b499b9e5467
-github.com/knq/sdhook
 # github.com/konsorten/go-windows-terminal-sequences v1.0.2
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/mitchellh/hashstructure v1.0.0
@@ -277,8 +274,6 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
-# github.com/philhofer/fwd v1.0.0
-github.com/philhofer/fwd
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
 # github.com/shurcooL/githubv4 v0.0.0-20190625031733-ee671ab25ff0
@@ -291,8 +286,6 @@ github.com/shurcooL/graphql/internal/jsonutil
 github.com/sirupsen/logrus
 # github.com/syndtr/gocapability v0.0.0-20180916011248-d98352740cb2
 github.com/syndtr/gocapability/capability
-# github.com/tinylib/msgp v1.1.0
-github.com/tinylib/msgp/msgp
 # github.com/tonistiigi/fsutil v0.0.0-20190327153851-3bbb99cdbd76
 github.com/tonistiigi/fsutil/types
 github.com/tonistiigi/fsutil
@@ -302,21 +295,22 @@ github.com/tonistiigi/units
 # go.etcd.io/bbolt v1.3.2
 go.etcd.io/bbolt
 # go.opencensus.io v0.21.0
+go.opencensus.io/plugin/ocgrpc
 go.opencensus.io/plugin/ochttp
-go.opencensus.io/plugin/ochttp/propagation/b3
+go.opencensus.io/metric/metricdata
 go.opencensus.io/stats
 go.opencensus.io/stats/view
 go.opencensus.io/tag
 go.opencensus.io/trace
 go.opencensus.io/trace/propagation
-go.opencensus.io/metric/metricdata
+go.opencensus.io/plugin/ochttp/propagation/b3
+go.opencensus.io/resource
 go.opencensus.io/stats/internal
 go.opencensus.io/internal/tagencoding
 go.opencensus.io/metric/metricproducer
 go.opencensus.io/internal
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/tracestate
-go.opencensus.io/resource
 go.opencensus.io
 # golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
 golang.org/x/crypto/ssh/terminal
@@ -349,14 +343,13 @@ golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20181108054448-85acf8d2951c
 golang.org/x/time/rate
 # google.golang.org/api v0.5.0
-google.golang.org/api/clouderrorreporting/v1beta1
-google.golang.org/api/logging/v2
-google.golang.org/api/gensupport
-google.golang.org/api/googleapi
 google.golang.org/api/option
-google.golang.org/api/transport/http
-google.golang.org/api/googleapi/internal/uritemplates
+google.golang.org/api/support/bundler
 google.golang.org/api/internal
+google.golang.org/api/iterator
+google.golang.org/api/transport
+google.golang.org/api/transport/grpc
+google.golang.org/api/transport/http
 google.golang.org/api/googleapi/transport
 google.golang.org/api/transport/http/internal/propagation
 # google.golang.org/appengine v1.5.0
@@ -370,8 +363,19 @@ google.golang.org/appengine/internal/base
 google.golang.org/appengine/internal/datastore
 google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
+google.golang.org/appengine/socket
+google.golang.org/appengine/internal/socket
 # google.golang.org/genproto v0.0.0-20190508193815-b515fa19cec8
 google.golang.org/genproto/googleapis/rpc/status
+google.golang.org/genproto/googleapis/api/monitoredres
+google.golang.org/genproto/googleapis/logging/type
+google.golang.org/genproto/googleapis/logging/v2
+google.golang.org/genproto/googleapis/api/label
+google.golang.org/genproto/googleapis/api/annotations
+google.golang.org/genproto/googleapis/api/distribution
+google.golang.org/genproto/googleapis/api/metric
+google.golang.org/genproto/protobuf/field_mask
+google.golang.org/genproto/googleapis/api
 # google.golang.org/grpc v1.20.1
 google.golang.org/grpc
 google.golang.org/grpc/metadata
@@ -407,3 +411,4 @@ google.golang.org/grpc/credentials/internal
 google.golang.org/grpc/balancer/base
 google.golang.org/grpc/binarylog/grpc_binarylog_v1
 google.golang.org/grpc/internal/syscall
+google.golang.org/grpc/credentials/oauth

@@ -150,7 +150,7 @@ func (r *RepoWatcher) pollRepo(ctx context.Context) {
 			}
 			afterDate = pulls[len(pulls)-1].LastUpdated()
 			for _, pr := range pulls {
-				event := &RepoEvent{PR: pr}
+				event := &RepoEvent{PR: pr, created: time.Now().UTC()}
 				select {
 				case r.eventsC <- event:
 					log.Debugf("-> %v", event)
@@ -196,7 +196,13 @@ func (r *RepoWatcher) Done() <-chan struct{} {
 }
 
 type RepoEvent struct {
-	PR PullRequest
+	PR      PullRequest
+	created time.Time
+}
+
+// Created returns a time when the event was originated
+func (r *RepoEvent) Created() time.Time {
+	return r.created
 }
 
 // Wrap adds metadata to the execution context

@@ -3,7 +3,7 @@ package force
 import (
 	"fmt"
 	"os/exec"
-	//	log "github.com/sirupsen/logrus"
+	"time"
 )
 
 // Exit exits, if the exit code has been supplied
@@ -17,7 +17,9 @@ func Exit() (Action, error) {
 type GetEventFunc func(ctx ExecutionContext) Event
 
 func GetExitEventFromContext(ctx ExecutionContext) Event {
-	event := &LocalExitEvent{}
+	event := &LocalExitEvent{
+		created: time.Now().UTC(),
+	}
 	err := Error(ctx)
 	if err == nil {
 		return event
@@ -58,7 +60,12 @@ type ExitEvent interface {
 }
 
 type LocalExitEvent struct {
-	Code int
+	Code    int
+	created time.Time
+}
+
+func (e LocalExitEvent) Created() time.Time {
+	return e.created
 }
 
 func (e LocalExitEvent) ExitCode() int {

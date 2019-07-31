@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/gravitational/trace"
 )
@@ -103,6 +104,8 @@ func (s *Spec) CheckAndSetDefaults() error {
 type Event interface {
 	// Wrap adds metadada to the execution context
 	Wrap(ctx ExecutionContext) ExecutionContext
+	// Created returns time when the event was originated in the system
+	Created() time.Time
 }
 
 // ExecutionContext represents an execution context

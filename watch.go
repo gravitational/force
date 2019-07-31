@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gravitational/trace"
@@ -39,6 +40,7 @@ func (f *FSNotify) String() string {
 }
 
 func (f *FSNotify) Start(pctx context.Context) error {
+	log := Log(pctx)
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return trace.Wrap(err)
@@ -54,10 +56,10 @@ func (f *FSNotify) Start(pctx context.Context) error {
 					return
 				}
 				if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Remove == fsnotify.Remove {
-					fevent := &FSNotifyEvent{Event: event}
+					fevent := &FSNotifyEvent{Event: event, created: time.Now().UTC()}
 					select {
 					case f.eventsC <- fevent:
-						fmt.Printf("-> %v\n", fevent)
+						log.Debugf("Sending %v.", fevent)
 					case <-pctx.Done():
 
 						return
@@ -91,6 +93,11 @@ func (f *FSNotify) Done() <-chan struct{} {
 
 type FSNotifyEvent struct {
 	fsnotify.Event
+	created time.Time
+}
+
+func (f *FSNotifyEvent) Created() time.Time {
+	return f.created
 }
 
 func (f *FSNotifyEvent) String() string {

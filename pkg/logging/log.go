@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/gravitational/force"
 	"github.com/gravitational/force/pkg/logging/stack"
@@ -105,7 +106,12 @@ func (l *Logger) URL(ctx force.ExecutionContext) string {
 				return ""
 			}
 			q := u.Query()
-			q.Set("advancedFilter", fmt.Sprintf("labels.%v=%v", force.KeyID, ctx.ID()))
+			q.Set("advancedFilter",
+				fmt.Sprintf(
+					"labels.%v=%v AND timestamp >= %q",
+					force.KeyID, ctx.ID(),
+					ctx.Event().Created().Format(time.RFC3339),
+				))
 			u.RawQuery = q.Encode()
 			return u.String()
 		}

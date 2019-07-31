@@ -2,6 +2,7 @@ package force
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -26,7 +27,7 @@ func WithLog(ctx ExecutionContext, log Logger) ExecutionContext {
 }
 
 // Log is a helper function that returns log
-func Log(ctx ExecutionContext) Logger {
+func Log(ctx context.Context) Logger {
 	out := ctx.Value(KeyLog)
 	if out == nil {
 		// this is a fallback so we can avoid loosing logs

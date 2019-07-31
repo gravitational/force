@@ -46,6 +46,10 @@ type OneshotEvent struct {
 	time.Time
 }
 
+func (o *OneshotEvent) Created() time.Time {
+	return o.Time
+}
+
 func (o *OneshotEvent) String() string {
 	return fmt.Sprintf("Oneshot(time=%v)", o.Time)
 }

@@ -16,39 +16,22 @@ func (p *Plugin) PostStatus(status Status) (force.Action, error) {
 		return nil, trace.Wrap(err)
 	}
 	return &PostStatusAction{
-		Status: status,
+		status: status,
 		plugin: p,
 	}, nil
 }
 
-// PostPending updates pull request status
-func (p *Plugin) PostPending() (force.Action, error) {
-	s := Status{State: StatePending}
-	if err := s.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &PostStatusAction{
-		Status: s,
-		plugin: p,
-	}, nil
-}
-
-// PostResult
-func (p *Plugin) PostResult() (force.Action, error) {
-	s := Status{State: StatePending}
-	if err := s.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &PostStatusAction{
-		GetStatusFromContext: true,
-		Status:               s,
-		plugin:               p,
+// PostStatusOf executes inner action and posts result of it's execution
+// to github
+func (p *Plugin) PostStatusOf(actions ...force.Action) (force.Action, error) {
+	return &PostStatusOfAction{
+		actions: actions,
+		plugin:  p,
 	}, nil
 }
 
 type PostStatusAction struct {
-	GetStatusFromContext bool
-	Status
+	status Status
 	plugin *Plugin
 }
 
@@ -61,19 +44,6 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) (force.ExecutionConte
 	}
 
 	log := force.Log(ctx)
-
-	status := p.Status
-	if p.GetStatusFromContext {
-		err := force.Error(ctx)
-		if err == nil {
-			status.State = StateSuccess
-			status.Description = "CI executed successfully"
-		} else {
-			status.State = StateFailure
-			status.Description = err.Error()
-		}
-		log.Debugf("Getting status from execution context: %v.", status)
-	}
 	commitRef := event.PR.LastCommit.OID
 
 	_, _, err := p.plugin.client.V3.Repositories.CreateStatus(
@@ -82,16 +52,60 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) (force.ExecutionConte
 		p.plugin.client.Repository,
 		commitRef,
 		&github.RepoStatus{
-			State:       github.String(status.State),
+			State:       github.String(p.status.State),
 			TargetURL:   github.String(log.URL(ctx)),
-			Description: github.String(status.Description),
-			Context:     github.String(status.Context),
+			Description: github.String(p.status.Description),
+			Context:     github.String(p.status.Context),
 		},
 	)
 
-	log.Debugf("Posted %v -> %v.", status, err)
+	log.Debugf("Posted %v -> %v.", p.status, err)
 
 	return nil, trace.Wrap(err)
+}
+
+// PostStatusOfAction executes an action and posts its status
+// to the github
+type PostStatusOfAction struct {
+	plugin  *Plugin
+	actions []force.Action
+}
+
+func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
+	// First, post pending status
+	pending := Status{State: StatePending}
+	if err := pending.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	postPending := &PostStatusAction{
+		status: pending,
+		plugin: p.plugin,
+	}
+
+	// run the inner action
+	var err error
+	ctx, err = force.Run(ctx, postPending)
+	if err != nil {
+		return ctx, trace.Wrap(err)
+	}
+
+	// Post result of the execution of all actions in a sequence
+	result := Status{State: StateSuccess, Description: "CI executed successfully"}
+	if err := result.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	ctx, err = force.Run(ctx, force.Sequence(p.actions...))
+	if err != nil {
+		result.State = StateFailure
+		result.Description = err.Error()
+	}
+
+	postResult := &PostStatusAction{
+		status: result,
+		plugin: p.plugin,
+	}
+	ctx, err = force.Run(ctx, postResult)
+	return ctx, trace.Wrap(err)
 }
 
 type Status struct {

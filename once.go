@@ -6,6 +6,59 @@ import (
 	"time"
 )
 
+// Duplicate creates a channel that sends the same event
+// count times, used for testing purposes
+func Duplicate(c Channel, count int) Channel {
+	return &DuplicateChannel{
+		in:      c,
+		eventsC: make(chan Event, 1024),
+		count:   count,
+	}
+}
+
+//
+type DuplicateChannel struct {
+	in      Channel
+	eventsC chan Event
+	count   int
+}
+
+func (d *DuplicateChannel) String() string {
+	return fmt.Sprintf("Duplicate(count=%v)", d.count)
+}
+
+func (d *DuplicateChannel) Start(pctx context.Context) error {
+	go func() {
+		for {
+			select {
+			case <-pctx.Done():
+				return
+			case <-d.in.Done():
+				return
+			case event := <-d.in.Events():
+				for i := 0; i < d.count; i++ {
+					select {
+					case <-pctx.Done():
+						return
+					case <-d.in.Done():
+						return
+					case d.eventsC <- event:
+					}
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+func (d *DuplicateChannel) Done() <-chan struct{} {
+	return d.in.Done()
+}
+
+func (d *DuplicateChannel) Events() <-chan Event {
+	return d.eventsC
+}
+
 // Oneshot returns a channel that fires once
 func Oneshot() (Channel, error) {
 	return &OneshotChannel{

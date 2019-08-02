@@ -57,8 +57,7 @@ func Parse(inputs []string, runner *Runner) error {
 			"Setup":        NewGroup(runner),
 			"PullRequests": github.NewWatch(runner),
 			"PostStatus":   github.NewPostStatus(runner),
-			"Pending":      github.NewPostPending(runner),
-			"Result":       github.NewPostResult(runner),
+			"PostStatusOf": github.NewPostStatusOf(runner),
 
 			// Container Builder functions
 			"Builder": builder.NewPlugin(runner),

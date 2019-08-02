@@ -51,17 +51,25 @@ type SequenceAction struct {
 	Actions []Action
 }
 
+// Run is a helper function that runs action and updates a context with an error
+func Run(ctx ExecutionContext, action Action) (ExecutionContext, error) {
+	newCtx, err := action.Run(ctx)
+	if newCtx != nil {
+		ctx = newCtx
+	}
+	if err != nil {
+		ctx = WithError(ctx, err)
+		return ctx, trace.Wrap(err)
+	}
+	return ctx, nil
+}
+
 func (s *SequenceAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
 	var err error
 	for _, action := range s.Actions {
-		newCtx, err := action.Run(ctx)
-		// context was updated, with some metadata, update it
-		if newCtx != nil {
-			ctx = newCtx
-		}
+		ctx, err = Run(ctx, action)
 		// error is not nil, stop sequence execution
 		if err != nil {
-			ctx = WithError(ctx, err)
 			return ctx, trace.Wrap(err)
 		}
 	}
@@ -82,15 +90,7 @@ type ContinueAction struct {
 
 func (s *ContinueAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
 	for _, action := range s.Actions {
-		newCtx, err := action.Run(ctx)
-		// context was updated, with some metadata, update it
-		if newCtx != nil {
-			ctx = newCtx
-		}
-		// error is not nil, but continue sequence execution
-		if err != nil {
-			ctx = WithError(ctx, err)
-		}
+		ctx, _ = Run(ctx, action)
 	}
 	return ctx, Error(ctx)
 }

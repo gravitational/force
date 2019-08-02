@@ -77,6 +77,18 @@ func NewWatch(group force.Group) func() (force.Channel, error) {
 	}
 }
 
+// NewPostStatusOf returns a function that wraps underlying action
+// and tracks the result, posting the result back
+func NewPostStatusOf(group force.Group) func(...force.Action) (force.Action, error) {
+	return func(inner ...force.Action) (force.Action, error) {
+		pluginI, ok := group.GetVar(GithubPlugin)
+		if !ok {
+			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
+		}
+		return pluginI.(*Plugin).PostStatusOf(inner...)
+	}
+}
+
 // NewPostStatus posts new status
 func NewPostStatus(group force.Group) func(Status) (force.Action, error) {
 	return func(status Status) (force.Action, error) {
@@ -85,28 +97,6 @@ func NewPostStatus(group force.Group) func(Status) (force.Action, error) {
 			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
 		}
 		return pluginI.(*Plugin).PostStatus(status)
-	}
-}
-
-// NewPostPending posts pending status
-func NewPostPending(group force.Group) func() (force.Action, error) {
-	return func() (force.Action, error) {
-		pluginI, ok := group.GetVar(GithubPlugin)
-		if !ok {
-			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
-		}
-		return pluginI.(*Plugin).PostPending()
-	}
-}
-
-// NewPostResult posts result
-func NewPostResult(group force.Group) func() (force.Action, error) {
-	return func() (force.Action, error) {
-		pluginI, ok := group.GetVar(GithubPlugin)
-		if !ok {
-			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
-		}
-		return pluginI.(*Plugin).PostResult()
 	}
 }
 

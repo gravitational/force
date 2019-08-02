@@ -3,44 +3,34 @@ Process(Spec{
 	// Name is used for reporting and debugging purposes
 	Name: "force-ci",
 	// Watch pull requests
+	//	Watch: Duplicate(PullRequests(), 2),
 	Watch: PullRequests(),
 	// Trigger dockerized build, continue
 	// means that all steps will be executed in sequence,
 	// and the next step will be run even if the previous has resulted
 	// in error
-	Run: Continue(
-		// Pending sets github "Pending" status
-		Pending(),
-		// Push should be only done if build is successfull,
-		// therefore wrap it with sequence, sequence means
-		// that the steps will be executed in sequence,
-		// but the next step will be executed only if the
-		// previous has resulted in success
-		Sequence(
-			// Build builds dockerfile and tags it in the local storage
-			Build(Image{
-				Tag: `gcr.io/kubeadm-167321/example:latest`,
-				// Secrets are build secrets exposed to docker
-				// container during the run
-				Secrets: []Secret{
-					{
-						ID: "logging-creds",
-						File: ExpectEnv("LOGGING_CREDENTIALS"),
-					},
+	Run: PostStatusOf(
+		// Build builds dockerfile and tags it in the local storage
+		Build(Image{
+			Tag: `gcr.io/kubeadm-167321/example:latest`,
+			// Secrets are build secrets exposed to docker
+			// container during the run
+			Secrets: []Secret{
+				{
+					ID: "logging-creds",
+					File: ExpectEnv("LOGGING_CREDENTIALS"),
 				},
-				// Args are build arguments
-				Args: []Arg{
-					{
-						// FORCE_ID is a force run ID
-						Key: "FORCE_ID",
-						Val: ID(),
-					},
+			},
+			// Args are build arguments
+			Args: []Arg{
+				{
+					// FORCE_ID is a force run ID
+					Key: "FORCE_ID",
+					Val: ID(),
 				},
-			}),
-			// Push the built image
-			Push(Image{Tag: `gcr.io/kubeadm-167321/example:latest`}),
-		),
-		// Result posts github result
-		Result(),
+			},
+		}),
+		// Push the built image
+		Push(Image{Tag: `gcr.io/kubeadm-167321/example:latest`}),
 	),
 })

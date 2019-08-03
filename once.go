@@ -28,6 +28,7 @@ func (d *DuplicateChannel) String() string {
 }
 
 func (d *DuplicateChannel) Start(pctx context.Context) error {
+	go d.in.Start(pctx)
 	go func() {
 		for {
 			select {

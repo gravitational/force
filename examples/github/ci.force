@@ -3,8 +3,8 @@ Process(Spec{
 	// Name is used for reporting and debugging purposes
 	Name: "force-ci",
 	// Watch pull requests
-	//	Watch: Duplicate(PullRequests(), 2),
-	Watch: PullRequests(),
+	Watch: Duplicate(PullRequests(), 4),
+//	Watch: PullRequests(),
 	// Trigger dockerized build, continue
 	// means that all steps will be executed in sequence,
 	// and the next step will be run even if the previous has resulted
@@ -32,5 +32,7 @@ Process(Spec{
 		}),
 		// Push the built image
 		Push(Image{Tag: `gcr.io/kubeadm-167321/example:latest`}),
+		// Prune the build cache
+		Prune(),
 	),
 })

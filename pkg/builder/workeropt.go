@@ -45,6 +45,7 @@ import (
 	"github.com/moby/buildkit/executor/runcexecutor"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
 	"github.com/moby/buildkit/util/binfmt_misc"
+	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/network"
 	"github.com/moby/buildkit/util/resolver"
 	"github.com/moby/buildkit/util/throttle"
@@ -90,7 +91,12 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 			Rootless:    unprivileged,
 			ProcessMode: processMode(),
 		}
-		exe, err = runcexecutor.New(exeOpt, network.Default())
+		// generates a proviers set with host network used by default
+		providers, err := network.Providers(network.Opt{Mode: "host"})
+		if err != nil {
+			return opt, trace.Wrap(err)
+		}
+		exe, err = runcexecutor.New(exeOpt, providers)
 		if err != nil {
 			return opt, trace.Wrap(err)
 		}
@@ -150,6 +156,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 	}
 
 	opt = base.WorkerOpt{
+		//
 		ID:            id,
 		Labels:        xlabels,
 		MetadataStore: md,
@@ -162,6 +169,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 		ImageStore:         imageStore,
 		Platforms:          supportedPlatforms,
 		ResolveOptionsFunc: resolver.NewResolveOptionsFunc(nil),
+		LeaseManager:       leaseutil.WithNamespace(leaseutil.NewManager(mdb), "buildkit"),
 	}
 
 	return opt, err

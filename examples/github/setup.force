@@ -29,7 +29,7 @@ Setup(
 	// and stdout as well, with the current implementation,
 	// it should go first so other plugins can use it
 	Log(LogConfig{
-		Level: "info",
+		Level: "debug",
 		Outputs: []Output{
 			{
 				Type: "stdout",

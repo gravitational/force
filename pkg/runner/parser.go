@@ -51,6 +51,7 @@ func Parse(inputs []string, runner *Runner) error {
 				}
 				return val, nil
 			},
+			"Duplicate": force.Duplicate,
 
 			// Github functions
 			"Github":       github.NewPlugin(runner),
@@ -63,6 +64,7 @@ func Parse(inputs []string, runner *Runner) error {
 			"Builder": builder.NewPlugin(runner),
 			"Build":   builder.NewBuild(runner),
 			"Push":    builder.NewPush(runner),
+			"Prune":   builder.NewPrune(runner),
 
 			// Log functions
 			"Log": logging.NewPlugin(runner),

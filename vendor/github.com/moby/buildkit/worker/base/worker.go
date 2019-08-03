@@ -7,11 +7,13 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/diff"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/rootfs"
 	cdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/docker/docker/pkg/idtools"
@@ -40,6 +42,7 @@ import (
 	"github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/source/local"
 	"github.com/moby/buildkit/util/contentutil"
+	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/progress"
 	"github.com/moby/buildkit/util/resolver"
 	"github.com/moby/buildkit/worker"
@@ -49,6 +52,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -72,6 +76,7 @@ type WorkerOpt struct {
 	ImageStore         images.Store // optional
 	ResolveOptionsFunc resolver.ResolveOptionsFunc
 	IdentityMapping    *idtools.IdentityMapping
+	LeaseManager       leases.Manager
 }
 
 // Worker is a local worker instance with dedicated snapshotter, cache, and so on.
@@ -113,6 +118,7 @@ func NewWorker(opt WorkerOpt) (*Worker, error) {
 		ImageStore:    opt.ImageStore,
 		CacheAccessor: cm,
 		ResolverOpt:   opt.ResolveOptionsFunc,
+		LeaseManager:  opt.LeaseManager,
 	})
 	if err != nil {
 		return nil, err
@@ -213,6 +219,46 @@ func (w *Worker) ResolveOp(v solver.Vertex, s frontend.FrontendLLBBridge, sm *se
 	return nil, errors.Errorf("could not resolve %v", v)
 }
 
+func (w *Worker) PruneCacheMounts(ctx context.Context, ids []string) error {
+	mu := ops.CacheMountsLocker()
+	mu.Lock()
+	defer mu.Unlock()
+
+	for _, id := range ids {
+		id = "cache-dir:" + id
+		sis, err := w.MetadataStore.Search(id)
+		if err != nil {
+			return err
+		}
+		for _, si := range sis {
+			for _, k := range si.Indexes() {
+				if k == id || strings.HasPrefix(k, id+":") {
+					if siCached := w.CacheManager.Metadata(si.ID()); siCached != nil {
+						si = siCached
+					}
+					if err := cache.CachePolicyDefault(si); err != nil {
+						return err
+					}
+					si.Queue(func(b *bolt.Bucket) error {
+						return si.SetValue(b, k, nil)
+					})
+					if err := si.Commit(); err != nil {
+						return err
+					}
+					// if ref is unused try to clean it up right away by releasing it
+					if mref, err := w.CacheManager.GetMutable(ctx, si.ID()); err == nil {
+						go mref.Release(context.TODO())
+					}
+					break
+				}
+			}
+		}
+	}
+
+	ops.ClearActiveCacheMounts()
+	return nil
+}
+
 func (w *Worker) ResolveImageConfig(ctx context.Context, ref string, opt gw.ResolveImageConfigOpt, sm *session.Manager) (digest.Digest, []byte, error) {
 	// ImageSource is typically source/containerimage
 	resolveImageConfig, ok := w.ImageSource.(resolveImageConfig)
@@ -251,6 +297,7 @@ func (w *Worker) Exporter(name string, sm *session.Manager) (exporter.Exporter, 
 			SessionManager: sm,
 			ImageWriter:    w.imageWriter,
 			ResolverOpt:    w.ResolveOptionsFunc,
+			LeaseManager:   w.LeaseManager,
 		})
 	case client.ExporterLocal:
 		return localexporter.New(localexporter.Opt{
@@ -265,12 +312,14 @@ func (w *Worker) Exporter(name string, sm *session.Manager) (exporter.Exporter, 
 			SessionManager: sm,
 			ImageWriter:    w.imageWriter,
 			Variant:        ociexporter.VariantOCI,
+			LeaseManager:   w.LeaseManager,
 		})
 	case client.ExporterDocker:
 		return ociexporter.New(ociexporter.Opt{
 			SessionManager: sm,
 			ImageWriter:    w.imageWriter,
 			Variant:        ociexporter.VariantDocker,
+			LeaseManager:   w.LeaseManager,
 		})
 	default:
 		return nil, errors.Errorf("exporter %q could not be found", name)
@@ -331,6 +380,12 @@ func getCreatedTimes(ref cache.ImmutableRef) (out []time.Time) {
 }
 
 func (w *Worker) FromRemote(ctx context.Context, remote *solver.Remote) (cache.ImmutableRef, error) {
+	ctx, done, err := leaseutil.WithLease(ctx, w.LeaseManager)
+	if err != nil {
+		return nil, err
+	}
+	defer done(ctx)
+
 	eg, gctx := errgroup.WithContext(ctx)
 	for _, desc := range remote.Descriptors {
 		func(desc ocispec.Descriptor) {
@@ -345,14 +400,19 @@ func (w *Worker) FromRemote(ctx context.Context, remote *solver.Remote) (cache.I
 		return nil, err
 	}
 
-	cs, release := snapshot.NewContainerdSnapshotter(w.Snapshotter)
+	cd, release := snapshot.NewContainerdSnapshotter(w.Snapshotter)
 	defer release()
 
 	unpackProgressDone := oneOffProgress(ctx, "unpacking")
-	chainIDs, err := w.unpack(ctx, remote.Descriptors, cs)
+	chainIDs, refs, err := w.unpack(ctx, w.CacheManager, remote.Descriptors, cd)
 	if err != nil {
 		return nil, unpackProgressDone(err)
 	}
+	defer func() {
+		for _, ref := range refs {
+			ref.Release(context.TODO())
+		}
+	}()
 	unpackProgressDone(nil)
 
 	for i, chainID := range chainIDs {
@@ -378,31 +438,46 @@ func (w *Worker) FromRemote(ctx context.Context, remote *solver.Remote) (cache.I
 	return nil, errors.Errorf("unreachable")
 }
 
-func (w *Worker) unpack(ctx context.Context, descs []ocispec.Descriptor, s cdsnapshot.Snapshotter) ([]string, error) {
+func (w *Worker) unpack(ctx context.Context, cm cache.Manager, descs []ocispec.Descriptor, s cdsnapshot.Snapshotter) (ids []string, refs []cache.ImmutableRef, err error) {
+	defer func() {
+		if err != nil {
+			for _, r := range refs {
+				r.Release(context.TODO())
+			}
+		}
+	}()
+
 	layers, err := getLayers(ctx, descs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var chain []digest.Digest
 	for _, layer := range layers {
-		if _, err := rootfs.ApplyLayer(ctx, layer, chain, s, w.Applier); err != nil {
-			return nil, err
-		}
-		chain = append(chain, layer.Diff.Digest)
+		newChain := append(chain, layer.Diff.Digest)
 
-		chainID := ociidentity.ChainID(chain)
+		chainID := ociidentity.ChainID(newChain)
+		ref, err := cm.Get(ctx, string(chainID))
+		if err == nil {
+			refs = append(refs, ref)
+		} else {
+			if _, err := rootfs.ApplyLayer(ctx, layer, chain, s, w.Applier); err != nil {
+				return nil, nil, err
+			}
+		}
+		chain = newChain
+
 		if err := w.Snapshotter.SetBlob(ctx, string(chainID), layer.Diff.Digest, layer.Blob.Digest); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	ids := make([]string, len(chain))
+	ids = make([]string, len(chain))
 	for i := range chain {
 		ids[i] = string(ociidentity.ChainID(chain[:i+1]))
 	}
 
-	return ids, nil
+	return ids, refs, nil
 }
 
 // Labels returns default labels

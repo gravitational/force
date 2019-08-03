@@ -24,7 +24,7 @@ github.com/Microsoft/hcsshim/internal/longpath
 github.com/Microsoft/hcsshim/internal/safefile
 # github.com/containerd/console v0.0.0-20181022165439-0650fd9eeb50
 github.com/containerd/console
-# github.com/containerd/containerd v1.3.0-0.20190426060238-3a3f0aac8819
+# github.com/containerd/containerd v1.3.0-0.20190507210959-7c1e88399ec0
 github.com/containerd/containerd/content/local
 github.com/containerd/containerd/diff/apply
 github.com/containerd/containerd/diff/walking
@@ -62,10 +62,10 @@ github.com/containerd/containerd/api/services/content/v1
 github.com/containerd/containerd/content/proxy
 github.com/containerd/containerd/services/content/contentserver
 github.com/containerd/containerd/reference
+github.com/containerd/containerd/remotes/docker/schema1
 github.com/containerd/containerd/version
 github.com/containerd/containerd/images/oci
 github.com/containerd/containerd/events
-github.com/containerd/containerd/remotes/docker/schema1
 # github.com/containerd/continuity v0.0.0-20190426062206-aaeac12a7ffc
 github.com/containerd/continuity
 github.com/containerd/continuity/fs
@@ -75,12 +75,21 @@ github.com/containerd/continuity/pathdriver
 github.com/containerd/continuity/proto
 github.com/containerd/continuity/sysx
 github.com/containerd/continuity/syscallx
+# github.com/containerd/go-cni v0.0.0-20190610170741-5a4663dad645
+github.com/containerd/go-cni
 # github.com/containerd/go-runc v0.0.0-20180907222934-5a6d9f37cfa3
 github.com/containerd/go-runc
 # github.com/containerd/ttrpc v0.0.0-20190411181408-699c4e40d1e7
 github.com/containerd/ttrpc
 # github.com/containerd/typeurl v0.0.0-20180627222232-a93fcdb778cd
 github.com/containerd/typeurl
+# github.com/containernetworking/cni v0.6.1-0.20180218032124-142cde0c766c
+github.com/containernetworking/cni/libcni
+github.com/containernetworking/cni/pkg/types
+github.com/containernetworking/cni/pkg/types/current
+github.com/containernetworking/cni/pkg/invoke
+github.com/containernetworking/cni/pkg/version
+github.com/containernetworking/cni/pkg/types/020
 # github.com/cyphar/filepath-securejoin v0.2.2
 github.com/cyphar/filepath-securejoin
 # github.com/docker/distribution v2.7.1-0.20190205005809-0d3efadf0154+incompatible
@@ -111,10 +120,10 @@ github.com/docker/go-connections/nat
 github.com/docker/go-events
 # github.com/docker/go-units v0.3.3
 github.com/docker/go-units
-# github.com/docker/libnetwork v0.0.0-20180913200009-36d3bed0e9f4
+# github.com/docker/libnetwork v0.8.0-dev.2.0.20190604151032-3c26b4e7495e
 github.com/docker/libnetwork/resolvconf
-github.com/docker/libnetwork/resolvconf/dns
 github.com/docker/libnetwork/types
+github.com/docker/libnetwork/resolvconf/dns
 # github.com/fsnotify/fsnotify v1.4.7
 github.com/fsnotify/fsnotify
 # github.com/gofrs/flock v0.7.0
@@ -164,7 +173,7 @@ github.com/jonboulle/clockwork
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/mitchellh/hashstructure v1.0.0
 github.com/mitchellh/hashstructure
-# github.com/moby/buildkit v0.5.1
+# github.com/moby/buildkit v0.6.0
 github.com/moby/buildkit/api/services/control
 github.com/moby/buildkit/cache/metadata
 github.com/moby/buildkit/client
@@ -211,6 +220,7 @@ github.com/moby/buildkit/control/gateway
 github.com/moby/buildkit/exporter
 github.com/moby/buildkit/solver
 github.com/moby/buildkit/solver/llbsolver
+github.com/moby/buildkit/util/imageutil
 github.com/moby/buildkit/cache
 github.com/moby/buildkit/snapshot
 github.com/moby/buildkit/util/flightcontrol
@@ -222,7 +232,6 @@ github.com/moby/buildkit/cache/util
 github.com/moby/buildkit/util/tracing
 github.com/moby/buildkit/session/secrets
 github.com/moby/buildkit/snapshot/blobmapping
-github.com/moby/buildkit/util/imageutil
 github.com/moby/buildkit/util/progress
 github.com/moby/buildkit/cache/blobs
 github.com/moby/buildkit/exporter/containerimage
@@ -237,6 +246,7 @@ github.com/moby/buildkit/source/git
 github.com/moby/buildkit/source/http
 github.com/moby/buildkit/source/local
 github.com/moby/buildkit/util/contentutil
+github.com/moby/buildkit/util/leaseutil
 github.com/moby/buildkit/util/apicaps/pb
 github.com/moby/buildkit/cache/remotecache/v1
 github.com/moby/buildkit/solver/internal/pipe

@@ -54,9 +54,6 @@ func NewBuild(group force.Group) func(Image) (force.Action, error) {
 
 // NewBuild returns new action that builds image based on the spec
 func (b *Builder) NewBuild(img Image) (force.Action, error) {
-	if err := img.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
 	return &BuildAction{
 		Image:   img,
 		Builder: b,
@@ -68,8 +65,8 @@ type BuildAction struct {
 	Image   Image
 }
 
-func (b *BuildAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
-	return ctx, b.Builder.Run(ctx, b.Image)
+func (b *BuildAction) Run(ctx force.ExecutionContext) error {
+	return b.Builder.Run(ctx, b.Image)
 }
 
 func (b *BuildAction) String() string {

@@ -23,8 +23,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Run starts build
 func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
-	if err := img.CheckAndSetDefaults(); err != nil {
+	if err := img.CheckAndSetDefaults(ectx); err != nil {
 		return trace.Wrap(err)
 	}
 
@@ -35,7 +36,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	frontendAttrs := map[string]string{
 		// We use the base for filename here because we already set up the
 		// local dirs which sets the path in createController.
-		"filename": filepath.Base(img.Dockerfile),
+		"filename": filepath.Base(img.Dockerfile.Value(ectx)),
 		"target":   img.Target,
 		"platform": strings.Join(img.Platforms, ","),
 	}
@@ -100,8 +101,8 @@ func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Sessi
 
 	var syncedDirs []filesync.SyncedDir
 	for name, d := range map[string]string{
-		"context":    img.Context,
-		"dockerfile": filepath.Dir(img.Dockerfile),
+		"context":    img.Context.Value(ctx),
+		"dockerfile": filepath.Dir(img.Dockerfile.Value(ctx)),
 	} {
 		syncedDirs = append(syncedDirs, filesync.SyncedDir{Name: name, Dir: d})
 	}

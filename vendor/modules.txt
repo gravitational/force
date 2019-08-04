@@ -124,6 +124,13 @@ github.com/docker/go-units
 github.com/docker/libnetwork/resolvconf
 github.com/docker/libnetwork/types
 github.com/docker/libnetwork/resolvconf/dns
+# github.com/emirpasic/gods v1.12.0
+github.com/emirpasic/gods/trees/binaryheap
+github.com/emirpasic/gods/containers
+github.com/emirpasic/gods/lists/arraylist
+github.com/emirpasic/gods/trees
+github.com/emirpasic/gods/utils
+github.com/emirpasic/gods/lists
 # github.com/fsnotify/fsnotify v1.4.7
 github.com/fsnotify/fsnotify
 # github.com/gofrs/flock v0.7.0
@@ -167,10 +174,16 @@ github.com/hashicorp/golang-lru/simplelru
 github.com/ishidawataru/sctp
 # github.com/jaguilar/vt100 v0.0.0-20150826170717-2703a27b14ea => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305
 github.com/jaguilar/vt100
+# github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
+github.com/jbenet/go-context/io
 # github.com/jonboulle/clockwork v0.1.0
 github.com/jonboulle/clockwork
+# github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd
+github.com/kevinburke/ssh_config
 # github.com/konsorten/go-windows-terminal-sequences v1.0.2
 github.com/konsorten/go-windows-terminal-sequences
+# github.com/mitchellh/go-homedir v1.1.0
+github.com/mitchellh/go-homedir
 # github.com/mitchellh/hashstructure v1.0.0
 github.com/mitchellh/hashstructure
 # github.com/moby/buildkit v0.6.0
@@ -194,6 +207,7 @@ github.com/moby/buildkit/session/testutil
 github.com/moby/buildkit/snapshot/containerd
 github.com/moby/buildkit/solver/bboltcachestorage
 github.com/moby/buildkit/util/binfmt_misc
+github.com/moby/buildkit/util/leaseutil
 github.com/moby/buildkit/util/network
 github.com/moby/buildkit/util/progress/progressui
 github.com/moby/buildkit/util/push
@@ -246,7 +260,6 @@ github.com/moby/buildkit/source/git
 github.com/moby/buildkit/source/http
 github.com/moby/buildkit/source/local
 github.com/moby/buildkit/util/contentutil
-github.com/moby/buildkit/util/leaseutil
 github.com/moby/buildkit/util/apicaps/pb
 github.com/moby/buildkit/cache/remotecache/v1
 github.com/moby/buildkit/solver/internal/pipe
@@ -286,6 +299,8 @@ github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
 # github.com/pkg/errors v0.8.1
 github.com/pkg/errors
+# github.com/sergi/go-diff v1.0.0
+github.com/sergi/go-diff/diffmatchpatch
 # github.com/shurcooL/githubv4 v0.0.0-20190625031733-ee671ab25ff0
 github.com/shurcooL/githubv4
 # github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f
@@ -294,6 +309,11 @@ github.com/shurcooL/graphql/ident
 github.com/shurcooL/graphql/internal/jsonutil
 # github.com/sirupsen/logrus v1.4.1
 github.com/sirupsen/logrus
+# github.com/src-d/gcfg v1.4.0
+github.com/src-d/gcfg
+github.com/src-d/gcfg/scanner
+github.com/src-d/gcfg/token
+github.com/src-d/gcfg/types
 # github.com/syndtr/gocapability v0.0.0-20180916011248-d98352740cb2
 github.com/syndtr/gocapability/capability
 # github.com/tonistiigi/fsutil v0.0.0-20190327153851-3bbb99cdbd76
@@ -302,6 +322,8 @@ github.com/tonistiigi/fsutil
 github.com/tonistiigi/fsutil/copy
 # github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 github.com/tonistiigi/units
+# github.com/xanzy/ssh-agent v0.2.1
+github.com/xanzy/ssh-agent
 # go.etcd.io/bbolt v1.3.2
 go.etcd.io/bbolt
 # go.opencensus.io v0.21.0
@@ -322,9 +344,25 @@ go.opencensus.io/internal
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/tracestate
 go.opencensus.io
-# golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2
+# golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
 golang.org/x/crypto/ssh/terminal
-# golang.org/x/net v0.0.0-20190509222800-a4d6f7feada5
+golang.org/x/crypto/openpgp
+golang.org/x/crypto/openpgp/armor
+golang.org/x/crypto/openpgp/errors
+golang.org/x/crypto/openpgp/packet
+golang.org/x/crypto/openpgp/s2k
+golang.org/x/crypto/cast5
+golang.org/x/crypto/openpgp/elgamal
+golang.org/x/crypto/ssh
+golang.org/x/crypto/ssh/knownhosts
+golang.org/x/crypto/ssh/agent
+golang.org/x/crypto/curve25519
+golang.org/x/crypto/ed25519
+golang.org/x/crypto/internal/chacha20
+golang.org/x/crypto/poly1305
+golang.org/x/crypto/ed25519/internal/edwards25519
+golang.org/x/crypto/internal/subtle
+# golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
 golang.org/x/net/context
 golang.org/x/net/http2
 golang.org/x/net/trace
@@ -333,18 +371,21 @@ golang.org/x/net/http2/hpack
 golang.org/x/net/idna
 golang.org/x/net/context/ctxhttp
 golang.org/x/net/internal/timeseries
+golang.org/x/net/proxy
+golang.org/x/net/internal/socks
 # golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/google
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
+# golang.org/x/sync v0.0.0-20190423024810-112230192c58
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20190509141414-a5b02f93d862
+# golang.org/x/sys v0.0.0-20190726091711-fc99dfbffb4e
 golang.org/x/sys/unix
 golang.org/x/sys/windows
+golang.org/x/sys/cpu
 # golang.org/x/text v0.3.2
 golang.org/x/text/secure/bidirule
 golang.org/x/text/unicode/bidi
@@ -422,3 +463,53 @@ google.golang.org/grpc/balancer/base
 google.golang.org/grpc/binarylog/grpc_binarylog_v1
 google.golang.org/grpc/internal/syscall
 google.golang.org/grpc/credentials/oauth
+# gopkg.in/src-d/go-billy.v4 v4.3.2
+gopkg.in/src-d/go-billy.v4
+gopkg.in/src-d/go-billy.v4/osfs
+gopkg.in/src-d/go-billy.v4/util
+gopkg.in/src-d/go-billy.v4/helper/chroot
+gopkg.in/src-d/go-billy.v4/helper/polyfill
+# gopkg.in/src-d/go-git.v4 v4.13.1
+gopkg.in/src-d/go-git.v4
+gopkg.in/src-d/go-git.v4/plumbing/transport/http
+gopkg.in/src-d/go-git.v4/config
+gopkg.in/src-d/go-git.v4/internal/revision
+gopkg.in/src-d/go-git.v4/plumbing
+gopkg.in/src-d/go-git.v4/plumbing/cache
+gopkg.in/src-d/go-git.v4/plumbing/filemode
+gopkg.in/src-d/go-git.v4/plumbing/format/gitignore
+gopkg.in/src-d/go-git.v4/plumbing/format/index
+gopkg.in/src-d/go-git.v4/plumbing/format/packfile
+gopkg.in/src-d/go-git.v4/plumbing/object
+gopkg.in/src-d/go-git.v4/plumbing/protocol/packp
+gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/capability
+gopkg.in/src-d/go-git.v4/plumbing/protocol/packp/sideband
+gopkg.in/src-d/go-git.v4/plumbing/revlist
+gopkg.in/src-d/go-git.v4/plumbing/storer
+gopkg.in/src-d/go-git.v4/plumbing/transport
+gopkg.in/src-d/go-git.v4/plumbing/transport/client
+gopkg.in/src-d/go-git.v4/storage
+gopkg.in/src-d/go-git.v4/storage/filesystem
+gopkg.in/src-d/go-git.v4/storage/memory
+gopkg.in/src-d/go-git.v4/utils/diff
+gopkg.in/src-d/go-git.v4/utils/ioutil
+gopkg.in/src-d/go-git.v4/utils/merkletrie
+gopkg.in/src-d/go-git.v4/utils/merkletrie/filesystem
+gopkg.in/src-d/go-git.v4/utils/merkletrie/index
+gopkg.in/src-d/go-git.v4/utils/merkletrie/noder
+gopkg.in/src-d/go-git.v4/plumbing/format/pktline
+gopkg.in/src-d/go-git.v4/plumbing/transport/internal/common
+gopkg.in/src-d/go-git.v4/internal/url
+gopkg.in/src-d/go-git.v4/plumbing/format/config
+gopkg.in/src-d/go-git.v4/utils/binary
+gopkg.in/src-d/go-git.v4/plumbing/format/idxfile
+gopkg.in/src-d/go-git.v4/plumbing/format/diff
+gopkg.in/src-d/go-git.v4/plumbing/transport/file
+gopkg.in/src-d/go-git.v4/plumbing/transport/git
+gopkg.in/src-d/go-git.v4/plumbing/transport/ssh
+gopkg.in/src-d/go-git.v4/plumbing/format/objfile
+gopkg.in/src-d/go-git.v4/storage/filesystem/dotgit
+gopkg.in/src-d/go-git.v4/utils/merkletrie/internal/frame
+gopkg.in/src-d/go-git.v4/plumbing/transport/server
+# gopkg.in/warnings.v0 v0.1.2
+gopkg.in/warnings.v0

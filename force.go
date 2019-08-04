@@ -3,6 +3,7 @@ package force
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sync/atomic"
 	"time"
@@ -67,8 +68,8 @@ type Channel interface {
 // Action is an action triggered as a part of the process
 type Action interface {
 	// Run runs the action in the context of the worker,
-	// once run, the worker returns a modified execution context
-	Run(ctx ExecutionContext) (ExecutionContext, error)
+	// could modify the context to add metadata, fields or error
+	Run(ctx ExecutionContext) error
 }
 
 // Spec is a process specification
@@ -102,8 +103,8 @@ func (s *Spec) CheckAndSetDefaults() error {
 }
 
 type Event interface {
-	// Wrap adds metadada to the execution context
-	Wrap(ctx ExecutionContext) ExecutionContext
+	// AddMetadata adds metadada to the execution context
+	AddMetadata(ctx ExecutionContext)
 	// Created returns time when the event was originated in the system
 	Created() time.Time
 }
@@ -114,18 +115,27 @@ type ExecutionContext interface {
 	context.Context
 	// Event is an event that generated the action
 	Event() Event
+	// Process returns a process associated with context
 	Process() Process
-	WithValue(key interface{}, value interface{}) ExecutionContext
+	// SetValue adds a key value pair to the context
+	SetValue(key interface{}, value interface{})
 	// ID is an execution unique identifier
 	ID() string
+	// AddCloser adds closer to the context
+	AddCloser(io.Closer)
+	// Close closes the context
+	// and releases all associated resources
+	// registered with Closer
+	Close() error
 }
 
-// WithError is a helper function that wraps execution context
-func WithError(ctx ExecutionContext, err error) ExecutionContext {
+// SetError is a helper function that adds an error
+// to the context
+func SetError(ctx ExecutionContext, err error) {
 	if err == nil {
-		return ctx
+		return
 	}
-	return ctx.WithValue(KeyError, err)
+	ctx.SetValue(KeyError, err)
 }
 
 // Error is a helper function that finds and returns
@@ -170,4 +180,13 @@ func ID() StringVar {
 	return StringVarFunc(func(ctx ExecutionContext) string {
 		return ctx.ID()
 	})
+}
+
+// CloserFunc wraps function
+// to create io.Closer compatible type
+type CloserFunc func() error
+
+// Close closes resources
+func (fn CloserFunc) Close() error {
+	return fn()
 }

@@ -37,9 +37,6 @@ func NewPush(group force.Group) func(Image) (force.Action, error) {
 // NewPush returns a new push action that pushes
 // the locally built container to the registry
 func (b *Builder) NewPush(img Image) (force.Action, error) {
-	if err := img.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
 	return &PushAction{
 		Image:   img,
 		Builder: b,
@@ -51,8 +48,8 @@ type PushAction struct {
 	Image   Image
 }
 
-func (b *PushAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
-	return ctx, b.Builder.Push(ctx, b.Image)
+func (b *PushAction) Run(ctx force.ExecutionContext) error {
+	return b.Builder.Push(ctx, b.Image)
 }
 
 func (b *PushAction) String() string {
@@ -61,7 +58,7 @@ func (b *PushAction) String() string {
 
 // Push pushes image to remote registry
 func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
-	if err := img.CheckAndSetDefaults(); err != nil {
+	if err := img.CheckAndSetDefaults(ectx); err != nil {
 		return trace.Wrap(err)
 	}
 

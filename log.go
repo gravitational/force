@@ -21,9 +21,9 @@ type Logger interface {
 	AddFields(fields map[string]interface{}) Logger
 }
 
-// WithLog adds a logger to the exectuion context
-func WithLog(ctx ExecutionContext, log Logger) ExecutionContext {
-	return ctx.WithValue(KeyLog, log)
+// SetLog adds a logger to the exectuion context
+func SetLog(ctx ExecutionContext, log Logger) {
+	ctx.SetValue(KeyLog, log)
 }
 
 // Log is a helper function that returns log

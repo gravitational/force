@@ -8,10 +8,11 @@ Setup(
 		// Token is a github access token
 		// passed to all callers in the group
 		Token: ExpectEnv("GITHUB_ACCESS_TOKEN"),
-		// Repo is a repository to process
-		Repo: "gravitational/force",
-		// Default branch is master, so this is for demo purposes
-		Branch: "master",
+	}),
+
+	// Git sets up git client for cloning repositories
+	Git(GitConfig{
+		Token: ExpectEnv("GITHUB_ACCESS_TOKEN"),
 	}),
 
 	// Builder configures docker builder
@@ -29,7 +30,7 @@ Setup(
 	// and stdout as well, with the current implementation,
 	// it should go first so other plugins can use it
 	Log(LogConfig{
-		Level: "debug",
+		Level: "info",
 		Outputs: []Output{
 			{
 				Type: "stdout",

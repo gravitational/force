@@ -3,33 +3,49 @@ Process(Spec{
 	// Name is used for reporting and debugging purposes
 	Name: "force-ci",
 	// Watch pull requests
-	Watch: Duplicate(PullRequests(), 4),
-//	Watch: PullRequests(),
-	// Trigger dockerized build, continue
-	// means that all steps will be executed in sequence,
-	// and the next step will be run even if the previous has resulted
-	// in error
+//	Watch: Duplicate(PullRequests(), 4),
+	Watch: PullRequests(Source{
+		// Repo is a repository to watch
+		Repo: "gravitational/force",
+		// Default branch is master
+		Branch: "master",
+	}),
 	Run: PostStatusOf(
-		// Build builds dockerfile and tags it in the local storage
-		Build(Image{
-			Tag: `gcr.io/kubeadm-167321/example:latest`,
-			// Secrets are build secrets exposed to docker
-			// container during the run
-			Secrets: []Secret{
-				{
-					ID: "logging-creds",
-					File: ExpectEnv("LOGGING_CREDENTIALS"),
+		// create temporary directory "repo"
+		WithTempDir("repo", 
+			// Clone clones git repository into temp dir
+			Clone(Repo{
+				URL: "https://github.com/gravitational/force.git",
+				Into: Var("repo"),
+				// Commit is a commit variable defined by pull request watch
+				Hash: Var("commit"),
+			}),
+			// Build builds dockerfile and tags it in the local storage
+			Build(Image{
+				// Set build context to the cloned repository
+				Context: Var("repo"),
+				// Dockerfile is a dockerfile to build (from current dir),
+				Dockerfile: "./Dockerfile",
+				// Tag is the tag to build
+				Tag: `gcr.io/kubeadm-167321/example:latest`,
+				// Secrets are build secrets exposed to docker
+				// container during the run
+				Secrets: []Secret{
+					{
+						ID: "logging-creds",
+						File: ExpectEnv("LOGGING_CREDENTIALS"),
+					},
 				},
-			},
-			// Args are build arguments
-			Args: []Arg{
-				{
-					// FORCE_ID is a force run ID
-					Key: "FORCE_ID",
-					Val: ID(),
+				// Args are build arguments
+				Args: []Arg{
+					{
+						// FORCE_ID is a force run ID
+						Key: "FORCE_ID",
+						Val: ID(),
+					},
 				},
-			},
-		}),
+			}),
+		),
 		// Push the built image
 		Push(Image{Tag: `gcr.io/kubeadm-167321/example:latest`}),
 		// Prune the build cache

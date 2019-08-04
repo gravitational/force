@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"fmt"
+	"io"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -97,10 +99,11 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 			go func() {
 				r, err := uuid.NewRandom()
 				if err != nil {
-					// Failed to generate random number, very sad.
-					panic(err)
+					l.logger.Errorf("Failed to generate random number: %v", err)
+					return
 				}
 				execContext := &LocalContext{
+					RWMutex: &sync.RWMutex{},
 					context: ctx,
 					process: l,
 					event:   event,
@@ -109,11 +112,17 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 				logger := l.logger.AddFields(map[string]interface{}{
 					force.KeyID: execContext.ID(),
 				})
+				defer func() {
+					err := execContext.Close()
+					if err != nil {
+						logger.Errorf("Error closing context: %v", err)
+					}
+				}()
 				// add a process logger to the context
-				outContext := force.WithLog(execContext, logger)
+				force.SetLog(execContext, logger)
 				// add optional data from the event
-				outContext = event.Wrap(outContext)
-				_, err = l.Run.Run(outContext)
+				event.AddMetadata(execContext)
+				err = l.Run.Run(execContext)
 				if err != nil {
 					logger.Errorf("%v failed: %v.", l, fullMessage(err))
 				} else {
@@ -138,10 +147,38 @@ func fullMessage(err error) string {
 
 // LocalContext implements local execution context
 type LocalContext struct {
+	*sync.RWMutex
 	context context.Context
 	process force.Process
 	event   force.Event
 	id      string
+	closers []io.Closer
+}
+
+// AddCloser adds closer to the context
+func (c *LocalContext) AddCloser(closer io.Closer) {
+	c.Lock()
+	defer c.Unlock()
+	c.closers = append(c.closers, closer)
+}
+
+// Close closes the context
+// and releases all associated resources
+// registered with Closer
+func (c *LocalContext) Close() error {
+	// this is to prevent possible deadlock on panic
+	if c == nil {
+		return nil
+	}
+	c.Lock()
+	closers := c.closers
+	c.closers = nil
+	c.Unlock()
+	var errs []error
+	for _, c := range closers {
+		errs = append(errs, c.Close())
+	}
+	return trace.NewAggregate(errs...)
 }
 
 // ID is an execution unique identifier
@@ -160,6 +197,7 @@ func (c *LocalContext) Done() <-chan struct{} {
 	return c.context.Done()
 }
 
+// Err returns an error associated with the context
 // If Done is not yet closed, Err returns nil.
 // If Done is closed, Err returns a non-nil error explaining why:
 // Canceled if the context was canceled
@@ -174,26 +212,19 @@ func (c *LocalContext) Event() force.Event {
 	return c.event
 }
 
-func (c *LocalContext) Context() context.Context {
-	return c.context
-}
-
+// Process returns a process associated with the context
 func (c *LocalContext) Process() force.Process {
 	return c.process
 }
 
-// Get returns a value in the execution context
+// Value returns a value in the execution context
 func (c *LocalContext) Value(val interface{}) interface{} {
 	return c.context.Value(val)
 }
 
-// WithValue extends (without modifying) the execution context
-// with a single key value pair
-func (c *LocalContext) WithValue(key interface{}, val interface{}) force.ExecutionContext {
-	return &LocalContext{
-		context: context.WithValue(c.context, key, val),
-		process: c.process,
-		event:   c.event,
-		id:      c.id,
-	}
+// SetValue sets a value associated with the keyto the execution context
+func (c *LocalContext) SetValue(key interface{}, val interface{}) {
+	c.Lock()
+	defer c.Unlock()
+	c.context = context.WithValue(c.context, key, val)
 }

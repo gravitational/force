@@ -33,23 +33,25 @@ func (p *Plugin) PostStatusOf(actions ...force.Action) (force.Action, error) {
 type PostStatusAction struct {
 	status Status
 	plugin *Plugin
+	repo   Repository
 }
 
-func (p *PostStatusAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
+func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
 	event, ok := ctx.Event().(*RepoEvent)
 	if !ok {
 		// it should be possible to execute post status
 		// in the standalone mode given all the parameters
-		return nil, trace.BadParameter("PostStatus can only be executed with Watch")
+		return trace.BadParameter("PostStatus can only be executed with Watch")
 	}
+	repo := event.Source.Repo
 
 	log := force.Log(ctx)
 	commitRef := event.PR.LastCommit.OID
 
 	_, _, err := p.plugin.client.V3.Repositories.CreateStatus(
 		ctx,
-		p.plugin.client.Owner,
-		p.plugin.client.Repository,
+		repo.Owner,
+		repo.Name,
 		commitRef,
 		&github.RepoStatus{
 			State:       github.String(p.status.State),
@@ -61,7 +63,7 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) (force.ExecutionConte
 
 	log.Debugf("Posted %v -> %v.", p.status, err)
 
-	return nil, trace.Wrap(err)
+	return trace.Wrap(err)
 }
 
 // PostStatusOfAction executes an action and posts its status
@@ -71,11 +73,11 @@ type PostStatusOfAction struct {
 	actions []force.Action
 }
 
-func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
+func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) error {
 	// First, post pending status
 	pending := Status{State: StatePending}
 	if err := pending.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 	postPending := &PostStatusAction{
 		status: pending,
@@ -83,29 +85,26 @@ func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) (force.ExecutionCon
 	}
 
 	// run the inner action
-	var err error
-	ctx, err = force.Run(ctx, postPending)
+	err := postPending.Run(ctx)
 	if err != nil {
-		return ctx, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	// Post result of the execution of all actions in a sequence
 	result := Status{State: StateSuccess, Description: "CI executed successfully"}
 	if err := result.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
-	ctx, err = force.Run(ctx, force.Sequence(p.actions...))
+	err = force.Sequence(p.actions...).Run(ctx)
 	if err != nil {
 		result.State = StateFailure
 		result.Description = err.Error()
 	}
-
 	postResult := &PostStatusAction{
 		status: result,
 		plugin: p.plugin,
 	}
-	ctx, err = force.Run(ctx, postResult)
-	return ctx, trace.Wrap(err)
+	return trace.NewAggregate(err, postResult.Run(ctx))
 }
 
 type Status struct {

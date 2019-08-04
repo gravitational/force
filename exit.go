@@ -39,7 +39,7 @@ type SendAction struct {
 	Process  Process
 }
 
-func (e *SendAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+func (e *SendAction) Run(ctx ExecutionContext) error {
 	proc := e.Process
 	// no process specified? assume broadcast to the process group
 	if proc == nil {
@@ -47,9 +47,9 @@ func (e *SendAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
 	}
 	select {
 	case proc.Group().BroadcastEvents() <- e.GetEvent(ctx):
-		return ctx, nil
+		return nil
 	case <-ctx.Done():
-		return ctx, ctx.Err()
+		return ctx.Err()
 	}
 }
 
@@ -72,8 +72,7 @@ func (e LocalExitEvent) ExitCode() int {
 	return e.Code
 }
 
-func (e LocalExitEvent) Wrap(ctx ExecutionContext) ExecutionContext {
-	return ctx
+func (e LocalExitEvent) AddMetadata(ctx ExecutionContext) {
 }
 
 // String returns a string description of the event

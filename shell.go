@@ -2,11 +2,63 @@ package force
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 
 	"github.com/gravitational/trace"
 )
+
+// Var returns string variable
+func Var(name string) StringVar {
+	return StringVarFunc(func(ctx ExecutionContext) string {
+		val, ok := ctx.Value(ContextKey(name)).(string)
+		if !ok {
+			Log(ctx).Errorf("Failed to convert variable %q to string from %T, returning empty value.", name, name)
+			return ""
+		}
+		return val
+	})
+}
+
+// WithTempDir creates a new temp dir, and defines a variable
+// with a given name
+func WithTempDir(name string, actions ...Action) (Action, error) {
+	if name == "" {
+		return nil, trace.BadParameter("TempDir needs name")
+	}
+	return &WithTempDirAction{
+		name:    name,
+		actions: actions,
+	}, nil
+}
+
+// WithTempDirAction creates one or many temporary directories,
+// executes action and deletes the temp directory later
+type WithTempDirAction struct {
+	name    string
+	actions []Action
+}
+
+// Run runs with temp dir action
+func (p *WithTempDirAction) Run(ctx ExecutionContext) error {
+	log := Log(ctx)
+	dir, err := ioutil.TempDir("", p.name)
+	if err != nil {
+		return trace.ConvertSystemError(err)
+	}
+	log.Infof("Created temporary directory %q with path %q.", p.name, dir)
+	ctx.SetValue(ContextKey(p.name), dir)
+	defer func() {
+		if err := trace.ConvertSystemError(os.RemoveAll(dir)); err != nil {
+			log.Errorf("Failed to delete temporary directory %q with path %q: %v.", p.name, dir, err)
+		} else {
+			log.Infof("Deleted temporary directory %q with path %q.", p.name, dir)
+		}
+	}()
+	err = Sequence(p.actions...).Run(ctx)
+	return trace.Wrap(err)
+}
 
 // Shell runs shell
 func Shell(script string) (Action, error) {
@@ -22,17 +74,14 @@ type ShellAction struct {
 	Command string
 }
 
-func (s *ShellAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+func (s *ShellAction) Run(ctx ExecutionContext) error {
 	log := Log(ctx)
 	log.Infof("Running %q.", s.Command)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", s.Command)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return ctx, nil
+	return trace.Wrap(err)
 }
 
 func (s *ShellAction) String() string {
@@ -51,29 +100,16 @@ type SequenceAction struct {
 	Actions []Action
 }
 
-// Run is a helper function that runs action and updates a context with an error
-func Run(ctx ExecutionContext, action Action) (ExecutionContext, error) {
-	newCtx, err := action.Run(ctx)
-	if newCtx != nil {
-		ctx = newCtx
-	}
-	if err != nil {
-		ctx = WithError(ctx, err)
-		return ctx, trace.Wrap(err)
-	}
-	return ctx, nil
-}
-
-func (s *SequenceAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+func (s *SequenceAction) Run(ctx ExecutionContext) error {
 	var err error
 	for _, action := range s.Actions {
-		ctx, err = Run(ctx, action)
-		// error is not nil, stop sequence execution
+		err = action.Run(ctx)
+		SetError(ctx, err)
 		if err != nil {
-			return ctx, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 	}
-	return ctx, err
+	return Error(ctx)
 }
 
 // Continue groups sequence of commands together,
@@ -88,9 +124,9 @@ type ContinueAction struct {
 	Actions []Action
 }
 
-func (s *ContinueAction) Run(ctx ExecutionContext) (ExecutionContext, error) {
+func (s *ContinueAction) Run(ctx ExecutionContext) error {
 	for _, action := range s.Actions {
-		ctx, _ = Run(ctx, action)
+		SetError(ctx, action.Run(ctx))
 	}
-	return ctx, Error(ctx)
+	return Error(ctx)
 }

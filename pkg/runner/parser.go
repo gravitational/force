@@ -14,13 +14,14 @@ import (
 
 	"github.com/gravitational/force"
 	"github.com/gravitational/force/pkg/builder"
+	"github.com/gravitational/force/pkg/git"
 	"github.com/gravitational/force/pkg/github"
 	"github.com/gravitational/force/pkg/logging"
 
 	"github.com/gravitational/trace"
 )
 
-// Group does nothing for now, used to logically group
+// NewGroup does nothing for now, used to logically group
 // processes together
 func NewGroup(runner *Runner) func(vars ...interface{}) force.Group {
 	return func(vars ...interface{}) force.Group {
@@ -35,15 +36,17 @@ func Parse(inputs []string, runner *Runner) error {
 		runner: runner,
 		functions: map[string]interface{}{
 			// Standard library functions
-			"Process":  runner.Process,
-			"Sequence": force.Sequence,
-			"Continue": force.Continue,
-			"Files":    force.Files,
-			"Shell":    force.Shell,
-			"Oneshot":  force.Oneshot,
-			"Exit":     force.Exit,
-			"Env":      os.Getenv,
-			"ID":       force.ID,
+			"Process":     runner.Process,
+			"Sequence":    force.Sequence,
+			"Continue":    force.Continue,
+			"Files":       force.Files,
+			"Shell":       force.Shell,
+			"Oneshot":     force.Oneshot,
+			"Exit":        force.Exit,
+			"Env":         os.Getenv,
+			"ID":          force.ID,
+			"Var":         force.Var,
+			"WithTempDir": force.WithTempDir,
 			"ExpectEnv": func(key string) (string, error) {
 				val := os.Getenv(key)
 				if val == "" {
@@ -53,12 +56,17 @@ func Parse(inputs []string, runner *Runner) error {
 			},
 			"Duplicate": force.Duplicate,
 
+			"Setup": NewGroup(runner),
+
 			// Github functions
 			"Github":       github.NewPlugin(runner),
-			"Setup":        NewGroup(runner),
 			"PullRequests": github.NewWatch(runner),
 			"PostStatus":   github.NewPostStatus(runner),
 			"PostStatusOf": github.NewPostStatusOf(runner),
+
+			// Git functions
+			"Git":   git.NewPlugin(runner),
+			"Clone": git.NewClone(runner),
 
 			// Container Builder functions
 			"Builder": builder.NewPlugin(runner),
@@ -77,6 +85,13 @@ func Parse(inputs []string, runner *Runner) error {
 				// Github structs
 			case "GithubConfig":
 				return github.Config{}, nil
+			case "Source":
+				return github.Source{}, nil
+				// Git structs
+			case "GitConfig":
+				return git.Config{}, nil
+			case "Repo":
+				return git.Repo{}, nil
 				// Container builder structs
 			case "BuilderConfig":
 				return builder.Config{}, nil

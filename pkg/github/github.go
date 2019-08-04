@@ -11,33 +11,72 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// GithubKey is a wrapper around string
+// Key is a wrapper around string
 // to namespace a variable
-type GithubKey string
+type Key string
 
 // GithubPlugin is a name of the github plugin variable
-const GithubPlugin = GithubKey("github")
+const GithubPlugin = Key("github")
 
+// Config is a github plugin config
 type Config struct {
 	// Token is an access token
 	Token string
-	// Repo is a repository to bind to
+}
+
+// CheckAndSetDefaults checks and sets default values
+func (cfg *Config) CheckAndSetDefaults() error {
+	if cfg.Token == "" {
+		return trace.BadParameter("set Config.Token parameter")
+	}
+	return nil
+}
+
+// Source is a source repository to watch
+type Source struct {
+	// Repo is a repository name to watch
 	Repo string
 	// Branch is a branch to watch PRs against
 	Branch string
 }
 
-func (cfg *Config) CheckAndSetDefaults() error {
-	if cfg.Token == "" {
-		return trace.BadParameter("set Config.Token parameter")
+// CheckAndSetDefaults checks and sets default values
+func (s *Source) CheckAndSetDefaults() error {
+	if s.Repo == "" {
+		return trace.BadParameter("provide Source{Repo: ``} parameter")
 	}
-	if cfg.Repo == "" {
-		return trace.BadParameter("provide Config.Branch parameter")
+	if _, err := s.Repository(); err != nil {
+		return trace.Wrap(err)
 	}
-	if cfg.Branch == "" {
-		cfg.Branch = MasterBranch
+	if s.Branch == "" {
+		s.Branch = MasterBranch
 	}
 	return nil
+}
+
+// Repository returns repository address
+func (s *Source) Repository() (*Repository, error) {
+	owner, repo, err := parseRepository(s.Repo)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &Repository{Owner: owner, Name: repo}, nil
+}
+
+// WatchSource is a watch source
+type WatchSource struct {
+	// Repo is a repository name
+	Repo Repository
+	// Branch is a branch to watch
+	Branch string
+}
+
+// Repository is a github repository
+type Repository struct {
+	// Owner is a repository owner
+	Owner string
+	// Name is a repository name
+	Name string
 }
 
 // Plugin is a new plugin
@@ -67,13 +106,13 @@ func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
 }
 
 // NewWatch finds the initialized github plugin and returns a new watch
-func NewWatch(group force.Group) func() (force.Channel, error) {
-	return func() (force.Channel, error) {
+func NewWatch(group force.Group) func(Source) (force.Channel, error) {
+	return func(src Source) (force.Channel, error) {
 		pluginI, ok := group.GetVar(GithubPlugin)
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
 		}
-		return pluginI.(*Plugin).Watch()
+		return pluginI.(*Plugin).Watch(src)
 	}
 }
 
@@ -100,24 +139,36 @@ func NewPostStatus(group force.Group) func(Status) (force.Action, error) {
 	}
 }
 
-// Github returns a github source
-func (g *Plugin) Watch() (force.Channel, error) {
+// Watch returns a github source
+func (g *Plugin) Watch(src Source) (force.Channel, error) {
+	if err := src.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	repo, err := src.Repository()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return &RepoWatcher{
 		plugin: g,
+		source: WatchSource{Repo: *repo, Branch: src.Branch},
 		// TODO(klizhentas): queues have to be configurable
 		eventsC: make(chan force.Event, 1024),
 	}, nil
 }
 
+// RepoWatcher is a repository watcher
 type RepoWatcher struct {
 	plugin  *Plugin
+	source  WatchSource
 	eventsC chan force.Event
 }
 
+// String returns user friendly representation of the watcher
 func (r *RepoWatcher) String() string {
-	return fmt.Sprintf("RepoWatcher(%v/%v)", r.plugin.client.Owner, r.plugin.client.Repository)
+	return fmt.Sprintf("RepoWatcher(%v/%v)", r.source.Repo.Owner, r.source.Repo.Name)
 }
 
+// Start starts watch on a repo
 func (r *RepoWatcher) Start(pctx context.Context) error {
 	go r.pollRepo(pctx)
 	return nil
@@ -140,7 +191,7 @@ func (r *RepoWatcher) pollRepo(ctx context.Context) {
 			}
 			afterDate = pulls[len(pulls)-1].LastUpdated()
 			for _, pr := range pulls {
-				event := &RepoEvent{PR: pr, created: time.Now().UTC()}
+				event := &RepoEvent{PR: pr, created: time.Now().UTC(), Source: r.source}
 				select {
 				case r.eventsC <- event:
 					log.Debugf("-> %v", event)
@@ -156,13 +207,13 @@ func (r *RepoWatcher) pollRepo(ctx context.Context) {
 func (r *RepoWatcher) updatedPullRequests(afterDate time.Time) (PullRequests, error) {
 	var updatedPulls PullRequests
 
-	pulls, err := r.plugin.client.GetOpenPullRequests()
+	pulls, err := r.plugin.client.GetOpenPullRequests(r.source.Repo)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
 	for _, pr := range pulls {
-		if pr.PullRequestObject.BaseRefName != r.plugin.Config.Branch {
+		if pr.PullRequestObject.BaseRefName != r.source.Branch {
 			continue
 		}
 		if !pr.LastUpdated().After(afterDate) {
@@ -177,15 +228,19 @@ func (r *RepoWatcher) updatedPullRequests(afterDate time.Time) (PullRequests, er
 	return updatedPulls, nil
 }
 
+// Events returns events stream on a repository
 func (r *RepoWatcher) Events() <-chan force.Event {
 	return r.eventsC
 }
 
+// Done returns channel closed when repository watcher is closed
 func (r *RepoWatcher) Done() <-chan struct{} {
 	return nil
 }
 
+// RepoEvent is a repository event
 type RepoEvent struct {
+	Source  WatchSource
 	PR      PullRequest
 	created time.Time
 }
@@ -195,14 +250,17 @@ func (r *RepoEvent) Created() time.Time {
 	return r.created
 }
 
-// Wrap adds metadata to the execution context
-func (r *RepoEvent) Wrap(ctx force.ExecutionContext) force.ExecutionContext {
+// AddMetadata adds metadata to the logger
+// and the context, such as commit id and PR number
+func (r *RepoEvent) AddMetadata(ctx force.ExecutionContext) {
 	logger := force.Log(ctx)
 	logger = logger.AddFields(log.Fields{
 		KeyCommit: r.PR.LastCommit.OID[:9],
 		KeyPR:     r.PR.Number,
 	})
-	return force.WithLog(ctx, logger)
+	force.SetLog(ctx, logger)
+	ctx.SetValue(force.ContextKey(KeyCommit), r.PR.LastCommit.OID)
+	ctx.SetValue(force.ContextKey(KeyPR), r.PR.Number)
 }
 
 func (r *RepoEvent) String() string {
@@ -212,6 +270,8 @@ func (r *RepoEvent) String() string {
 }
 
 const (
+	// KeyCommit is a commit used in logs
 	KeyCommit = "commit"
-	KeyPR     = "pr"
+	// KeyPR is a pull request key used in logs
+	KeyPR = "pr"
 )

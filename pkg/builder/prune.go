@@ -41,8 +41,8 @@ type PruneAction struct {
 	Builder *Builder
 }
 
-func (p *PruneAction) Run(ctx force.ExecutionContext) (force.ExecutionContext, error) {
-	return ctx, p.Builder.Prune(ctx)
+func (p *PruneAction) Run(ctx force.ExecutionContext) error {
+	return p.Builder.Prune(ctx)
 }
 
 func (p *PruneAction) String() string {

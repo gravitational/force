@@ -104,6 +104,5 @@ func (f *FSNotifyEvent) String() string {
 	return fmt.Sprintf("File(name=%v, action=%v)", f.Event.Name, f.Event.Op.String())
 }
 
-func (f *FSNotifyEvent) Wrap(ctx ExecutionContext) ExecutionContext {
-	return ctx
+func (f *FSNotifyEvent) AddMetadata(ctx ExecutionContext) {
 }

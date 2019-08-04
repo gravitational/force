@@ -31,11 +31,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/containerd/containerd/platforms"
-	"github.com/containerd/containerd/snapshots/overlay"
-
 	"github.com/gravitational/force"
 
+	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/containerd/snapshots/overlay"
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/docker/distribution/reference"
 	"github.com/gravitational/force/internal/utils"
@@ -124,9 +123,9 @@ func (i *Config) CheckAndSetDefaults() error {
 // Image specifies docker image to build
 type Image struct {
 	// Context is a path or URL to the bulid context
-	Context string
+	Context force.StringVar
 	// Dockerfile is a path or the URL to the dockerfile
-	Dockerfile string
+	Dockerfile force.StringVar
 	// Tag is a tag in the spec of image:tag (optional tag part)
 	Tag string
 	// NoCache turns off caching
@@ -176,8 +175,15 @@ func (a *Arg) CheckAndSetDefaults() error {
 	return nil
 }
 
+const (
+	// CurrentDir is a notation for current dir
+	CurrentDir = "."
+	// Dockerfile is a standard dockerfile name
+	Dockerfile = "Dockerfile"
+)
+
 // CheckAndSetDefaults checks and sets default values
-func (i *Image) CheckAndSetDefaults() error {
+func (i *Image) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	if i.Tag == "" {
 		return trace.BadParameter("specify image tag, e.g. 'example'")
 	}
@@ -185,15 +191,21 @@ func (i *Image) CheckAndSetDefaults() error {
 	if err != nil {
 		return trace.BadParameter("parsing image name %q failed: %v", i.Tag, err)
 	}
-	if i.Context == "" {
-		i.Context = "."
+	if i.Context == nil {
+		i.Context = force.String(CurrentDir)
 	}
-	if i.Dockerfile == "" {
-		i.Dockerfile, err = securejoin.SecureJoin(i.Context, "Dockerfile")
+	contextPath := i.Context.Value(ctx)
+	if contextPath == "" {
+		i.Context = force.String(CurrentDir)
+	}
+	if i.Dockerfile == nil || i.Dockerfile.Value(ctx) == "" {
+		dockerfilePath, err := securejoin.SecureJoin(contextPath, Dockerfile)
 		if err != nil {
 			return trace.Wrap(err)
 		}
+		i.Dockerfile = force.String(dockerfilePath)
 	}
+
 	if len(i.Platforms) == 0 {
 		i.Platforms = []string{platforms.DefaultString()}
 	}

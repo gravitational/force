@@ -40,33 +40,23 @@ import (
 
 // GithubClient for handling requests to the Github V3 and V4 APIs.
 type GithubClient struct {
-	V3         *github.Client
-	V4         *githubv4.Client
-	Repository string
-	Owner      string
+	V3 *github.Client
+	V4 *githubv4.Client
 }
 
 // NewGithubClient ...
 func NewGithubClient(ctx context.Context, cfg Config) (*GithubClient, error) {
-	owner, repository, err := parseRepository(cfg.Repo)
-	if err != nil {
-		return nil, err
-	}
-
 	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: cfg.Token},
 	))
-
 	return &GithubClient{
-		V3:         github.NewClient(client),
-		V4:         githubv4.NewClient(client),
-		Owner:      owner,
-		Repository: repository,
+		V3: github.NewClient(client),
+		V4: githubv4.NewClient(client),
 	}, nil
 }
 
 // GetOpenPullRequests gets the last commit on all open pull requests.
-func (m *GithubClient) GetOpenPullRequests() ([]PullRequest, error) {
+func (m *GithubClient) GetOpenPullRequests(repo Repository) ([]PullRequest, error) {
 	var query struct {
 		Repository struct {
 			PullRequests struct {
@@ -98,8 +88,8 @@ func (m *GithubClient) GetOpenPullRequests() ([]PullRequest, error) {
 	}
 
 	vars := map[string]interface{}{
-		"repositoryOwner": githubv4.String(m.Owner),
-		"repositoryName":  githubv4.String(m.Repository),
+		"repositoryOwner": githubv4.String(repo.Owner),
+		"repositoryName":  githubv4.String(repo.Name),
 		"prFirst":         githubv4.Int(100),
 		"prStates":        []githubv4.PullRequestState{githubv4.PullRequestStateOpen},
 		"prCursor":        (*githubv4.String)(nil),
@@ -133,7 +123,7 @@ func (m *GithubClient) GetOpenPullRequests() ([]PullRequest, error) {
 }
 
 // ListModifiedFiles in a pull request (not supported by V4 API).
-func (m *GithubClient) ListModifiedFiles(prNumber int) ([]string, error) {
+func (m *GithubClient) ListModifiedFiles(repo Repository, prNumber int) ([]string, error) {
 	var files []string
 
 	opt := &github.ListOptions{
@@ -142,8 +132,8 @@ func (m *GithubClient) ListModifiedFiles(prNumber int) ([]string, error) {
 	for {
 		result, response, err := m.V3.PullRequests.ListFiles(
 			context.TODO(),
-			m.Owner,
-			m.Repository,
+			repo.Owner,
+			repo.Name,
 			prNumber,
 			opt,
 		)
@@ -162,7 +152,7 @@ func (m *GithubClient) ListModifiedFiles(prNumber int) ([]string, error) {
 }
 
 // PostComment to a pull request or issue.
-func (m *GithubClient) PostComment(prNumber, comment string) error {
+func (m *GithubClient) PostComment(repo Repository, prNumber, comment string) error {
 	pr, err := strconv.Atoi(prNumber)
 	if err != nil {
 		return trace.Wrap(err, "failed to convert pull request number to int")
@@ -170,8 +160,8 @@ func (m *GithubClient) PostComment(prNumber, comment string) error {
 
 	_, _, err = m.V3.Issues.CreateComment(
 		context.TODO(),
-		m.Owner,
-		m.Repository,
+		repo.Owner,
+		repo.Name,
 		pr,
 		&github.IssueComment{
 			Body: github.String(comment),
@@ -181,7 +171,7 @@ func (m *GithubClient) PostComment(prNumber, comment string) error {
 }
 
 // UpdateCommitStatus for a given commit (not supported by V4 API).
-func (m *GithubClient) UpdateCommitStatus(commitRef, baseContext, statusContext, status, targetURL, description string) error {
+func (m *GithubClient) UpdateCommitStatus(repo Repository, commitRef, baseContext, statusContext, status, targetURL, description string) error {
 	if baseContext == "" {
 		baseContext = "force"
 	}
@@ -200,8 +190,8 @@ func (m *GithubClient) UpdateCommitStatus(commitRef, baseContext, statusContext,
 
 	_, _, err := m.V3.Repositories.CreateStatus(
 		context.TODO(),
-		m.Owner,
-		m.Repository,
+		repo.Owner,
+		repo.Name,
 		commitRef,
 		&github.RepoStatus{
 			State:       github.String(strings.ToLower(status)),

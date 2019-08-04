@@ -14,7 +14,6 @@ require (
 	github.com/docker/go-units v0.3.3 // indirect
 	github.com/fsnotify/fsnotify v1.4.7
 	github.com/golang/protobuf v1.3.1 // indirect
-	github.com/google/go-cmp v0.3.0 // indirect
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/google/uuid v1.0.0
@@ -33,13 +32,11 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
 	github.com/sirupsen/logrus v1.4.1
 	go.etcd.io/bbolt v1.3.2
-	golang.org/x/net v0.0.0-20190509222800-a4d6f7feada5 // indirect
 	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
-	golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
-	golang.org/x/sys v0.0.0-20190509141414-a5b02f93d862 // indirect
-	golang.org/x/text v0.3.2 // indirect
+	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 	google.golang.org/api v0.5.0
 	google.golang.org/appengine v1.5.0 // indirect
 	google.golang.org/genproto v0.0.0-20190508193815-b515fa19cec8 // indirect
 	google.golang.org/grpc v1.20.1
+	gopkg.in/src-d/go-git.v4 v4.13.1
 )

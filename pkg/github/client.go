@@ -47,7 +47,7 @@ type GithubClient struct {
 // NewGithubClient ...
 func NewGithubClient(ctx context.Context, cfg Config) (*GithubClient, error) {
 	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: cfg.Token},
+		&oauth2.Token{AccessToken: string(cfg.Token)},
 	))
 	return &GithubClient{
 		V3: github.NewClient(client),

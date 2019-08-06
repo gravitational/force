@@ -27,8 +27,7 @@ Process(Spec{
 			// WithChangeDir changes current directory
 			WithChangeDir(
 				Var("repo"),
-				Shell(Sprintf(`cd %v && make test`, Var("repo"))),
-				Shell(Sprintf(`cd %v && make integration`, Var("repo"))),				
+				Shell(`make -C build.assets test integration`),
 			),
 		),
 	),

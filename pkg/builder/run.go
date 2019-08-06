@@ -46,7 +46,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 
 	// Get the build args and add them to frontend attrs.
 	for _, a := range img.Args {
-		frontendAttrs["build-arg:"+a.Key] = a.Val.Value(ectx)
+		frontendAttrs["build-arg:"+a.Key.Value(ectx)] = a.Val.Value(ectx)
 	}
 
 	sess, sessDialer, err := b.Session(ectx, img)
@@ -94,7 +94,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 // Session creates the session manager and returns the session and it's
 // dialer.
 func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Session, session.Dialer, error) {
-	sess, err := session.NewSession(ctx, b.SessionName, "")
+	sess, err := session.NewSession(ctx, string(b.SessionName), "")
 	if err != nil {
 		return nil, nil, trace.Wrap(err, "failed to create session")
 	}
@@ -116,7 +116,7 @@ func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Sessi
 	if len(img.Secrets) > 0 {
 		files := make([]secretsprovider.FileSource, len(img.Secrets))
 		for i, s := range img.Secrets {
-			files[i] = secretsprovider.FileSource{ID: s.ID, FilePath: s.File.Value(ctx)}
+			files[i] = secretsprovider.FileSource{ID: s.ID.Value(ctx), FilePath: s.File.Value(ctx)}
 		}
 		secretStore, err := secretsprovider.NewFileStore(files)
 		if err != nil {

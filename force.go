@@ -74,7 +74,7 @@ type Action interface {
 
 // Spec is a process specification
 type Spec struct {
-	Name    string
+	Name    String
 	Watch   Channel
 	Run     Action
 	EventsC chan Event
@@ -91,7 +91,7 @@ func (s *Spec) CheckAndSetDefaults() error {
 	if s.Name == "" {
 		num := atomic.AddInt64(&processNumber, 1)
 		host, _ := os.Hostname()
-		s.Name = fmt.Sprintf("%v-%v", host, num)
+		s.Name = String(fmt.Sprintf("%v-%v", host, num))
 	}
 	if s.Watch == nil {
 		return trace.BadParameter("the Process is missing Spec{Watch:}, in case if you need an unconditional execution, use Spec{Watch: Oneshot()}")

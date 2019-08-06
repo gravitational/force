@@ -9,6 +9,21 @@ import (
 	"github.com/gravitational/trace"
 )
 
+// Env returns environment variable
+func Env(key String) String {
+	return String(os.Getenv(string(key)))
+}
+
+// ExpectEnv returns environment var by key or
+// error if variable not defined
+func ExpectEnv(key String) (String, error) {
+	val := os.Getenv(string(key))
+	if val == "" {
+		return String(""), trace.NotFound("define environment variable %q", key)
+	}
+	return String(val), nil
+}
+
 // Strings returns a list of strings evaluated from the arguments
 func Strings(args ...interface{}) ([]StringVar, error) {
 	out := make([]StringVar, len(args))
@@ -26,20 +41,20 @@ func Strings(args ...interface{}) ([]StringVar, error) {
 }
 
 // Sprintf is jsut like Sprintf
-func Sprintf(format string, args ...interface{}) StringVar {
+func Sprintf(format String, args ...interface{}) StringVar {
 	return StringVarFunc(func(ctx ExecutionContext) string {
 		eval := make([]interface{}, len(args))
 		for i := range args {
 			eval[i] = Eval(ctx, args[i])
 		}
-		return fmt.Sprintf(format, eval...)
+		return fmt.Sprintf(string(format), eval...)
 	})
 }
 
 // Var returns string variable
-func Var(name string) StringVar {
+func Var(name String) StringVar {
 	return StringVarFunc(func(ctx ExecutionContext) string {
-		val, ok := ctx.Value(ContextKey(name)).(string)
+		val, ok := ctx.Value(ContextKey(string(name))).(string)
 		if !ok {
 			Log(ctx).Errorf("Failed to convert variable %q to string from %T, returning empty value.", name, name)
 			return ""
@@ -49,7 +64,7 @@ func Var(name string) StringVar {
 }
 
 // Define creates a define variable action
-func Define(name string, value interface{}) (Action, error) {
+func Define(name String, value interface{}) (Action, error) {
 	if name == "" {
 		return nil, trace.BadParameter("Define needs variable name")
 	}
@@ -57,7 +72,7 @@ func Define(name string, value interface{}) (Action, error) {
 		return nil, trace.BadParameter("nils are not supported here because they are evil")
 	}
 	return &DefineAction{
-		name:  name,
+		name:  string(name),
 		value: value,
 	}, nil
 }
@@ -90,12 +105,12 @@ func (p *DefineAction) Run(ctx ExecutionContext) error {
 
 // WithTempDir creates a new temp dir, and defines a variable
 // with a given name
-func WithTempDir(name string, actions ...Action) (Action, error) {
+func WithTempDir(name String, actions ...Action) (Action, error) {
 	if name == "" {
 		return nil, trace.BadParameter("TempDir needs name")
 	}
 	return &WithTempDirAction{
-		name:    name,
+		name:    string(name),
 		actions: actions,
 	}, nil
 }

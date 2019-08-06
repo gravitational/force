@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -43,7 +42,8 @@ func Parse(inputs []string, runner *Runner) error {
 			"Shell":         force.Shell,
 			"Oneshot":       force.Oneshot,
 			"Exit":          force.Exit,
-			"Env":           os.Getenv,
+			"Env":           force.Env,
+			"ExpectEnv":     force.ExpectEnv,
 			"ID":            force.ID,
 			"Var":           force.Var,
 			"WithTempDir":   force.WithTempDir,
@@ -51,14 +51,7 @@ func Parse(inputs []string, runner *Runner) error {
 			"Sprintf":       force.Sprintf,
 			"Define":        force.Define,
 			"Strings":       force.Strings,
-			"ExpectEnv": func(key string) (string, error) {
-				val := os.Getenv(key)
-				if val == "" {
-					return "", trace.NotFound("define environment variable %q", key)
-				}
-				return val, nil
-			},
-			"Duplicate": force.Duplicate,
+			"Duplicate":     force.Duplicate,
 
 			"Setup": NewGroup(runner),
 
@@ -332,7 +325,7 @@ func literalToValue(a *ast.BasicLit) (interface{}, error) {
 		if err != nil {
 			return nil, trace.BadParameter("failed to parse argument: %s, error: %s", a.Value, err)
 		}
-		return value, nil
+		return force.String(value), nil
 	}
 	return nil, trace.BadParameter("unsupported function argument type: '%v'", a.Kind)
 }
@@ -340,7 +333,7 @@ func literalToValue(a *ast.BasicLit) (interface{}, error) {
 func callFunction(f interface{}, args []interface{}) (v interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = trace.BadParameter("%s", r)
+			err = trace.BadParameter("failed calling function %v %v", functionName(f), r)
 		}
 	}()
 	arguments := make([]reflect.Value, len(args))
@@ -348,7 +341,6 @@ func callFunction(f interface{}, args []interface{}) (v interface{}, err error) 
 		arguments[i] = reflect.ValueOf(a)
 	}
 	fn := reflect.ValueOf(f)
-
 	ret := fn.Call(arguments)
 	switch len(ret) {
 	case 1:
@@ -370,7 +362,7 @@ func callFunction(f interface{}, args []interface{}) (v interface{}, err error) 
 func createStruct(val interface{}, args map[string]interface{}) (v interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = trace.BadParameter("%s", r)
+			err = trace.BadParameter("struct %v: %v", reflect.TypeOf(val).Name(), r)
 		}
 	}()
 	structType := reflect.TypeOf(val)
@@ -382,15 +374,6 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 		}
 		if !field.CanSet() {
 			return nil, trace.BadParameter("can't set value of %v", field)
-		}
-		// StringVar field is not directly assignable to string,
-		// this is a syntax sugar to convert string constants on the fly
-		// to the string, this is equivalent of:
-		// type S struct{ Field StringVar}
-		// s := S{Field: String("my string")}
-		if field.Type() == reflect.TypeOf((*force.StringVar)(nil)).Elem() && reflect.TypeOf(val).Kind() == reflect.String {
-			field.Set(reflect.ValueOf(force.String(val.(string))))
-			continue
 		}
 		field.Set(reflect.ValueOf(val))
 	}

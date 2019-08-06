@@ -64,19 +64,19 @@ type Config struct {
 	Context context.Context
 	// GlobalContext is a base directory path for overlayfs other types
 	// of snapshotting
-	GlobalContext string
+	GlobalContext force.String
 	// Backend specifies build backend
-	Backend string
+	Backend force.String
 	// SessionName is a default build session name
-	SessionName string
+	SessionName force.String
 	// Server is an optional registry server to login into
-	Server string
+	Server force.String
 	// Username is the registry username
-	Username string
+	Username force.String
 	// Secret is a registry secret
-	Secret string
+	Secret force.String
 	// SecretFile is a path to secret
-	SecretFile string
+	SecretFile force.String
 	// Insecure turns off security for image pull/push
 	Insecure bool
 	// Group is a builder plugin group
@@ -96,10 +96,10 @@ func (i *Config) CheckAndSetDefaults() error {
 		if baseDir == "" {
 			baseDir = os.TempDir()
 		}
-		i.GlobalContext = filepath.Join(baseDir, ".local", "share", "img")
+		i.GlobalContext = force.String(filepath.Join(baseDir, ".local", "share", "img"))
 	}
 	if i.Backend == "" {
-		err := overlay.Supported(i.GlobalContext)
+		err := overlay.Supported(string(i.GlobalContext))
 		if err == nil {
 			i.Backend = OverlayFSBackend
 		} else {
@@ -111,11 +111,11 @@ func (i *Config) CheckAndSetDefaults() error {
 		i.SessionName = SessionName
 	}
 	if i.SecretFile != "" {
-		data, err := ioutil.ReadFile(i.SecretFile)
+		data, err := ioutil.ReadFile(string(i.SecretFile))
 		if err != nil {
 			return trace.ConvertSystemError(err)
 		}
-		i.Secret = string(data)
+		i.Secret = force.String(data)
 	}
 	return nil
 }
@@ -143,13 +143,14 @@ type Image struct {
 
 // Secret is a secret passed to docker builds
 type Secret struct {
-	ID string
+	// ID is a secret ID
+	ID force.StringVar
 	// File is a path to a secret
 	File force.StringVar
 }
 
 func (s *Secret) CheckAndSetDefaults() error {
-	if s.ID == "" {
+	if s.ID == nil {
 		return trace.BadParameter("missing ID value of the secret")
 	}
 	if s.File == nil {
@@ -160,13 +161,13 @@ func (s *Secret) CheckAndSetDefaults() error {
 
 type Arg struct {
 	// Key is a build argument key
-	Key string
+	Key force.StringVar
 	// Val is a build argument value
 	Val force.StringVar
 }
 
 func (a *Arg) CheckAndSetDefaults() error {
-	if a.Key == "" {
+	if a.Key == nil {
 		return trace.BadParameter("missing Key value of the build argument")
 	}
 	if a.Val == nil {
@@ -236,7 +237,7 @@ func New(cfg Config) (*Builder, error) {
 	}
 
 	// Create the directory used for build snapshots
-	root := filepath.Join(cfg.GlobalContext, RuncExecutor, cfg.Backend)
+	root := filepath.Join(string(cfg.GlobalContext), RuncExecutor, string(cfg.Backend))
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, trace.Wrap(err)
 	}

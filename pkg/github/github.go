@@ -21,7 +21,7 @@ const GithubPlugin = Key("github")
 // Config is a github plugin config
 type Config struct {
 	// Token is an access token
-	Token string
+	Token force.String
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -35,9 +35,9 @@ func (cfg *Config) CheckAndSetDefaults() error {
 // Source is a source repository to watch
 type Source struct {
 	// Repo is a repository name to watch
-	Repo string
+	Repo force.String
 	// Branch is a branch to watch PRs against
-	Branch string
+	Branch force.String
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -56,7 +56,7 @@ func (s *Source) CheckAndSetDefaults() error {
 
 // Repository returns repository address
 func (s *Source) Repository() (*Repository, error) {
-	owner, repo, err := parseRepository(s.Repo)
+	owner, repo, err := parseRepository(string(s.Repo))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -150,7 +150,7 @@ func (g *Plugin) Watch(src Source) (force.Channel, error) {
 	}
 	return &RepoWatcher{
 		plugin: g,
-		source: WatchSource{Repo: *repo, Branch: src.Branch},
+		source: WatchSource{Repo: *repo, Branch: string(src.Branch)},
 		// TODO(klizhentas): queues have to be configurable
 		eventsC: make(chan force.Event, 1024),
 	}, nil

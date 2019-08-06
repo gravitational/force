@@ -21,7 +21,7 @@ const GitPlugin = Key("git")
 // Config is a configuration
 type Config struct {
 	// Token is an access token
-	Token string
+	Token force.String
 }
 
 func (cfg *Config) CheckAndSetDefaults() error {
@@ -33,7 +33,7 @@ func (cfg *Config) CheckAndSetDefaults() error {
 
 // Repo is a repository to clone
 type Repo struct {
-	URL string
+	URL force.String
 	// Into into dir
 	Into force.StringVar
 	// Hash is a commit hash to clone
@@ -126,9 +126,9 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		// https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/
 		Auth: &http.BasicAuth{
 			Username: "token", // this can be anything except an empty string
-			Password: p.plugin.Token,
+			Password: string(p.plugin.Token),
 		},
-		URL: p.repo.URL,
+		URL: string(p.repo.URL),
 	})
 	if err != nil {
 		return trace.Wrap(err)

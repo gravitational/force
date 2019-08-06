@@ -71,7 +71,7 @@ func (l *LocalProcess) Group() force.Group {
 
 // Name returns a process name
 func (l *LocalProcess) Name() string {
-	return l.Spec.Name
+	return string(l.Spec.Name)
 }
 
 // String returns process user friendly string

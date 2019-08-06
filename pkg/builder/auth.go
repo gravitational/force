@@ -25,13 +25,13 @@ func (b *Builder) Credentials(ctx context.Context, req *auth.CredentialsRequest)
 		return nil, trace.NotFound("no credentials use BuilderConfig{Username: `...`, Secret: `...`, Server: %q} to setup credentials", req.Host)
 	}
 
-	if b.Config.Server != req.Host {
+	if string(b.Config.Server) != req.Host {
 		return nil, trace.NotFound("no credentials found for %q, only for %q", req.Host, b.Config.Server)
 	}
 
 	logger.Debugf("Authorized as %v in %v.", b.Config.Username, req.Host)
 	return &auth.CredentialsResponse{
-		Username: b.Config.Username,
-		Secret:   b.Config.Secret,
+		Username: string(b.Config.Username),
+		Secret:   string(b.Config.Secret),
 	}, nil
 }

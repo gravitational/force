@@ -116,7 +116,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 
 	// Create the new database for metadata.
 	mdb := ctdmetadata.NewDB(db, contentStore, map[string]ctdsnapshot.Snapshotter{
-		b.Backend: snapshotter,
+		string(b.Backend): snapshotter,
 	})
 	if err := mdb.Init(ctx); err != nil {
 		return opt, trace.Wrap(err)
@@ -144,7 +144,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 		return opt, err
 	}
 
-	xlabels := base.Labels("oci", b.Backend)
+	xlabels := base.Labels("oci", string(b.Backend))
 
 	var supportedPlatforms []specs.Platform
 	for _, p := range binfmt_misc.SupportedPlatforms() {
@@ -162,7 +162,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 		MetadataStore: md,
 		Executor:      exe,
 		Snapshotter: containerdsnapshot.NewSnapshotter(
-			b.Backend, mdb.Snapshotter(b.Backend), contentStore, md, "buildkit", gc, nil),
+			string(b.Backend), mdb.Snapshotter(string(b.Backend)), contentStore, md, "buildkit", gc, nil),
 		ContentStore:       contentStore,
 		Applier:            apply.NewFileSystemApplier(contentStore),
 		Differ:             walking.NewWalkingDiff(contentStore),

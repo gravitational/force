@@ -27,7 +27,7 @@ const (
 
 type Config struct {
 	// Level is a debugging level
-	Level string
+	Level force.String
 	// Outputs
 	Outputs []Output
 }
@@ -35,19 +35,20 @@ type Config struct {
 type Output struct {
 	// Type is a logging type, currently supported
 	// is stackdriver and stdout
-	Type string
+	Type force.String
 	// CredentialsFile is a path to credentials file,
 	// used in case of stackdriver plugin
-	CredentialsFile string
+	CredentialsFile force.String
 	// Credentials is a string with creds
-	Credentials string
+	Credentials force.String
 }
 
+// CheckAndSetDefaults checks and sets default values
 func (cfg *Config) CheckAndSetDefaults() error {
 	if cfg.Level == "" {
-		cfg.Level = "info"
+		cfg.Level = force.String(log.InfoLevel.String())
 	} else {
-		_, err := log.ParseLevel(cfg.Level)
+		_, err := log.ParseLevel(string(cfg.Level))
 		if err != nil {
 			return trace.Wrap(err)
 		}
@@ -66,11 +67,11 @@ func (cfg *Config) CheckAndSetDefaults() error {
 				return trace.BadParameter("provide either Credentials or CredentialsFile, not both for %q logger", o.Type)
 			}
 			if o.CredentialsFile != "" {
-				data, err := ioutil.ReadFile(o.CredentialsFile)
+				data, err := ioutil.ReadFile(string(o.CredentialsFile))
 				if err != nil {
 					return trace.Wrap(trace.ConvertSystemError(err), "could not read credentials file")
 				}
-				o.Credentials = string(data)
+				o.Credentials = force.String(data)
 			}
 		case TypeStdout:
 		default:
@@ -130,7 +131,7 @@ func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
 		if err := cfg.CheckAndSetDefaults(); err != nil {
 			return nil, trace.Wrap(err)
 		}
-		level, err := log.ParseLevel(cfg.Level)
+		level, err := log.ParseLevel(string(cfg.Level))
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}

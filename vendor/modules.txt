@@ -22,6 +22,11 @@ github.com/Microsoft/hcsshim/internal/timeout
 github.com/Microsoft/hcsshim/internal/schema2
 github.com/Microsoft/hcsshim/internal/longpath
 github.com/Microsoft/hcsshim/internal/safefile
+# github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751
+github.com/alecthomas/template
+github.com/alecthomas/template/parse
+# github.com/alecthomas/units v0.0.0-20190717042225-c3de453c63f4
+github.com/alecthomas/units
 # github.com/containerd/console v0.0.0-20181022165439-0650fd9eeb50
 github.com/containerd/console
 # github.com/containerd/containerd v1.3.0-0.20190507210959-7c1e88399ec0
@@ -463,6 +468,8 @@ google.golang.org/grpc/balancer/base
 google.golang.org/grpc/binarylog/grpc_binarylog_v1
 google.golang.org/grpc/internal/syscall
 google.golang.org/grpc/credentials/oauth
+# gopkg.in/alecthomas/kingpin.v2 v2.2.6
+gopkg.in/alecthomas/kingpin.v2
 # gopkg.in/src-d/go-billy.v4 v4.3.2
 gopkg.in/src-d/go-billy.v4
 gopkg.in/src-d/go-billy.v4/osfs
@@ -471,10 +478,10 @@ gopkg.in/src-d/go-billy.v4/helper/chroot
 gopkg.in/src-d/go-billy.v4/helper/polyfill
 # gopkg.in/src-d/go-git.v4 v4.13.1
 gopkg.in/src-d/go-git.v4
+gopkg.in/src-d/go-git.v4/plumbing
 gopkg.in/src-d/go-git.v4/plumbing/transport/http
 gopkg.in/src-d/go-git.v4/config
 gopkg.in/src-d/go-git.v4/internal/revision
-gopkg.in/src-d/go-git.v4/plumbing
 gopkg.in/src-d/go-git.v4/plumbing/cache
 gopkg.in/src-d/go-git.v4/plumbing/filemode
 gopkg.in/src-d/go-git.v4/plumbing/format/gitignore

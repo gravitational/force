@@ -38,6 +38,8 @@ type Repo struct {
 	Into force.StringVar
 	// Hash is a commit hash to clone
 	Hash force.StringVar
+	// Submodules is an optional submodule to init
+	Submodules []force.StringVar
 }
 
 func (r *Repo) CheckAndSetDefaults() error {
@@ -115,6 +117,9 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		return trace.BadParameter("Into variable is not an existing directory")
 	}
 
+	log.Infof("Cloning repository %v into %v.", p.repo.URL, into)
+	start := time.Now()
+
 	r, err := git.PlainClone(into, false, &git.CloneOptions{
 		// The intended use of a GitHub personal access token is in replace of your password
 		// because access tokens can easily be revoked.
@@ -129,7 +134,7 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		return trace.Wrap(err)
 	}
 
-	log.Debugf("Cloned %v into %v.", p.repo.URL, into)
+	log.Infof("Cloned %v into %v in %v.", p.repo.URL, into, time.Now().Sub(start))
 
 	if p.repo.Hash != nil {
 		if hash := p.repo.Hash.Value(ctx); hash != "" {
@@ -146,6 +151,28 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 			}
 
 			log.Infof("Checked out repository %v commit %v.", p.repo.URL, hash)
+		}
+	}
+
+	for i, subVar := range p.repo.Submodules {
+		subName := subVar.Value(ctx)
+		if subName == "" {
+			return trace.BadParameter("got empty submodule name at %v", i)
+		}
+		w, err := r.Worktree()
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		log.Infof("Updating submodule %v.", subName)
+		sub, err := w.Submodule(subName)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		err = sub.Update(&git.SubmoduleUpdateOptions{
+			Init: true,
+		})
+		if err != nil {
+			return trace.Wrap(err)
 		}
 	}
 

@@ -23,3 +23,8 @@ github:
 	$(MAKE) all
 	cd examples/github && force ci.force
 
+
+.PHONY: teleport
+teleport:
+	$(MAKE) all
+	cd examples/teleport && force teleport.force --setup=../github/setup.force

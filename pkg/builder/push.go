@@ -63,7 +63,7 @@ func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	}
 
 	log := force.Log(ectx)
-	log.Infof("Pushing %v.", img.String())
+	log.Infof("Pushing image %v.", img.Tag.Value(ectx))
 
 	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
@@ -78,13 +78,13 @@ func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	})
 	eg.Go(func() error {
 		defer sess.Close()
-		return b.push(ctx, img.Tag, b.Config.Insecure)
+		return b.push(ctx, img.Tag.Value(ectx), b.Config.Insecure)
 	})
 
 	if err := eg.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Successfully pushed %v.", img.Tag)
+	log.Infof("Successfully pushed %v.", img.Tag.Value(ectx))
 
 	return nil
 }

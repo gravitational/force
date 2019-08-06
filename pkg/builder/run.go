@@ -72,7 +72,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 			Exporter: "image",
 			ExporterAttrs: map[string]string{
 				// in the future will be multiple tags
-				"name": strings.Join([]string{img.Tag}, ","),
+				"name": strings.Join([]string{img.Tag.Value(ectx)}, ","),
 			},
 			Frontend:      FrontendDockerfile,
 			FrontendAttrs: frontendAttrs,

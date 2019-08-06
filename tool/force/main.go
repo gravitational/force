@@ -12,10 +12,10 @@ import (
 	"github.com/gravitational/force/pkg/runner"
 
 	_ "github.com/gravitational/force/internal/unshare"
-
 	"github.com/gravitational/trace"
 	"github.com/opencontainers/runc/libcontainer/system"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 func main() {
@@ -25,7 +25,16 @@ func main() {
 		os.Exit(1)
 	}
 	ctx := setupSignalHandlers()
-	run, err := generateAndStart(ctx, os.Args[1:])
+	app := kingpin.New("force", "Force is simple CI/CD tool")
+	setupFile := app.Flag("setup", "Path to setup file").Default(SetupForce).String()
+	forceFile := app.Arg("file", "Force file to run").Default(GFile).String()
+	_, err := app.Parse(os.Args[1:])
+	if err != nil {
+		fmt.Printf("ERROR: %v", err)
+		os.Exit(1)
+	}
+
+	run, err := generateAndStart(ctx, *setupFile, *forceFile)
 	if err != nil {
 		log.Errorf("Force exited with error: %v", trace.DebugReport(err))
 		os.Exit(1)
@@ -52,18 +61,14 @@ const (
 	SetupForce = "setup.force"
 )
 
-func generateAndStart(ctx context.Context, args []string) (*runner.Runner, error) {
-	file := GFile
-	if len(args) > 0 {
-		file = args[0]
-	}
+func generateAndStart(ctx context.Context, setupFile, forceFile string) (*runner.Runner, error) {
 	var inputs []string
-	data, err := ioutil.ReadFile(SetupForce)
+	data, err := ioutil.ReadFile(setupFile)
 	if err == nil {
 		log.Debugf("Found setup file %q.", SetupForce)
 		inputs = append(inputs, string(data))
 	}
-	data, err = ioutil.ReadFile(file)
+	data, err = ioutil.ReadFile(forceFile)
 	if err != nil {
 		return nil, trace.ConvertSystemError(err)
 	}

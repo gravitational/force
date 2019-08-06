@@ -1,0 +1,35 @@
+// Process defines a set of actions triggered by a channel
+Process(Spec{
+	// Name is used for reporting and debugging purposes
+	Name: "teleport-ci",
+	// Watch pull requests
+	Watch: PullRequests(Source{
+		// Repo is a repository to watch
+		Repo: "gravitational/teleport",
+	}),
+	// No namespaces is a problem - how to define modules?
+	// can I just do github.PostStatusOf?
+	// also, should be more strict with variables, reference of an undefined
+	// variable or shadowing of an existing one should be a problem
+	Run: PostStatusOf(
+		// create temporary directory "repo",
+		WithTempDir("repo", 
+			// Clone clones git repository into temp dir
+			Clone(Repo{
+				URL: "https://github.com/gravitational/teleport.git",
+				Into: Var("repo"),
+				// Commit is a commit variable defined by pull request watch,
+				// the problem is that there is no namespacing here
+				Hash: Var("commit"),
+				// Submodules is an optional submodule to init
+				Submodules: Strings("e"),
+			}),
+			// WithChangeDir changes current directory
+			WithChangeDir(
+				Var("repo"),
+				Shell(Sprintf(`cd %v && make test`, Var("repo"))),
+				Shell(Sprintf(`cd %v && make integration`, Var("repo"))),				
+			),
+		),
+	),
+})

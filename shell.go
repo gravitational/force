@@ -9,6 +9,33 @@ import (
 	"github.com/gravitational/trace"
 )
 
+// Strings returns a list of strings evaluated from the arguments
+func Strings(args ...interface{}) ([]StringVar, error) {
+	out := make([]StringVar, len(args))
+	for i := range args {
+		switch v := args[i].(type) {
+		case StringVar:
+			out[i] = v
+		case string:
+			out[i] = String(v)
+		default:
+			return nil, trace.BadParameter("argument %q is not a string", args[i])
+		}
+	}
+	return out, nil
+}
+
+// Sprintf is jsut like Sprintf
+func Sprintf(format string, args ...interface{}) StringVar {
+	return StringVarFunc(func(ctx ExecutionContext) string {
+		eval := make([]interface{}, len(args))
+		for i := range args {
+			eval[i] = Eval(ctx, args[i])
+		}
+		return fmt.Sprintf(format, eval...)
+	})
+}
+
 // Var returns string variable
 func Var(name string) StringVar {
 	return StringVarFunc(func(ctx ExecutionContext) string {
@@ -19,6 +46,46 @@ func Var(name string) StringVar {
 		}
 		return val
 	})
+}
+
+// Define creates a define variable action
+func Define(name string, value interface{}) (Action, error) {
+	if name == "" {
+		return nil, trace.BadParameter("Define needs variable name")
+	}
+	if value == nil {
+		return nil, trace.BadParameter("nils are not supported here because they are evil")
+	}
+	return &DefineAction{
+		name:  name,
+		value: value,
+	}, nil
+}
+
+// DefineAction defines a variable
+type DefineAction struct {
+	name  string
+	value interface{}
+}
+
+// Eval evaluates variable based on the execution context
+func Eval(ctx ExecutionContext, variable interface{}) interface{} {
+	switch v := variable.(type) {
+	case StringVar:
+		return v.Value(ctx)
+	default:
+		return v
+	}
+}
+
+// Run defines a variable on the context
+func (p *DefineAction) Run(ctx ExecutionContext) error {
+	v := ctx.Value(ContextKey(p.name))
+	if v != nil {
+		return trace.AlreadyExists("variable %q is already defined", p.name)
+	}
+	ctx.SetValue(ContextKey(p.name), Eval(ctx, p.value))
+	return nil
 }
 
 // WithTempDir creates a new temp dir, and defines a variable
@@ -60,32 +127,84 @@ func (p *WithTempDirAction) Run(ctx ExecutionContext) error {
 	return trace.Wrap(err)
 }
 
+// WithChangeDir sets the current working directory
+// and executes the actions in a sequence
+func WithChangeDir(name StringVar, actions ...Action) (Action, error) {
+	if name == nil {
+		return nil, trace.BadParameter("WithChangeDir needs a directory name")
+	}
+	return &WithChangeDirAction{
+		name:    name,
+		actions: actions,
+	}, nil
+}
+
+// WithChangeDirAction sets the current directory value
+type WithChangeDirAction struct {
+	name    StringVar
+	actions []Action
+}
+
+// Run runs with temp dir action
+func (p *WithChangeDirAction) Run(ctx ExecutionContext) error {
+	log := Log(ctx)
+	name := p.name.Value(ctx)
+	if name == "" {
+		return trace.BadParameter("WithChangeDir executed with empty string on %v", name)
+	}
+	fi, err := os.Stat(name)
+	if err != nil {
+		return trace.ConvertSystemError(err)
+	}
+	if !fi.IsDir() {
+		return trace.BadParameter("%q is not a directory", name)
+	}
+	ctx.SetValue(KeyCurrentDir, name)
+	log.Infof("Changing current dir to %q.", name)
+	defer func() {
+		ctx.SetValue(KeyCurrentDir, nil)
+	}()
+	err = Sequence(p.actions...).Run(ctx)
+	return trace.Wrap(err)
+}
+
 // Shell runs shell
-func Shell(script string) (Action, error) {
-	if script == "" {
+func Shell(script StringVar) (Action, error) {
+	if script == nil {
 		return nil, trace.BadParameter("missing script value")
 	}
 	return &ShellAction{
-		Command: script,
+		command: script,
 	}, nil
 }
 
 type ShellAction struct {
-	Command string
+	command StringVar
 }
 
 func (s *ShellAction) Run(ctx ExecutionContext) error {
 	log := Log(ctx)
-	log.Infof("Running %q.", s.Command)
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", s.Command)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	command := s.command.Value(ctx)
+	curDirI := ctx.Value(KeyCurrentDir)
+	var curDir string
+	if curDirI != nil {
+		curDir, _ = curDirI.(string)
+		log.Infof("Running %q with current directory set to %v.", command, curDirI)
+	} else {
+		log.Infof("Running %q.", command)
+	}
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	w := Writer(log)
+	defer w.Close()
+	cmd.Stdout = w
+	cmd.Stderr = w
+	cmd.Dir = curDir
 	err := cmd.Run()
 	return trace.Wrap(err)
 }
 
 func (s *ShellAction) String() string {
-	return fmt.Sprintf("Shell(command=%v)", s.Command)
+	return fmt.Sprintf("Shell()")
 }
 
 // Chain groups sequence of commands together,

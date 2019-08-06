@@ -36,17 +36,21 @@ func Parse(inputs []string, runner *Runner) error {
 		runner: runner,
 		functions: map[string]interface{}{
 			// Standard library functions
-			"Process":     runner.Process,
-			"Sequence":    force.Sequence,
-			"Continue":    force.Continue,
-			"Files":       force.Files,
-			"Shell":       force.Shell,
-			"Oneshot":     force.Oneshot,
-			"Exit":        force.Exit,
-			"Env":         os.Getenv,
-			"ID":          force.ID,
-			"Var":         force.Var,
-			"WithTempDir": force.WithTempDir,
+			"Process":       runner.Process,
+			"Sequence":      force.Sequence,
+			"Continue":      force.Continue,
+			"Files":         force.Files,
+			"Shell":         force.Shell,
+			"Oneshot":       force.Oneshot,
+			"Exit":          force.Exit,
+			"Env":           os.Getenv,
+			"ID":            force.ID,
+			"Var":           force.Var,
+			"WithTempDir":   force.WithTempDir,
+			"WithChangeDir": force.WithChangeDir,
+			"Sprintf":       force.Sprintf,
+			"Define":        force.Define,
+			"Strings":       force.Strings,
 			"ExpectEnv": func(key string) (string, error) {
 				val := os.Getenv(key)
 				if val == "" {
@@ -79,6 +83,8 @@ func Parse(inputs []string, runner *Runner) error {
 		},
 		getStruct: func(name string) (interface{}, error) {
 			switch name {
+			case "string":
+				return "", nil
 			// Standard library structs
 			case "Spec":
 				return force.Spec{}, nil

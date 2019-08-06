@@ -127,7 +127,7 @@ type Image struct {
 	// Dockerfile is a path or the URL to the dockerfile
 	Dockerfile force.StringVar
 	// Tag is a tag in the spec of image:tag (optional tag part)
-	Tag string
+	Tag force.StringVar
 	// NoCache turns off caching
 	NoCache bool
 	// Platforms is a list of target platforms
@@ -184,10 +184,10 @@ const (
 
 // CheckAndSetDefaults checks and sets default values
 func (i *Image) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	if i.Tag == "" {
+	if i.Tag == nil || i.Tag.Value(ctx) == "" {
 		return trace.BadParameter("specify image tag, e.g. 'example'")
 	}
-	_, err := reference.ParseNormalizedNamed(i.Tag)
+	_, err := reference.ParseNormalizedNamed(i.Tag.Value(ctx))
 	if err != nil {
 		return trace.BadParameter("parsing image name %q failed: %v", i.Tag, err)
 	}

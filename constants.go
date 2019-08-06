@@ -12,6 +12,8 @@ const (
 type ContextKey string
 
 const (
+	// KeyCurrentDir is a current directory
+	KeyCurrentDir = ContextKey("current.dir")
 	// KeyError is an error value
 	KeyError = ContextKey("error")
 	// KeyLog is a logger associated with this execution

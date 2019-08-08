@@ -30,7 +30,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	}
 
 	log := force.Log(ectx)
-	log.Infof("Building %v.", img.String())
+	log.Infof("Building image %v.", img.Tag.Value(ectx))
 
 	// create and execute a build session
 	frontendAttrs := map[string]string{
@@ -86,7 +86,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	if err := eg.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Successfully built %v.", img)
+	log.Infof("Successfully built %v.", img.Tag.Value(ectx))
 
 	return nil
 }

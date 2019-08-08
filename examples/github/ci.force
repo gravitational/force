@@ -27,8 +27,10 @@ Process(Spec{
 				// May be just to Event().Commit? define a global variable,
 				// but what is the type then?
 			}),
-			// Define defines a variable
-			Define("image", Sprintf(`gcr.io/kubeadm-167321/example:%v`, Var("commit"))), 
+			// Image is an image name to build
+			Define("image", Sprintf(`gcr.io/kubeadm-167321/example:%v`, Var("commit"))),
+			// Runtime is a go runtime to build
+			Define("go_runtime", "go1.12.1"),
 			// Build builds dockerfile and tags it in the local storage
 			Build(Image{
 				// Set build context to the cloned repository
@@ -50,7 +52,7 @@ Process(Spec{
 				Args: []Arg{
 					{
 						// FORCE_ID is a force run ID
-						Key: "FORCE_ID",
+						Key: "GO_RUNTIME",
 						Val: ID(),
 					},
 				},

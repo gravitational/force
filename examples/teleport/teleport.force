@@ -24,11 +24,28 @@ Process(Spec{
 				// Submodules is an optional submodule to init
 				Submodules: Strings("e"),
 			}),
-			// WithChangeDir changes current directory
-			WithChangeDir(
-				Var("repo"),
-				Shell(`make -C build.assets test integration`),
-			),
+			// image is a test image to build
+			Define("image", Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, Var("commit"))),
+			// buildbox is a version of the buildbox
+			Define("buildbox", "gcr.io/kubeadm-167321/buildbox:1.12.1"),
+			// Build builds dockerfile and tags it in the local storage
+			Build(Image{
+				// Set build context to the cloned repository
+				Context: Var("repo"),
+				// Dockerfile is a dockerfile to build (from current dir),
+				Dockerfile: "./test.dockerfile",
+				// Tag is the tag to build - here, as you see, we need to reimplement
+				// Sprintf and every other method that works with our vars
+				Tag: Var("image"),
+				// Args are build arguments
+				Args: []Arg{
+					{
+						Key: "BUILDBOX",
+						Val: Var("buildbox"),
+					},
+				},
+			}),
+			Push(Image{Tag: Var("image")}),
 		),
 	),
 })

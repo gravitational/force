@@ -9,6 +9,22 @@ import (
 	"github.com/gravitational/trace"
 )
 
+// EvalStringVars evaluates string vars and returns a slice of strings
+func EvalStringVars(ctx ExecutionContext, in []StringVar) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, v := range in {
+		if v == nil {
+			out[i] = ""
+		} else {
+			out[i] = v.Value(ctx)
+		}
+	}
+	return out
+}
+
 // Env returns environment variable
 func Env(key String) String {
 	return String(os.Getenv(string(key)))

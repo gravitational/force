@@ -1,0 +1,17 @@
+Process(Spec{
+	Name: "kube",
+	Watch: Oneshot(),
+	Run: Sequence(
+		Run(Job{
+			Name: Sprintf("hello-%v", ID()),
+			Containers: []Container{
+				{
+					Image: "busybox",
+					Name: "busybox",
+					Command: Strings("/bin/sh", "-c", `echo "hello, world!" && sleep 10;`),
+				},
+			},
+		}),
+		Exit(),
+	),
+})

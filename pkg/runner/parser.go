@@ -15,6 +15,7 @@ import (
 	"github.com/gravitational/force/pkg/builder"
 	"github.com/gravitational/force/pkg/git"
 	"github.com/gravitational/force/pkg/github"
+	"github.com/gravitational/force/pkg/kube"
 	"github.com/gravitational/force/pkg/logging"
 
 	"github.com/gravitational/trace"
@@ -73,6 +74,10 @@ func Parse(inputs []string, runner *Runner) error {
 
 			// Log functions
 			"Log": logging.NewPlugin(runner),
+
+			// Kubernetes functions
+			"Kube": kube.NewPluginFunc(runner),
+			"Run":  kube.NewRun(runner),
 		},
 		getStruct: func(name string) (interface{}, error) {
 			switch name {
@@ -105,6 +110,13 @@ func Parse(inputs []string, runner *Runner) error {
 				return logging.Config{}, nil
 			case "Output":
 				return logging.Output{}, nil
+				// Kube structs
+			case "KubeConfig":
+				return kube.Config{}, nil
+			case "Job":
+				return kube.Job{}, nil
+			case "Container":
+				return kube.Container{}, nil
 			default:
 				return nil, trace.BadParameter("unsupported struct: %v", name)
 			}

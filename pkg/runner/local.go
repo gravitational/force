@@ -122,11 +122,12 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 				force.SetLog(execContext, logger)
 				// add optional data from the event
 				event.AddMetadata(execContext)
+				start := time.Now()
 				err = l.Run.Run(execContext)
 				if err != nil {
-					logger.Errorf("%v failed: %v.", l, fullMessage(err))
+					logger.Errorf("%v failed with %v after running for %v.", l, fullMessage(err), time.Now().Sub(start))
 				} else {
-					logger.Infof("%v completed successfully.", l)
+					logger.Infof("%v completed successfully in %v.", l, time.Now().Sub(start))
 				}
 			}()
 		}

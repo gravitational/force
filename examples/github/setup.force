@@ -41,4 +41,12 @@ Setup(
 			},
 		},
 	}),
+
+	// Kube sets up kubernetes
+	Kube(KubeConfig{
+		// Path is a path to kubeconfig,
+		// which is optional, if not set,
+		// force assumes that it is running inside kubernetes
+		Path: ExpectEnv("KUBE_CREDENTIALS"),
+	}),
 )

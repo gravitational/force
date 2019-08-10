@@ -152,6 +152,21 @@ func Error(ctx ExecutionContext) error {
 	return err
 }
 
+// IntVar is a context int variable
+// that returns a string value from the execution context
+type IntVar interface {
+	// Value returns a string
+	Value(ctx ExecutionContext) int
+}
+
+// Int is a constant int var
+type Int int
+
+// Value returns int value
+func (i Int) Value(ctx ExecutionContext) int {
+	return int(i)
+}
+
 // StringVar is a context string variable
 // that returns a string value from the execution context
 type StringVar interface {

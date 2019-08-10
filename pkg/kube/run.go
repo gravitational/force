@@ -58,44 +58,36 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	writer := force.Writer(log)
 	defer writer.Close()
 
-	if err := r.waitAndStreamLogs(ctx, *job, writer); err != nil {
-		return trace.Wrap(err)
-	}
-
-	return nil
-}
-
-// waitAndStreamLogs streams logs until the job is either failed or done
-func (r *RunAction) waitAndStreamLogs(ctx force.ExecutionContext, job batchv1.Job, out io.Writer) error {
 	localContext, localCancel := context.WithCancel(ctx)
 	defer localCancel()
 
-	log := force.Log(ctx)
 	go func() {
-		defer localCancel()
-		err := r.wait(localContext, job)
+		err := r.streamLogs(localContext, *job, writer)
 		if err != nil {
-			log.Warningf("Hook finished with error: %v.", trace.DebugReport(err))
+			log.Warningf("Stream finished with error: %v.", err)
 		}
 	}()
 
+	return r.wait(ctx, *job)
+}
+
+// streamLogs streams logs until the job is either failed or done, the context
+// ctx should cancel whenever the job is done
+func (r *RunAction) streamLogs(ctx context.Context, job batchv1.Job, out io.Writer) error {
 	interval := retry.NewUnlimitedExponentialBackOff()
 	err := retry.WithInterval(ctx, interval, func() error {
 		watcher, err := r.newPodWatch(job)
 		if err != nil {
 			return &backoff.PermanentError{err}
 		}
-		err = r.monitorPods(localContext, watcher.ResultChan(), job, out)
+		err = r.monitorPods(ctx, watcher.ResultChan(), job, out)
 		watcher.Stop()
 		if err != nil && !trace.IsRetryError(err) {
 			return &backoff.PermanentError{Err: err}
 		}
 		return trace.Wrap(err)
 	})
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	return nil
+	return trace.Wrap(err)
 }
 
 // Wait waits for job to complete or fail, cancel on the context cancels

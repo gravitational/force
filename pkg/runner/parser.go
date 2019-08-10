@@ -117,6 +117,16 @@ func Parse(inputs []string, runner *Runner) error {
 				return kube.Job{}, nil
 			case "Container":
 				return kube.Container{}, nil
+			case "SecurityContext":
+				return kube.SecurityContext{}, nil
+			case "EnvVar":
+				return kube.EnvVar{}, nil
+			case "Volume":
+				return kube.Volume{}, nil
+			case "VolumeMount":
+				return kube.VolumeMount{}, nil
+			case "EmptyDir":
+				return kube.EmptyDir{}, nil
 			default:
 				return nil, trace.BadParameter("unsupported struct: %v", name)
 			}
@@ -262,7 +272,6 @@ func (g *gParser) evaluateExpr(n ast.Expr) (interface{}, error) {
 		default:
 			return nil, trace.BadParameter("unsupported composite literal: %v %T", l.Type, l.Type)
 		}
-
 	case *ast.BasicLit:
 		val, err := literalToValue(l)
 		if err != nil {
@@ -289,6 +298,20 @@ func (g *gParser) evaluateExpr(n ast.Expr) (interface{}, error) {
 			return nil, err
 		}
 		return callFunction(fn, arguments)
+	case *ast.UnaryExpr:
+		if l.Op != token.AND {
+			return nil, trace.BadParameter("operator %v is not supported", l.Op)
+		}
+		expr, err := g.evaluateExpr(l.X)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if reflect.TypeOf(expr).Kind() != reflect.Struct {
+			return nil, trace.BadParameter("don't know how to take address of %v", reflect.TypeOf(expr).Kind())
+		}
+		ptr := reflect.New(reflect.TypeOf(expr))
+		ptr.Elem().Set(reflect.ValueOf(expr))
+		return ptr.Interface(), nil
 	default:
 		return nil, trace.BadParameter("%T is not supported", n)
 	}
@@ -331,7 +354,7 @@ func literalToValue(a *ast.BasicLit) (interface{}, error) {
 		if err != nil {
 			return nil, trace.BadParameter("failed to parse argument: %s, error: %s", a.Value, err)
 		}
-		return value, nil
+		return force.Int(value), nil
 	case token.STRING:
 		value, err := strconv.Unquote(a.Value)
 		if err != nil {
@@ -382,7 +405,7 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 	for key, val := range args {
 		field := st.Elem().FieldByName(key)
 		if !field.IsValid() {
-			return nil, trace.BadParameter("field %q is not found", key)
+			return nil, trace.BadParameter("field %q is not found in %v", key, structType.Name())
 		}
 		if !field.CanSet() {
 			return nil, trace.BadParameter("can't set value of %v", field)

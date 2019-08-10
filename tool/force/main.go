@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gravitational/force/pkg/runner"
 
@@ -20,6 +22,7 @@ import (
 
 func main() {
 	reexec()
+	rand.Seed(time.Now().UnixNano())
 	if err := initLogger(); err != nil {
 		fmt.Printf("Failed to init logger: %v", err)
 		os.Exit(1)

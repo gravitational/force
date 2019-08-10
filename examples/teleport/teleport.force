@@ -28,6 +28,8 @@ Process(Spec{
 			Define("image", Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, Var("commit"))),
 			// buildbox is a version of the buildbox
 			Define("buildbox", "gcr.io/kubeadm-167321/buildbox:1.12.1"),
+			// Version to etcd to install in a container
+			Define("etcdVer", "v3.3.13"),
 			// Build builds dockerfile and tags it in the local storage
 			Build(Image{
 				// Set build context to the cloned repository
@@ -39,13 +41,38 @@ Process(Spec{
 				Tag: Var("image"),
 				// Args are build arguments
 				Args: []Arg{
-					{
-						Key: "BUILDBOX",
-						Val: Var("buildbox"),
-					},
+					{Key: "BUILDBOX", Val: Var("buildbox")},
+					{Key: "UID", Val: "1000"},
+					{Key: "GID", Val: "1000"},
+					{Key: "ETCD_VER", Val: Var("etcdVer")},
 				},
 			}),
 			Push(Image{Tag: Var("image")}),
+			// Run the test job in the image
+			Run(Job{
+				Name: Sprintf("tel-test-%v", ID()),
+				SecurityContext: &SecurityContext{RunAsUser: 1000, RunAsGroup: 1000},
+				Volumes: []Volume{
+					{Name: "gocache", EmptyDir: &EmptyDir{}},
+					{Name: "etcd", EmptyDir: &EmptyDir{}},
+				},
+				Containers: []Container{
+					{
+						Image: Var("image"),
+						Name: "test",
+						Command: Strings(
+							"/bin/bash", "-c",
+							"./examples/etcd/start-etcd.sh & sleep 1; make FLAGS='-cover -race' test",
+						),
+						WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
+						Env: []EnvVar{{Name: "GOCACHE", Value: "/mnt/gocache"}},
+						VolumeMounts: []VolumeMount{
+							{Name: "gocache", MountPath: "/mnt/gocache"},
+							{Name: "etcd", MountPath: "/gopath/src/github.com/gravitational/teleport/examples/etcd/data"},
+						},
+					},
+				},
+			}),
 		),
 	),
 })

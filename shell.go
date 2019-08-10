@@ -67,6 +67,26 @@ func Sprintf(format String, args ...interface{}) StringVar {
 	})
 }
 
+func EvalPInt64(ctx ExecutionContext, in IntVar) *int64 {
+	if in == nil {
+		return nil
+	}
+	val := int64(in.Value(ctx))
+	return &val
+}
+
+func EvalPInt32(ctx ExecutionContext, in IntVar) *int32 {
+	if in == nil {
+		return nil
+	}
+	val := int32(in.Value(ctx))
+	return &val
+}
+
+func PInt32(in int32) *int32 {
+	return &in
+}
+
 // Var returns string variable
 func Var(name String) StringVar {
 	return StringVarFunc(func(ctx ExecutionContext) string {
@@ -97,6 +117,15 @@ func Define(name String, value interface{}) (Action, error) {
 type DefineAction struct {
 	name  string
 	value interface{}
+}
+
+// EvalString evaluates string, nil is evaluated
+// to empty string
+func EvalString(ctx ExecutionContext, v StringVar) string {
+	if v == nil {
+		return ""
+	}
+	return v.Value(ctx)
 }
 
 // Eval evaluates variable based on the execution context

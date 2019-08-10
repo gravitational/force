@@ -2,12 +2,13 @@ package runner
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"math/rand"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gravitational/force"
 
 	"github.com/gravitational/trace"
@@ -79,6 +80,13 @@ func (l *LocalProcess) String() string {
 	return fmt.Sprintf("Process %v", l.Spec.Name)
 }
 
+// ShortID generates short random ids
+func ShortID() string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
 func (l *LocalProcess) triggerActions(ctx context.Context) {
 	for {
 		select {
@@ -97,17 +105,12 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 				return
 			}
 			go func() {
-				r, err := uuid.NewRandom()
-				if err != nil {
-					l.logger.Errorf("Failed to generate random number: %v", err)
-					return
-				}
 				execContext := &LocalContext{
 					RWMutex: &sync.RWMutex{},
 					context: ctx,
 					process: l,
 					event:   event,
-					id:      r.String(),
+					id:      ShortID(),
 				}
 				logger := l.logger.AddFields(map[string]interface{}{
 					force.KeyID: execContext.ID(),
@@ -123,7 +126,7 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 				// add optional data from the event
 				event.AddMetadata(execContext)
 				start := time.Now()
-				err = l.Run.Run(execContext)
+				err := l.Run.Run(execContext)
 				if err != nil {
 					logger.Errorf("%v failed with %v after running for %v.", l, fullMessage(err), time.Now().Sub(start))
 				} else {

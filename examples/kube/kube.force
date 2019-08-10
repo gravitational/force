@@ -4,11 +4,29 @@ Process(Spec{
 	Run: Sequence(
 		Run(Job{
 			Name: Sprintf("hello-%v", ID()),
+			Volumes: []Volume{
+				{
+					Name: "gocache",
+					EmptyDir: &EmptyDir{},
+				},
+			},			
 			Containers: []Container{
 				{
 					Image: "busybox",
 					Name: "busybox",
-					Command: Strings("/bin/sh", "-c", `echo "hello, world!" && sleep 10;`),
+					Command: Strings("/bin/sh", "-c", `ech "hello, $GOCACHE" && sleep 10;`),
+					Env: []EnvVar{
+						{
+							Name: "GOCACHE",
+							Value: "/mnt/gocache",
+						},
+					},
+					VolumeMounts: []VolumeMount{
+						{
+							Name: "gocache",
+							MountPath: "/mnt/gocache",
+						},
+					},					
 				},
 			},
 		}),

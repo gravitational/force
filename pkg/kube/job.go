@@ -15,11 +15,12 @@ import (
 
 //
 const (
-	// JobTTLSeconds is a default ttl for a job
-	JobTTLSeconds = 60 * 60 * 48
 	// ActiveDeadlineSeconds is an active deadline for a job to run
-	// 8 hours is default to avoid crashing jobs
+	// 4 hours is default to avoid crashing jobs
 	ActiveDeadlineSeconds = 60 * 60 * 4
+	// JobTTLSeconds is a default ttl for jobs, before they will be garbage
+	// collected
+	JobTTLSeconds = ActiveDeadlineSeconds * 2
 	// DefaultNamespace is a default kubernetes namespace
 	DefaultNamespace = "default"
 	KindJob          = "Job"
@@ -29,14 +30,33 @@ const (
 // Job is a simplified job spec
 type Job struct {
 	// Completions specifies job completions,
-	// Force's default is 1
-	Completions           int
-	ActiveDeadlineSeconds int
+	// Force's default is not set
+	Completions           force.IntVar
+	ActiveDeadlineSeconds force.IntVar
+	BackoffLimit          force.IntVar
 	// TTLSeconds provides auto cleanup of the job
-	TTLSeconds int
-	Name       force.StringVar
-	Namespace  force.StringVar
-	Containers []Container
+	TTLSeconds      force.IntVar
+	Name            force.StringVar
+	Namespace       force.StringVar
+	Containers      []Container
+	SecurityContext *SecurityContext
+	Volumes         []Volume
+}
+
+type SecurityContext struct {
+	RunAsUser  force.IntVar
+	RunAsGroup force.IntVar
+}
+
+func (s *SecurityContext) CheckAndSetDefaults(ctx force.ExecutionContext) error {
+	return nil
+}
+
+func (s *SecurityContext) Spec(ctx force.ExecutionContext) *corev1.PodSecurityContext {
+	return &corev1.PodSecurityContext{
+		RunAsUser:  force.EvalPInt64(ctx, s.RunAsUser),
+		RunAsGroup: force.EvalPInt64(ctx, s.RunAsGroup),
+	}
 }
 
 // CheckAndSetDefaults checks and sets defaults
@@ -44,13 +64,15 @@ func (j *Job) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	if j.Name == nil || j.Name.Value(ctx) == "" {
 		return trace.BadParameter("specify a job name")
 	}
-	if j.TTLSeconds == 0 {
-		// 48 hours to clean up old jobs
-		j.TTLSeconds = JobTTLSeconds
+	if j.BackoffLimit == nil {
+		j.BackoffLimit = force.Int(0)
 	}
-	if j.ActiveDeadlineSeconds == 0 {
+	if j.TTLSeconds == nil {
 		// 48 hours to clean up old jobs
-		j.ActiveDeadlineSeconds = ActiveDeadlineSeconds
+		j.TTLSeconds = force.Int(JobTTLSeconds)
+	}
+	if j.ActiveDeadlineSeconds == nil {
+		j.ActiveDeadlineSeconds = force.Int(ActiveDeadlineSeconds)
 	}
 	if j.Namespace == nil {
 		j.Namespace = force.String(DefaultNamespace)
@@ -58,8 +80,18 @@ func (j *Job) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	if len(j.Containers) == 0 {
 		return trace.BadParameter("the job needs at least one container")
 	}
+	if j.SecurityContext != nil {
+		if err := j.SecurityContext.CheckAndSetDefaults(ctx); err != nil {
+			return trace.Wrap(err)
+		}
+	}
 	for i := range j.Containers {
 		if err := j.Containers[i].CheckAndSetDefaults(ctx); err != nil {
+			return trace.Wrap(err)
+		}
+	}
+	for i := range j.Volumes {
+		if err := j.Volumes[i].CheckAndSetDefaults(ctx); err != nil {
 			return trace.Wrap(err)
 		}
 	}
@@ -74,6 +106,8 @@ func (j *Job) Spec(ctx force.ExecutionContext) *batchv1.Job {
 			Namespace: j.Namespace.Value(ctx),
 		},
 		Spec: batchv1.JobSpec{
+			BackoffLimit: force.EvalPInt32(ctx, j.BackoffLimit),
+			Completions:  force.EvalPInt32(ctx, j.Completions),
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
@@ -81,36 +115,16 @@ func (j *Job) Spec(ctx force.ExecutionContext) *batchv1.Job {
 			},
 		},
 	}
+	if j.SecurityContext != nil {
+		job.Spec.Template.Spec.SecurityContext = j.SecurityContext.Spec(ctx)
+	}
 	for _, c := range j.Containers {
 		job.Spec.Template.Spec.Containers = append(job.Spec.Template.Spec.Containers, c.Spec(ctx))
 	}
+	for _, v := range j.Volumes {
+		job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, v.Spec(ctx))
+	}
 	return job
-}
-
-// Container is a container to run
-type Container struct {
-	Name    force.StringVar
-	Image   force.StringVar
-	Command []force.StringVar
-}
-
-func (c *Container) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	if c.Image == nil || c.Image.Value(ctx) == "" {
-		return trace.BadParameter("specify Container{Image: ``}")
-	}
-	if c.Name == nil || c.Name.Value(ctx) == "" {
-		return trace.BadParameter("specify Container{Name: ``}")
-	}
-	return nil
-}
-
-// Spec returns kubernetes spec
-func (c *Container) Spec(ctx force.ExecutionContext) corev1.Container {
-	return corev1.Container{
-		Name:    c.Name.Value(ctx),
-		Image:   c.Image.Value(ctx),
-		Command: force.EvalStringVars(ctx, c.Command),
-	}
 }
 
 func evalJobStatus(ctx context.Context, eventsC <-chan watch.Event) error {
@@ -128,11 +142,9 @@ func evalJobStatus(ctx context.Context, eventsC <-chan watch.Event) error {
 				continue
 			}
 			if success := findSuccess(*job); success != nil {
-				log.Infof("Completed: %v.", success.Message)
 				return nil
 			}
 			if failure := findFailure(*job); failure != nil {
-				log.Errorf("Failed: %v.", failure.Message)
 				return trace.BadParameter(failure.Message)
 			}
 		case <-ctx.Done():

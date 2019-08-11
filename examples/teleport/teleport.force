@@ -48,31 +48,55 @@ Process(Spec{
 				},
 			}),
 			Push(Image{Tag: Var("image")}),
-			// Run the test job in the image
-			Run(Job{
-				Name: Sprintf("tel-test-%v", ID()),
-				SecurityContext: &SecurityContext{RunAsUser: 1000, RunAsGroup: 1000},
-				Volumes: []Volume{
-					{Name: "gocache", EmptyDir: &EmptyDir{}},
-					{Name: "etcd", EmptyDir: &EmptyDir{}},
-				},
-				Containers: []Container{
-					{
-						Image: Var("image"),
-						Name: "test",
-						Command: Strings(
-							"/bin/bash", "-c",
-							"./examples/etcd/start-etcd.sh & sleep 1; make FLAGS='-cover -race' test",
-						),
-						WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
-						Env: []EnvVar{{Name: "GOCACHE", Value: "/mnt/gocache"}},
-						VolumeMounts: []VolumeMount{
-							{Name: "gocache", MountPath: "/mnt/gocache"},
-							{Name: "etcd", MountPath: "/gopath/src/github.com/gravitational/teleport/examples/etcd/data"},
+			Parallel(
+				// Run the test job
+				Run(Job{
+					Name: Sprintf("tel-test-%v", ID()),
+					SecurityContext: &SecurityContext{RunAsUser: 1000, RunAsGroup: 1000},
+					Volumes: []Volume{
+						{Name: "gocache", EmptyDir: &EmptyDir{}},
+						{Name: "etcd", EmptyDir: &EmptyDir{}},
+					},
+					Containers: []Container{
+						{
+							Image: Var("image"),
+							Name: "test",
+							Command: Strings(
+								"/bin/bash", "-c",
+								"./examples/etcd/start-etcd.sh & sleep 1; make FLAGS='-cover -race' test",
+							),
+							WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
+							Env: []EnvVar{{Name: "GOCACHE", Value: "/mnt/gocache"}},
+							VolumeMounts: []VolumeMount{
+								{Name: "gocache", MountPath: "/mnt/gocache"},
+								{Name: "etcd", MountPath: "/gopath/src/github.com/gravitational/teleport/examples/etcd/data"},
+							},
 						},
 					},
-				},
-			}),
+				}),
+				// Run the integration job
+				Run(Job{
+					Name: Sprintf("tel-int-%v", ID()),
+					SecurityContext: &SecurityContext{RunAsUser: 1000, RunAsGroup: 1000},
+					Volumes: []Volume{
+						{Name: "gocache", EmptyDir: &EmptyDir{}},
+					},
+					Containers: []Container{
+						{
+							Image: Var("image"),
+							Name: "test",
+							Command: Strings(
+								"/bin/bash", "-c", "make FLAGS='-cover' integration",
+							),
+							WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
+							Env: []EnvVar{{Name: "GOCACHE", Value: "/mnt/gocache"}},
+							VolumeMounts: []VolumeMount{
+								{Name: "gocache", MountPath: "/mnt/gocache"},
+							},
+						},
+					},
+				}),
+			),
 		),
 	),
 })

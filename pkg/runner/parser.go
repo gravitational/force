@@ -39,6 +39,7 @@ func Parse(inputs []string, runner *Runner) error {
 			"Process":       runner.Process,
 			"Sequence":      force.Sequence,
 			"Continue":      force.Continue,
+			"Parallel":      force.Parallel,
 			"Files":         force.Files,
 			"Shell":         force.Shell,
 			"Oneshot":       force.Oneshot,

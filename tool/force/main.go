@@ -41,7 +41,7 @@ func main() {
 
 	run, err := generateAndStart(ctx, *debug, *setupFile, *forceFile)
 	if err != nil {
-		log.Errorf("Force exited with error: %v", trace.DebugReport(err))
+		log.WithError(err).Errorf("Force exited.")
 		os.Exit(1)
 	}
 	select {

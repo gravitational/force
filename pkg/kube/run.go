@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/gravitational/force"
 
@@ -43,6 +42,7 @@ type RunAction struct {
 	plugin *Plugin
 }
 
+// Run runs kubernetes job
 func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	if err := r.job.CheckAndSetDefaults(ctx); err != nil {
 		return trace.Wrap(err)
@@ -50,12 +50,12 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	log := force.Log(ctx)
 	spec := r.job.Spec(ctx)
 	jobs := r.plugin.client.BatchV1().Jobs(spec.Namespace)
-	log.Infof("Creating job %v in namespace %v.", spec.Name, spec.Namespace)
 	job, err := jobs.Create(spec)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	writer := force.Writer(log)
+	log.Infof("Created job %v in namespace %v.", spec.Name, spec.Namespace)
+	writer := force.Writer(log.AddFields(map[string]interface{}{"job": job.Name}))
 	defer writer.Close()
 
 	// waitCtx will get cancelled once job is done
@@ -73,7 +73,7 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	err = r.streamLogs(ctx, waitCtx, *job, writer)
 	if err != nil {
 		// report the error, but return job status returned by wait
-		log.Warningf("Stream logs returned with error: %v.", err)
+		log.WithError(err).Warningf("Streaming logs for %v has failed.", job.Name)
 	}
 
 	select {
@@ -160,28 +160,24 @@ func (r *RunAction) newPodWatch(job batchv1.Job) (watch.Interface, error) {
 func (r *RunAction) monitorPods(ctx context.Context, eventsC <-chan watch.Event, jobCtx context.Context, job batchv1.Job, w io.Writer, watches []context.Context) ([]context.Context, error) {
 	// podSet keeps state of currently monitored pods
 	podSet := map[string]corev1.Pod{}
-	start := time.Now()
 
 	log := force.Log(ctx)
 	var err error
 	watches, err = r.checkJob(ctx, job, podSet, watches, w)
 	if err == nil {
-		log.Infof("%v has completed in %v.", describe(job), time.Now().Sub(start))
 		return watches, nil
 	}
 	for {
 		select {
-		case event, ok := <-eventsC:
+		case _, ok := <-eventsC:
 			if !ok {
 				return watches, trace.Retry(nil, "events channel closed")
 			}
-			log.Debugf("Got event: %v.", describe(event.Object))
 			watches, err = r.checkJob(ctx, job, podSet, watches, w)
 			if err == nil {
-				log.Infof("%v has completed in %v.", describe(job), time.Now().Sub(start))
 				return watches, nil
 			} else if !trace.IsCompareFailed(err) {
-				log.Warningf("err: %v", err)
+				log.WithError(err).Warningf("Job %v has failed.", job.Name)
 			}
 			// global context signalled exit
 		case <-ctx.Done():
@@ -255,22 +251,18 @@ func (r *RunAction) collectPods(job batchv1.Job) (map[string]corev1.Pod, error) 
 // streamPodContainerLogs attempts to stream pod logs to the provided out writer
 func (r *RunAction) streamPodContainerLogs(ctx context.Context, pod corev1.Pod, container corev1.ContainerStatus, out io.Writer) error {
 	log := force.Log(ctx)
-	log.Debugf("Start streaming logs for %v, container %v is %v.", describe(pod), container.Name, describeState(container.State))
-	defer log.Debugf("Stopped streaming logs for %v, container %v is %v.", describe(pod), container.Name, describeState(container.State))
 	req := r.plugin.client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 		Container: container.Name,
 		Follow:    true,
 	})
 	readCloser, err := req.Stream()
 	if err != nil {
-		log.Warningf("Failed to stream: %v.", err)
 		return trace.Wrap(err)
 	}
 	localContext, localCancel := context.WithCancel(ctx)
 	go func() {
 		defer localCancel()
-		bytes, err := io.Copy(out, readCloser)
-		log.Debugf("Copy finished: copied: %v, result: %v.", bytes, err)
+		_, err := io.Copy(out, readCloser)
 		if err != nil && !IsStreamClosedError(err) {
 			log.Warningf("Failed to complete copy: %v.", trace.DebugReport(err))
 		}

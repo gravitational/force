@@ -267,7 +267,53 @@ func (s *ShellAction) String() string {
 	return fmt.Sprintf("Shell()")
 }
 
-// Chain groups sequence of commands together,
+// Parallel runs actions in parallel
+func Parallel(actions ...Action) Action {
+	return &ParallelAction{
+		Actions: actions,
+	}
+}
+
+// ParallelAction runs actions in parallel
+// waits for all to complete, if any of them fail,
+// returns error
+type ParallelAction struct {
+	Actions []Action
+}
+
+// Run runs actions in parallel
+func (p *ParallelAction) Run(ctx ExecutionContext) error {
+	errC := make(chan error, len(p.Actions))
+	for _, action := range p.Actions {
+		go p.runAction(ctx, action, errC)
+	}
+	var errors []error
+	for i := 0; i < len(p.Actions); i++ {
+		select {
+		case err := <-errC:
+			if err != nil {
+				Log(ctx).WithError(err).Warningf("Action %v has failed.")
+				errors = append(errors, err)
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if len(errors) > 0 {
+		SetError(ctx, trace.NewAggregate(errors...))
+	}
+	return Error(ctx)
+}
+
+func (p *ParallelAction) runAction(ctx ExecutionContext, action Action, errC chan error) {
+	err := action.Run(ctx)
+	select {
+	case errC <- err:
+	case <-ctx.Done():
+	}
+}
+
+// Sequence groups sequence of commands together,
 // if one fails, the chain stop execution
 func Sequence(actions ...Action) Action {
 	return &SequenceAction{
@@ -275,10 +321,13 @@ func Sequence(actions ...Action) Action {
 	}
 }
 
+// SequenceAction runs actions in a sequence,
+// if the action fails, next actions are not run
 type SequenceAction struct {
 	Actions []Action
 }
 
+// Run runs actions
 func (s *SequenceAction) Run(ctx ExecutionContext) error {
 	var err error
 	for _, action := range s.Actions {
@@ -291,14 +340,15 @@ func (s *SequenceAction) Run(ctx ExecutionContext) error {
 	return Error(ctx)
 }
 
-// Continue groups sequence of commands together,
-// but, if one fails, the next will continue
+// Continue runs actions one by one,
+// if one fails, it will continue running others
 func Continue(actions ...Action) Action {
 	return &ContinueAction{
 		Actions: actions,
 	}
 }
 
+// ContinueAction runs actions
 type ContinueAction struct {
 	Actions []Action
 }

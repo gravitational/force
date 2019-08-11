@@ -137,18 +137,6 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 	}
 }
 
-func fullMessage(err error) string {
-	if trace.IsDebug() {
-		return trace.DebugReport(err)
-	}
-	userMessage := fmt.Sprintf("%v", trace.Unwrap(err))
-	errMessage := fmt.Sprintf(err.Error())
-	if errMessage != userMessage {
-		return fmt.Sprintf("%v, %v", errMessage, userMessage)
-	}
-	return userMessage
-}
-
 // LocalContext implements local execution context
 type LocalContext struct {
 	*sync.RWMutex

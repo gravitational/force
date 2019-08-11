@@ -9,11 +9,13 @@ import (
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
+	logpb "google.golang.org/genproto/googleapis/logging/v2"
 )
 
 type Hook struct {
 	client *logging.Client
 	logger *logging.Logger
+	ctx    context.Context
 }
 
 type Config struct {
@@ -49,13 +51,14 @@ func NewHook(cfg Config) (*Hook, error) {
 		return nil, trace.BadParameter("credentials are missing project id")
 	}
 
-	client, err := logging.NewClient(cfg.Context,
-		fmt.Sprintf("projects/%v", cred.ProjectID),
-		option.WithCredentialsJSON(cfg.Creds))
+	serviceName := "default"
+	client, err := logging.NewClient(
+		cfg.Context, cred.ProjectID, option.WithCredentialsJSON(cfg.Creds))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	return &Hook{client: client, logger: client.Logger("default")}, nil
+
+	return &Hook{ctx: cfg.Context, client: client, logger: client.Logger(serviceName)}, nil
 }
 
 // Fire is invoked by logrus and sends log to Stackdriver.
@@ -72,17 +75,54 @@ func (h *Hook) Levels() []logrus.Level {
 }
 
 func convertEntry(entry *logrus.Entry) logging.Entry {
-	return logging.Entry{
+	e := logging.Entry{
 		Timestamp: entry.Time,
 		Severity:  convertLevel(entry.Level),
 		Labels:    convertLabels(entry.Data),
-		Payload:   entry.Message,
 	}
+	err, ok := extractError(entry)
+	if ok {
+		e.Payload = entry.Message + " " + trace.UserMessage(err)
+		traceErr, ok := err.(*trace.TraceErr)
+		if ok && len(traceErr.Traces) > 0 {
+			t := traceErr.Traces[0]
+			e.SourceLocation = &logpb.LogEntrySourceLocation{
+				File:     t.Path,
+				Line:     int64(t.Line),
+				Function: t.Func,
+			}
+		}
+		if len(traceErr.Fields) > 0 {
+			for key, val := range convertLabels(traceErr.Fields) {
+				e.Labels[key] = val
+			}
+		}
+
+	} else {
+		e.Payload = entry.Message
+	}
+	return e
+}
+
+func extractError(entry *logrus.Entry) (error, bool) {
+	errI, ok := entry.Data[logrus.ErrorKey]
+	if !ok {
+		return nil, false
+	}
+	err, ok := errI.(error)
+	if !ok {
+		return nil, false
+	}
+	return err, true
 }
 
 func convertLabels(data map[string]interface{}) map[string]string {
 	labels := make(map[string]string, len(data))
 	for k, v := range data {
+		// do not format error as a label
+		if k == logrus.ErrorKey {
+			continue
+		}
 		switch x := v.(type) {
 		case string:
 			labels[k] = x

@@ -37,4 +37,4 @@ teleport:
 .PHONY: kube
 kube:
 	$(MAKE) all
-	cd examples/kube && force kube.force --setup=./setup.force
+	cd examples/kube && force -d kube.force --setup=./setup.force

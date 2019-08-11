@@ -10,6 +10,8 @@ import (
 
 // Logger is an interface to the logger
 type Logger interface {
+	// WithError returns a logger bound to an error
+	WithError(error) Logger
 	Debugf(format string, args ...interface{})
 	Infof(format string, args ...interface{})
 	Warningf(format string, args ...interface{})
@@ -74,6 +76,10 @@ func (w *wrapper) URL(ExecutionContext) string {
 // AddFields adds fields to the logger
 func (w *wrapper) AddFields(fields map[string]interface{}) Logger {
 	return &wrapper{}
+}
+
+func (w *wrapper) WithError(err error) Logger {
+	return w
 }
 
 func (w *wrapper) Debugf(format string, args ...interface{}) {

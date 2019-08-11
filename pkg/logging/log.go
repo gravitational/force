@@ -97,6 +97,14 @@ type Logger struct {
 	plugin *Plugin
 }
 
+// WithError returns a logger bound to an error
+func (l *Logger) WithError(err error) force.Logger {
+	return &Logger{
+		FieldLogger: l.FieldLogger.WithError(err),
+		plugin:      l.plugin,
+	}
+}
+
 func (l *Logger) URL(ctx force.ExecutionContext) string {
 	for _, o := range l.plugin.Outputs {
 		if o.Type == TypeStackdriver {
@@ -134,6 +142,9 @@ func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
 		level, err := log.ParseLevel(string(cfg.Level))
 		if err != nil {
 			return nil, trace.Wrap(err)
+		}
+		if group.IsDebug() {
+			level = log.DebugLevel
 		}
 		if level >= log.DebugLevel {
 			trace.SetDebug(true)

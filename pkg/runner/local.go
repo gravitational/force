@@ -128,7 +128,7 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 				start := time.Now()
 				err := l.Run.Run(execContext)
 				if err != nil {
-					logger.Errorf("%v failed with %v after running for %v.", l, fullMessage(err), time.Now().Sub(start))
+					logger.WithError(err).Errorf("%v failed after running for %v.", l, time.Now().Sub(start))
 				} else {
 					logger.Infof("%v completed successfully in %v.", l, time.Now().Sub(start))
 				}

@@ -17,15 +17,16 @@ import (
 // Runner listens for events and launches processes
 type Runner struct {
 	sync.RWMutex
-	processes []force.Process
-	channels  []force.Channel
-	eventsC   chan force.Event
-	cancel    context.CancelFunc
-	ctx       context.Context
-	runFlag   int32
-	exitEvent force.ExitEvent
-	vars      map[interface{}]interface{}
-	logger    force.Logger
+	debugOverride bool
+	processes     []force.Process
+	channels      []force.Channel
+	eventsC       chan force.Event
+	cancel        context.CancelFunc
+	ctx           context.Context
+	runFlag       int32
+	exitEvent     force.ExitEvent
+	vars          map[interface{}]interface{}
+	logger        force.Logger
 }
 
 // Logger returns a logger associated with this runner
@@ -53,6 +54,11 @@ func (r *Runner) Logger() force.Logger {
 	}
 	r.logger = plugin.NewLogger()
 	return r.logger
+}
+
+// IsDebug returns a global debug override
+func (r *Runner) IsDebug() bool {
+	return r.debugOverride
 }
 
 // SetVar sets process group-local variable
@@ -164,7 +170,7 @@ func (r *Runner) fanInEvents(channel force.Channel) {
 		case event := <-channel.Events():
 			select {
 			case r.eventsC <- event:
-				log.Debugf("<- %v", event)
+				log.Debugf("Fan in received event %v.", event)
 			case <-r.Done():
 				return
 			default:
@@ -302,12 +308,13 @@ func (r *Runner) Process(spec force.Spec) (force.Process, error) {
 }
 
 // New returns a new instance of runner
-func New(ctx context.Context) *Runner {
+func New(ctx context.Context, debugOverride bool) *Runner {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Runner{
-		cancel:  cancel,
-		ctx:     ctx,
-		eventsC: make(chan force.Event, 1024),
-		vars:    make(map[interface{}]interface{}),
+		debugOverride: debugOverride,
+		cancel:        cancel,
+		ctx:           ctx,
+		eventsC:       make(chan force.Event, 1024),
+		vars:          make(map[interface{}]interface{}),
 	}
 }

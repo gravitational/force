@@ -34,6 +34,9 @@ type Group interface {
 
 	// Logger returns a logger associated with this group
 	Logger() Logger
+
+	// IsDebug returns a global debug override
+	IsDebug() bool
 }
 
 // Process is a process that is triggered by the event

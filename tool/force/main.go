@@ -23,12 +23,9 @@ import (
 func main() {
 	reexec()
 	rand.Seed(time.Now().UnixNano())
-	if err := initLogger(); err != nil {
-		fmt.Printf("Failed to init logger: %v", err)
-		os.Exit(1)
-	}
 	ctx := setupSignalHandlers()
 	app := kingpin.New("force", "Force is simple CI/CD tool")
+	debug := app.Flag("debug", "Turn on debugging level").Short('d').Bool()
 	setupFile := app.Flag("setup", "Path to setup file").Default(SetupForce).String()
 	forceFile := app.Arg("file", "Force file to run").Default(GFile).String()
 	_, err := app.Parse(os.Args[1:])
@@ -37,7 +34,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	run, err := generateAndStart(ctx, *setupFile, *forceFile)
+	if err := initLogger(*debug); err != nil {
+		fmt.Printf("Failed to init logger: %v", err)
+		os.Exit(1)
+	}
+
+	run, err := generateAndStart(ctx, *debug, *setupFile, *forceFile)
 	if err != nil {
 		log.Errorf("Force exited with error: %v", trace.DebugReport(err))
 		os.Exit(1)
@@ -64,7 +66,7 @@ const (
 	SetupForce = "setup.force"
 )
 
-func generateAndStart(ctx context.Context, setupFile, forceFile string) (*runner.Runner, error) {
+func generateAndStart(ctx context.Context, debug bool, setupFile, forceFile string) (*runner.Runner, error) {
 	var inputs []string
 	data, err := ioutil.ReadFile(setupFile)
 	if err == nil {
@@ -76,7 +78,7 @@ func generateAndStart(ctx context.Context, setupFile, forceFile string) (*runner
 		return nil, trace.ConvertSystemError(err)
 	}
 	inputs = append(inputs, string(data))
-	run := runner.New(ctx)
+	run := runner.New(ctx, debug)
 	err = runner.Parse(inputs, run)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -103,8 +105,12 @@ func setupSignalHandlers() context.Context {
 	return ctx
 }
 
-func initLogger() error {
-	log.SetLevel(log.DebugLevel)
+func initLogger(debug bool) error {
+	if debug {
+		log.SetLevel(log.DebugLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
+	}
 	log.SetFormatter(&trace.TextFormatter{
 		DisableTimestamp: true,
 		EnableColors:     trace.IsTerminal(os.Stderr),

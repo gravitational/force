@@ -178,13 +178,13 @@ func findFailure(job batchv1.Job) *batchv1.JobCondition {
 func describe(v interface{}) string {
 	switch val := v.(type) {
 	case *corev1.Pod:
-		return fmt.Sprintf("Pod %q in namespace %q", val.Name, val.Namespace)
+		return fmt.Sprintf("Pod %v in namespace %v", val.Name, val.Namespace)
 	case *batchv1.Job:
-		return fmt.Sprintf("Job %q in namespace %q", val.Name, val.Namespace)
+		return fmt.Sprintf("Job %v in namespace %v", val.Name, val.Namespace)
 	case corev1.Pod:
-		return fmt.Sprintf("Pod %q in namespace %q", val.Name, val.Namespace)
+		return fmt.Sprintf("Pod %v in namespace %v", val.Name, val.Namespace)
 	case batchv1.Job:
-		return fmt.Sprintf("Job %q in namespace %q", val.Name, val.Namespace)
+		return fmt.Sprintf("Job %v in namespace %v", val.Name, val.Namespace)
 	}
 	return "<unknown>"
 }
@@ -197,7 +197,7 @@ func formatMeta(meta metav1.ObjectMeta) string {
 	return fmt.Sprintf("%v/%v", Namespace(meta.Namespace), meta.Name)
 }
 
-// NamespaceOrDefault returns a default namespace if the specified namespace is empty
+// Namespace returns a default namespace if the specified namespace is empty
 func Namespace(namespace string) string {
 	if namespace == "" {
 		return DefaultNamespace

@@ -1,7 +1,7 @@
 Process(Spec{
 	Name: "kube",
 	Watch: Oneshot(),
-	Run: Sequence(
+	Run: Continue(
 		Run(Job{
 			Name: Sprintf("hello-%v", ID()),
 			Volumes: []Volume{
@@ -14,7 +14,7 @@ Process(Spec{
 				{
 					Image: "busybox",
 					Name: "busybox",
-					Command: Strings("/bin/sh", "-c", `ech "hello, $GOCACHE" && sleep 10;`),
+					Command: Strings("/bin/sh", "-c", `echo "hello, $GOCACHE" && sleep 10;`),
 					Env: []EnvVar{
 						{
 							Name: "GOCACHE",

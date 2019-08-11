@@ -19,6 +19,7 @@ package kube
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -138,7 +139,7 @@ type containerDiff struct {
 
 func (c *containerDiff) String() string {
 	if c.old == nil {
-		return fmt.Sprintf("Container %q created, current state is %q.", c.name, describeState(c.new.State))
+		return fmt.Sprintf("Container %v created, current state is %q.", c.name, describeState(c.new.State))
 	}
 	if c.old.RestartCount != c.new.RestartCount {
 		return fmt.Sprintf("Container %q restarted, current state is %q.", c.name, describeState(c.new.State))
@@ -146,15 +147,18 @@ func (c *containerDiff) String() string {
 	return fmt.Sprintf("Container %q changed status from %q to %q.", c.name, describeState(c.old.State), describeState(c.new.State))
 }
 
-func describeState(s corev1.ContainerState) string {
-	if s.Running != nil {
-		return "running"
+func describeState(state corev1.ContainerState) string {
+	if state.Running != nil {
+		return fmt.Sprintf("running for %v", time.Now().UTC().Sub(state.Running.StartedAt.Time))
 	}
-	if s.Terminated != nil {
-		return fmt.Sprintf("terminated, exit code %v", s.Terminated.ExitCode)
+	if state.Terminated != nil {
+		return fmt.Sprintf("terminated with exit code %v after running for %v, reason: %v",
+			state.Terminated.ExitCode,
+			state.Terminated.FinishedAt.Time.Sub(state.Terminated.StartedAt.Time),
+			state.Terminated.Reason)
 	}
-	if s.Waiting != nil {
-		return fmt.Sprintf("waiting, reason %v", s.Waiting.Reason)
+	if state.Waiting != nil {
+		return fmt.Sprintf("waiting to start")
 	}
-	return "unknown"
+	return "<unknown>"
 }

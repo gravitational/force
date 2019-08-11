@@ -58,30 +58,45 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	writer := force.Writer(log)
 	defer writer.Close()
 
-	localContext, localCancel := context.WithCancel(ctx)
-	defer localCancel()
+	// waitCtx will get cancelled once job is done
+	// signalling that stream logs should gracefully wrap up the operations
+	waitCtx, waitCancel := context.WithCancel(ctx)
+	defer waitCancel()
 
+	waitC := make(chan error, 1)
 	go func() {
-		err := r.streamLogs(localContext, *job, writer)
-		if err != nil {
-			log.Warningf("Stream finished with error: %v.", err)
-		}
+		defer waitCancel()
+		waitC <- r.wait(ctx, *job)
 	}()
 
-	return r.wait(ctx, *job)
+	// wait for stream logs to finish, so it can capture all the available logs
+	err = r.streamLogs(ctx, waitCtx, *job, writer)
+	if err != nil {
+		// report the error, but return job status returned by wait
+		log.Warningf("Stream logs returned with error: %v.", err)
+	}
+
+	select {
+	case err := <-waitC:
+		return trace.Wrap(err)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // streamLogs streams logs until the job is either failed or done, the context
 // ctx should cancel whenever the job is done
-func (r *RunAction) streamLogs(ctx context.Context, job batchv1.Job, out io.Writer) error {
+func (r *RunAction) streamLogs(ctx context.Context, jobCtx context.Context, job batchv1.Job, out io.Writer) error {
+	// watches is a list of active watches
+	var watches []context.Context
 	interval := retry.NewUnlimitedExponentialBackOff()
 	err := retry.WithInterval(ctx, interval, func() error {
 		watcher, err := r.newPodWatch(job)
 		if err != nil {
 			return &backoff.PermanentError{err}
 		}
-		err = r.monitorPods(ctx, watcher.ResultChan(), job, out)
-		watcher.Stop()
+		defer watcher.Stop()
+		watches, err = r.monitorPods(ctx, watcher.ResultChan(), jobCtx, job, out, watches)
 		if err != nil && !trace.IsRetryError(err) {
 			return &backoff.PermanentError{Err: err}
 		}
@@ -142,42 +157,57 @@ func (r *RunAction) newPodWatch(job batchv1.Job) (watch.Interface, error) {
 	return watcher, nil
 }
 
-func (r *RunAction) monitorPods(ctx context.Context, eventsC <-chan watch.Event, job batchv1.Job, w io.Writer) error {
+func (r *RunAction) monitorPods(ctx context.Context, eventsC <-chan watch.Event, jobCtx context.Context, job batchv1.Job, w io.Writer, watches []context.Context) ([]context.Context, error) {
 	// podSet keeps state of currently monitored pods
 	podSet := map[string]corev1.Pod{}
 	start := time.Now()
 
 	log := force.Log(ctx)
-	err := r.checkJob(ctx, job, podSet, w)
+	var err error
+	watches, err = r.checkJob(ctx, job, podSet, watches, w)
 	if err == nil {
 		log.Infof("%v has completed in %v.", describe(job), time.Now().Sub(start))
-		return nil
+		return watches, nil
 	}
 	for {
 		select {
 		case event, ok := <-eventsC:
 			if !ok {
-				return trace.Retry(nil, "events channel closed")
+				return watches, trace.Retry(nil, "events channel closed")
 			}
 			log.Debugf("Got event: %v.", describe(event.Object))
-			err = r.checkJob(ctx, job, podSet, w)
+			watches, err = r.checkJob(ctx, job, podSet, watches, w)
 			if err == nil {
 				log.Infof("%v has completed in %v.", describe(job), time.Now().Sub(start))
-				return nil
+				return watches, nil
 			} else if !trace.IsCompareFailed(err) {
 				log.Warningf("err: %v", err)
 			}
+			// global context signalled exit
 		case <-ctx.Done():
-			return nil
+			return watches, nil
+			// stop watching for new job events if job is done
+		case <-jobCtx.Done():
+			for _, w := range watches {
+				select {
+				// if global context done, don't wait
+				case <-ctx.Done():
+					return watches, ctx.Err()
+					// otherwise, gracefully wait for all streams to complete
+				case <-w.Done():
+				}
+			}
+			return watches, nil
 		}
 	}
 }
 
 // checkJob checks job for new pods arrivals and returns job status
-func (r *RunAction) checkJob(ctx context.Context, job batchv1.Job, podSet map[string]corev1.Pod, out io.Writer) error {
+func (r *RunAction) checkJob(ctx context.Context, job batchv1.Job, podSet map[string]corev1.Pod, watches []context.Context, out io.Writer) ([]context.Context, error) {
+	firstRun := len(watches) == 0
 	newSet, err := r.collectPods(job)
 	if err != nil {
-		return trace.Wrap(err)
+		return watches, trace.Wrap(err)
 	}
 	diffs := diffPodSets(podSet, newSet)
 	for _, diff := range diffs {
@@ -185,13 +215,19 @@ func (r *RunAction) checkJob(ctx context.Context, job batchv1.Job, podSet map[st
 		// record new version of the pod state
 		podSet[pod.Name] = pod
 		for _, containerDiff := range diff.containers {
-			// stream logs for running containers
-			if containerDiff.new.State.Running != nil {
-				go r.streamPodContainerLogs(ctx, &pod, containerDiff.name, out)
+			// stream logs for running containers, or if the first run,
+			// output logs anyways
+			if containerDiff.new.State.Running != nil || (firstRun && containerDiff.new.State.Terminated != nil) {
+				watchCtx, watchCancel := context.WithCancel(ctx)
+				watches = append(watches, watchCtx)
+				go func() {
+					defer watchCancel()
+					r.streamPodContainerLogs(ctx, pod, *containerDiff.new, out)
+				}()
 			}
 		}
 	}
-	return r.getJobStatus(job)
+	return watches, r.getJobStatus(job)
 }
 
 // collectPods collects pods created by this job and returns map
@@ -217,12 +253,12 @@ func (r *RunAction) collectPods(job batchv1.Job) (map[string]corev1.Pod, error) 
 }
 
 // streamPodContainerLogs attempts to stream pod logs to the provided out writer
-func (r *RunAction) streamPodContainerLogs(ctx context.Context, pod *corev1.Pod, containerName string, out io.Writer) error {
+func (r *RunAction) streamPodContainerLogs(ctx context.Context, pod corev1.Pod, container corev1.ContainerStatus, out io.Writer) error {
 	log := force.Log(ctx)
-	log.Debugf("Start streaming logs for %q, container %q.", describe(pod), containerName)
-	defer log.Debugf("Stopped streaming logs for %q, container %q.", describe(pod), containerName)
+	log.Debugf("Start streaming logs for %v, container %v is %v.", describe(pod), container.Name, describeState(container.State))
+	defer log.Debugf("Stopped streaming logs for %v, container %v is %v.", describe(pod), container.Name, describeState(container.State))
 	req := r.plugin.client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-		Container: containerName,
+		Container: container.Name,
 		Follow:    true,
 	})
 	readCloser, err := req.Stream()

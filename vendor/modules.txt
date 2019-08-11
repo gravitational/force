@@ -169,8 +169,6 @@ github.com/google/go-querystring/query
 github.com/google/gofuzz
 # github.com/google/shlex v0.0.0-20150127133951-6f45313302b9
 github.com/google/shlex
-# github.com/google/uuid v1.0.0
-github.com/google/uuid
 # github.com/googleapis/gax-go/v2 v2.0.4
 github.com/googleapis/gax-go/v2
 # github.com/googleapis/gnostic v0.0.0-20170729233727-0c5108395e2d
@@ -442,15 +440,15 @@ google.golang.org/appengine/internal/remote_api
 google.golang.org/appengine/socket
 google.golang.org/appengine/internal/socket
 # google.golang.org/genproto v0.0.0-20190508193815-b515fa19cec8
+google.golang.org/genproto/googleapis/logging/v2
 google.golang.org/genproto/googleapis/rpc/status
 google.golang.org/genproto/googleapis/api/monitoredres
 google.golang.org/genproto/googleapis/logging/type
-google.golang.org/genproto/googleapis/logging/v2
-google.golang.org/genproto/googleapis/api/label
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/api/distribution
 google.golang.org/genproto/googleapis/api/metric
 google.golang.org/genproto/protobuf/field_mask
+google.golang.org/genproto/googleapis/api/label
 google.golang.org/genproto/googleapis/api
 # google.golang.org/grpc v1.20.1
 google.golang.org/grpc
@@ -584,6 +582,7 @@ k8s.io/api/storage/v1beta1
 # k8s.io/apimachinery v0.0.0-20190612205821-1799e75a0719
 k8s.io/apimachinery/pkg/apis/meta/v1
 k8s.io/apimachinery/pkg/fields
+k8s.io/apimachinery/pkg/labels
 k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/pkg/runtime
 k8s.io/apimachinery/pkg/runtime/schema
@@ -591,23 +590,22 @@ k8s.io/apimachinery/pkg/api/resource
 k8s.io/apimachinery/pkg/types
 k8s.io/apimachinery/pkg/util/intstr
 k8s.io/apimachinery/pkg/conversion
-k8s.io/apimachinery/pkg/labels
 k8s.io/apimachinery/pkg/selection
 k8s.io/apimachinery/pkg/util/runtime
+k8s.io/apimachinery/pkg/util/sets
+k8s.io/apimachinery/pkg/util/validation
 k8s.io/apimachinery/pkg/util/net
 k8s.io/apimachinery/pkg/api/errors
 k8s.io/apimachinery/pkg/runtime/serializer/streaming
-k8s.io/apimachinery/pkg/util/sets
 k8s.io/apimachinery/pkg/util/errors
-k8s.io/apimachinery/pkg/util/validation
 k8s.io/apimachinery/pkg/conversion/queryparams
 k8s.io/apimachinery/pkg/util/json
 k8s.io/apimachinery/pkg/util/naming
 k8s.io/apimachinery/third_party/forked/golang/reflect
+k8s.io/apimachinery/pkg/util/validation/field
 k8s.io/apimachinery/pkg/runtime/serializer
 k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/util/clock
-k8s.io/apimachinery/pkg/util/validation/field
 k8s.io/apimachinery/pkg/runtime/serializer/json
 k8s.io/apimachinery/pkg/runtime/serializer/versioning
 k8s.io/apimachinery/pkg/runtime/serializer/protobuf

@@ -155,6 +155,21 @@ func Error(ctx ExecutionContext) error {
 	return err
 }
 
+// BoolVar is a context bool variable
+// that returns a string value from the execution context
+type BoolVar interface {
+	// Value returns bool
+	Value(ctx ExecutionContext) bool
+}
+
+// Bool is a constant bool var
+type Bool bool
+
+// Value returns int value
+func (b Bool) Value(ctx ExecutionContext) bool {
+	return bool(b)
+}
+
 // IntVar is a context int variable
 // that returns a string value from the execution context
 type IntVar interface {

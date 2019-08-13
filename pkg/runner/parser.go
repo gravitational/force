@@ -82,8 +82,6 @@ func Parse(inputs []string, runner *Runner) error {
 		},
 		getStruct: func(name string) (interface{}, error) {
 			switch name {
-			case "string":
-				return "", nil
 			// Standard library structs
 			case "Spec":
 				return force.Spec{}, nil
@@ -280,6 +278,11 @@ func (g *gParser) evaluateExpr(n ast.Expr) (interface{}, error) {
 		}
 		return val, nil
 	case *ast.Ident:
+		if l.Name == "true" {
+			return force.Bool(true), nil
+		} else if l.Name == "false" {
+			return force.Bool(false), nil
+		}
 		val, err := getIdentifier(l)
 		if err != nil {
 			return nil, trace.Wrap(err)

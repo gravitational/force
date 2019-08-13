@@ -71,6 +71,8 @@ Process(Spec{
 								{Name: "gocache", MountPath: "/mnt/gocache"},
 								{Name: "etcd", MountPath: "/gopath/src/github.com/gravitational/teleport/examples/etcd/data"},
 							},
+							TTY: true,
+							Stdin: true,
 						},
 					},
 				}),
@@ -93,6 +95,8 @@ Process(Spec{
 							VolumeMounts: []VolumeMount{
 								{Name: "gocache", MountPath: "/mnt/gocache"},
 							},
+							TTY: true,
+							Stdin: true,
 						},
 					},
 				}),

@@ -67,6 +67,13 @@ func Sprintf(format String, args ...interface{}) StringVar {
 	})
 }
 
+func EvalBool(ctx ExecutionContext, in BoolVar) bool {
+	if in == nil {
+		return false
+	}
+	return in.Value(ctx)
+}
+
 func EvalPInt64(ctx ExecutionContext, in IntVar) *int64 {
 	if in == nil {
 		return nil
@@ -292,7 +299,7 @@ func (p *ParallelAction) Run(ctx ExecutionContext) error {
 		select {
 		case err := <-errC:
 			if err != nil {
-				Log(ctx).WithError(err).Warningf("Action %v has failed.")
+				Log(ctx).WithError(err).Warningf("Action %v has failed.", p.Actions[i])
 				errors = append(errors, err)
 			}
 		case <-ctx.Done():

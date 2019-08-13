@@ -16,6 +16,8 @@ type Container struct {
 	Env             []EnvVar
 	VolumeMounts    []VolumeMount
 	ImagePullPolicy force.StringVar
+	TTY             force.BoolVar
+	Stdin           force.BoolVar
 }
 
 func (c *Container) CheckAndSetDefaults(ctx force.ExecutionContext) error {
@@ -49,6 +51,8 @@ func (c *Container) Spec(ctx force.ExecutionContext) corev1.Container {
 		Command:         force.EvalStringVars(ctx, c.Command),
 		WorkingDir:      force.EvalString(ctx, c.WorkingDir),
 		ImagePullPolicy: corev1.PullPolicy(force.EvalString(ctx, c.ImagePullPolicy)),
+		TTY:             force.EvalBool(ctx, c.TTY),
+		Stdin:           force.EvalBool(ctx, c.Stdin),
 	}
 	for _, e := range c.Env {
 		out.Env = append(out.Env, e.Spec(ctx))

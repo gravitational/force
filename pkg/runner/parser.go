@@ -44,6 +44,7 @@ type Input struct {
 	Debug bool
 }
 
+// CheckAndSetDefaults checks and sets default values
 func (i *Input) CheckAndSetDefaults() error {
 	if i.Context == nil {
 		return trace.BadParameter("missing parameter Context")
@@ -104,10 +105,11 @@ func Parse(i Input) (*Runner, error) {
 			"Infof": &force.NopScope{Func: logging.Infof},
 
 			// Helper functions
-			"Shell":   &force.NopScope{Func: force.Shell},
-			"ID":      &force.NopScope{Func: force.ID},
-			"Sprintf": &force.NopScope{Func: force.Sprintf},
-			"Strings": &force.NopScope{Func: force.Strings},
+			"Shell":     &force.NopScope{Func: force.Shell},
+			"ID":        &force.NopScope{Func: force.ID},
+			"Sprintf":   &force.NopScope{Func: force.Sprintf},
+			"Strings":   &force.NopScope{Func: force.Strings},
+			"TrimSpace": &force.NopScope{Func: force.NewTrimSpace},
 
 			// Temp dir operators
 			"TempDir":   &force.NopScope{Func: force.NewTempDir},
@@ -138,6 +140,8 @@ func Parse(i Input) (*Runner, error) {
 			// Standard library structs
 			case "Test":
 				return force.Test{}, nil
+			case "Script":
+				return force.Script{}, nil
 			case "Spec":
 				return force.Spec{}, nil
 				// Github structs

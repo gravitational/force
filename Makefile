@@ -44,3 +44,16 @@ kube:
 vars:
 	$(MAKE) all
 	cd examples/vars && force -d vars.force --setup=./setup.force
+
+
+.PHONY: inception
+inception:
+	$(MAKE) all
+	cd inception && force -d inception.force --setup=./setup.force
+
+
+.PHONY: hello
+hello:
+	$(MAKE) all
+	cd examples/hello && force hello.force
+

@@ -194,7 +194,7 @@ func (i *Image) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	}
 	_, err = reference.ParseNormalizedNamed(tagName)
 	if err != nil {
-		return trace.BadParameter("parsing image name %q failed: %v", i.Tag, err)
+		return trace.BadParameter("parsing image name %q failed: %v", tagName, err)
 	}
 	if i.Context == nil {
 		i.Context = force.String(CurrentDir)

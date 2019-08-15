@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: force
+spec:
+  restartPolicy: Never
+  containers:
+  - command: ["/bin/bash", "-c", "cd /mnt/scripts && force -d hello.force --setup setup.force"]
+    image: gcr.io/kubeadm-167321/force:0.0.1
+    imagePullPolicy: Always
+    name: build
+    env:
+    - name: GOOGLE_CREDENTIALS
+      value: /var/secrets/google/force-creds.json
+    volumeMounts:
+    - mountPath: /mnt/scripts
+      name: scripts
+    - mountPath: /root/.local
+      name: cache
+    - mountPath: /tmp
+      name: tmp
+    - name: creds
+      mountPath: /var/secrets/google      
+    securityContext:
+      # for whatever reason this procMount is ignored on GKE (perhaps old docker?)
+      procMount: Unmasked
+      # for now use privileged
+      privileged: true
+  volumes:
+    - name: scripts
+      configMap:
+        name: scripts
+    - name: creds
+      secret:
+        secretName: creds
+    - name: cache
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}

@@ -1,0 +1,14 @@
+// Setup configures force plugins, configurations
+// all other force files share the configuration defined in this file
+Setup(
+	// Builder configures docker builder
+	Builder(BuilderConfig{
+		// Logs into quay io server
+		Server: "gcr.io",
+		// Username is a username to login with the registry server
+		// TODO: think how to best check for defined values?
+		Username: ExpectEnv("REGISTRY_USERNAME"),
+		// SecretFile is a registry password
+		SecretFile: ExpectEnv("REGISTRY_SECRET"),
+	}),
+)

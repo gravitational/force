@@ -54,6 +54,7 @@ func (n *NewBuild) NewInstance(group force.Group) (force.Group, interface{}) {
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
+			group.SetPlugin(Plugin, builder)
 			return builder.NewBuild(img)
 		}
 		return pluginI.(*Builder).NewBuild(img)

@@ -28,10 +28,12 @@ func (n *NewPush) NewInstance(group force.Group) (force.Group, interface{}) {
 			logrus.Debugf("Builder plugin is not initialized, using default")
 			builder, err := New(Config{
 				Context: group.Context(),
+				Group:   group,
 			})
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
+			group.SetPlugin(Plugin, builder)
 			return builder.NewPush(img)
 		}
 		return pluginI.(*Builder).NewPush(img)

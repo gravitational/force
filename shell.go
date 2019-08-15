@@ -2,12 +2,35 @@ package force
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/gravitational/trace"
 )
+
+// NewTrimSpace trims space and newlines
+func NewTrimSpace(s StringVar) *TrimSpace {
+	return &TrimSpace{
+		s: s,
+	}
+}
+
+// TrimSpace trims space
+type TrimSpace struct {
+	s StringVar
+}
+
+// Eval trims space
+func (n *TrimSpace) Eval(ctx ExecutionContext) (string, error) {
+	v, err := n.s.Eval(ctx)
+	if err != nil {
+		return "", trace.Wrap(err)
+	}
+	return strings.TrimSpace(v), nil
+}
 
 // EvalStringVars evaluates string vars and returns a slice of strings
 func EvalStringVars(ctx ExecutionContext, in []StringVar) ([]string, error) {
@@ -104,40 +127,91 @@ func (c *RemoveDir) Run(ctx ExecutionContext) error {
 	return nil
 }
 
-// Shell runs shell
-func Shell(script StringVar) (Action, error) {
-	if script == nil {
-		return nil, trace.BadParameter("missing script value")
-	}
-	return &ShellAction{
-		command: script,
-	}, nil
+// Script is a shell script
+type Script struct {
+	// Command is an inline script, shortcut for
+	// /bin/sh -c args...
+	Command StringVar
+	// Args is a list of arguments, if supplied
+	// used instead of the command
+	Args []StringVar
+	// WorkingDir is a working directory
+	WorkingDir StringVar
 }
 
-type ShellAction struct {
-	command StringVar
-	curDir  StringVar
-}
-
-func (s *ShellAction) Run(ctx ExecutionContext) error {
-	log := Log(ctx)
-	command, err := s.command.Eval(ctx)
+// CheckAndSetDefaults checks and sets default values
+func (s *Script) CheckAndSetDefaults(ctx ExecutionContext) error {
+	command, err := EvalString(ctx, s.Command)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	var curDir string
-	if s.curDir != nil {
-		curDir, err = s.curDir.Eval(ctx)
-		if err != nil {
-			return trace.Wrap(err)
-		}
+	args, err := EvalStringVars(ctx, s.Args)
+	if err != nil {
+		return trace.Wrap(err)
 	}
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	w := Writer(log)
+	if command == "" && len(args) == 0 {
+		return trace.BadParameter("provide either Script{Command: ``} parameter or Script{Args: Strings(...)} parameters")
+	}
+	if command != "" && len(args) != 0 {
+		return trace.BadParameter("provide either Script{Command: ``} parameter or Script{Args: Strings(...)} parameters")
+	}
+	_, err = EvalString(ctx, s.WorkingDir)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	return nil
+}
+
+// Shell runs shell script
+func Shell(s Script) (Action, error) {
+	return &ShellAction{
+		script: s,
+	}, nil
+}
+
+// ShellAction runs shell script
+type ShellAction struct {
+	script Script
+}
+
+// Run runs the script
+func (s *ShellAction) Run(ctx ExecutionContext) error {
+	w := Writer(Log(ctx))
 	defer w.Close()
+	return s.run(ctx, w)
+}
+
+// Eval runs shell script and returns output as a string
+func (s *ShellAction) Eval(ctx ExecutionContext) (string, error) {
+	buf := NewSyncBuffer()
+	err := s.run(ctx, buf)
+	return buf.String(), trace.Wrap(err)
+}
+
+// run runs shell action and captures stdout and stderr to writer
+func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
+	if err := s.script.CheckAndSetDefaults(ctx); err != nil {
+		return trace.Wrap(err)
+	}
+	args, err := EvalStringVars(ctx, s.script.Args)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	command, err := EvalString(ctx, s.script.Command)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if command != "" {
+		args = []string{"/bin/sh", "-c", command}
+	}
+	workingDir, err := EvalString(ctx, s.script.WorkingDir)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout = w
 	cmd.Stderr = w
-	cmd.Dir = curDir
+	cmd.Dir = workingDir
 	return trace.Wrap(cmd.Run())
 }
 

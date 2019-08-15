@@ -1,0 +1,12 @@
+Process(Spec{
+	Name: "kbuild",
+	Watch: Oneshot(),
+	Run: Sequence(
+		Define("img", "gcr.io/kubeadm-167321/hello:0.0.1"),
+		Build(Image{
+			Tag: Var("img"),
+		}),
+		Push(Image{Tag: Var("img")}),
+		Exit(),
+	),
+})

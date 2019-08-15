@@ -52,16 +52,28 @@ func (s *SecurityContext) CheckAndSetDefaults(ctx force.ExecutionContext) error 
 	return nil
 }
 
-func (s *SecurityContext) Spec(ctx force.ExecutionContext) *corev1.PodSecurityContext {
-	return &corev1.PodSecurityContext{
-		RunAsUser:  force.EvalPInt64(ctx, s.RunAsUser),
-		RunAsGroup: force.EvalPInt64(ctx, s.RunAsGroup),
+func (s *SecurityContext) Spec(ctx force.ExecutionContext) (*corev1.PodSecurityContext, error) {
+	runAsUser, err := force.EvalPInt64(ctx, s.RunAsUser)
+	if err != nil {
+		return nil, trace.Wrap(err)
 	}
+	runAsGroup, err := force.EvalPInt64(ctx, s.RunAsGroup)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &corev1.PodSecurityContext{
+		RunAsUser:  runAsUser,
+		RunAsGroup: runAsGroup,
+	}, nil
 }
 
 // CheckAndSetDefaults checks and sets defaults
 func (j *Job) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	if j.Name == nil || j.Name.Value(ctx) == "" {
+	name, err := force.EvalString(ctx, j.Name)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if name == "" {
 		return trace.BadParameter("specify a job name")
 	}
 	if j.BackoffLimit == nil {
@@ -99,15 +111,31 @@ func (j *Job) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 }
 
 // Spec returns kubernetes version of the job spec
-func (j *Job) Spec(ctx force.ExecutionContext) *batchv1.Job {
+func (j *Job) Spec(ctx force.ExecutionContext) (*batchv1.Job, error) {
+	name, err := force.EvalString(ctx, j.Name)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	namespace, err := force.EvalString(ctx, j.Namespace)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	backoffLimit, err := force.EvalPInt32(ctx, j.BackoffLimit)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	completions, err := force.EvalPInt32(ctx, j.Completions)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      j.Name.Value(ctx),
-			Namespace: j.Namespace.Value(ctx),
+			Name:      name,
+			Namespace: namespace,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: force.EvalPInt32(ctx, j.BackoffLimit),
-			Completions:  force.EvalPInt32(ctx, j.Completions),
+			BackoffLimit: backoffLimit,
+			Completions:  completions,
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
@@ -116,15 +144,27 @@ func (j *Job) Spec(ctx force.ExecutionContext) *batchv1.Job {
 		},
 	}
 	if j.SecurityContext != nil {
-		job.Spec.Template.Spec.SecurityContext = j.SecurityContext.Spec(ctx)
+		spec, err := j.SecurityContext.Spec(ctx)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		job.Spec.Template.Spec.SecurityContext = spec
 	}
 	for _, c := range j.Containers {
-		job.Spec.Template.Spec.Containers = append(job.Spec.Template.Spec.Containers, c.Spec(ctx))
+		spec, err := c.Spec(ctx)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		job.Spec.Template.Spec.Containers = append(job.Spec.Template.Spec.Containers, *spec)
 	}
 	for _, v := range j.Volumes {
-		job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, v.Spec(ctx))
+		spec, err := v.Spec(ctx)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, *spec)
 	}
-	return job
+	return job, nil
 }
 
 func evalJobStatus(ctx context.Context, eventsC <-chan watch.Event) error {

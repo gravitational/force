@@ -59,24 +59,32 @@ type Plugin struct {
 	Config
 }
 
-// NewPlugin returns a new client bound to the process group
-// and registers plugin within variable
-func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
-	return func(cfg Config) (*Plugin, error) {
+// NewPlugin creates new plugins
+type NewPlugin struct {
+}
+
+// NewInstance returns function creating new client bound to the process group
+// and registers plugin variable
+func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(cfg Config) (*Plugin, error) {
 		if err := cfg.CheckAndSetDefaults(); err != nil {
 			return nil, trace.Wrap(err)
 		}
 		p := &Plugin{Config: cfg, start: time.Now().UTC()}
-		group.SetVar(GitPlugin, p)
+		group.SetPlugin(GitPlugin, p)
 		return p, nil
 	}
 }
 
-// NewClone returns a function that wraps underlying action
+// NewClone creates functions cloning repositories
+type NewClone struct {
+}
+
+// NewInstance returns a function that wraps underlying action
 // and tracks the result, posting the result back
-func NewClone(group force.Group) func(Repo) (force.Action, error) {
-	return func(repo Repo) (force.Action, error) {
-		pluginI, ok := group.GetVar(GitPlugin)
+func (n *NewClone) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(repo Repo) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(GitPlugin)
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
 		}
@@ -105,7 +113,10 @@ type CloneAction struct {
 func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 	log := force.Log(ctx)
 
-	into := p.repo.Into.Value(ctx)
+	into, err := p.repo.Into.Eval(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	if into == "" {
 		return trace.BadParameter("got empty Into variable")
 	}
@@ -137,7 +148,11 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 	log.Infof("Cloned %v into %v in %v.", p.repo.URL, into, time.Now().Sub(start))
 
 	if p.repo.Hash != nil {
-		if hash := p.repo.Hash.Value(ctx); hash != "" {
+		hash, err := p.repo.Hash.Eval(ctx)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		if hash != "" {
 			w, err := r.Worktree()
 			if err != nil {
 				return trace.Wrap(err)
@@ -155,7 +170,10 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 	}
 
 	for i, subVar := range p.repo.Submodules {
-		subName := subVar.Value(ctx)
+		subName, err := subVar.Eval(ctx)
+		if err != nil {
+			return trace.Wrap(err)
+		}
 		if subName == "" {
 			return trace.BadParameter("got empty submodule name at %v", i)
 		}

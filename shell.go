@@ -10,19 +10,23 @@ import (
 )
 
 // EvalStringVars evaluates string vars and returns a slice of strings
-func EvalStringVars(ctx ExecutionContext, in []StringVar) []string {
+func EvalStringVars(ctx ExecutionContext, in []StringVar) ([]string, error) {
 	if in == nil {
-		return nil
+		return nil, nil
 	}
 	out := make([]string, len(in))
+	var err error
 	for i, v := range in {
 		if v == nil {
 			out[i] = ""
 		} else {
-			out[i] = v.Value(ctx)
+			out[i], err = v.Eval(ctx)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // Env returns environment variable
@@ -56,183 +60,48 @@ func Strings(args ...interface{}) ([]StringVar, error) {
 	return out, nil
 }
 
-// Sprintf is jsut like Sprintf
-func Sprintf(format String, args ...interface{}) StringVar {
-	return StringVarFunc(func(ctx ExecutionContext) string {
-		eval := make([]interface{}, len(args))
-		for i := range args {
-			eval[i] = Eval(ctx, args[i])
-		}
-		return fmt.Sprintf(string(format), eval...)
-	})
+// NewTempDir returns new temp dir
+func NewTempDir() interface{} {
+	return &TempDir{}
 }
 
-func EvalBool(ctx ExecutionContext, in BoolVar) bool {
-	if in == nil {
-		return false
+type TempDir struct {
+}
+
+func (c *TempDir) Eval(ctx ExecutionContext) (string, error) {
+	log := Log(ctx)
+	dir, err := ioutil.TempDir("", "")
+	if err != nil {
+		return "", trace.ConvertSystemError(err)
 	}
-	return in.Value(ctx)
+	log.Infof("Created temporary directory %v.", dir)
+	return dir, nil
 }
 
-func EvalPInt64(ctx ExecutionContext, in IntVar) *int64 {
-	if in == nil {
-		return nil
+// NewRemoveDir returns a n action rm
+func NewRemoveDir(dir StringVar) interface{} {
+	return &RemoveDir{dir: dir}
+}
+
+type RemoveDir struct {
+	dir StringVar
+}
+
+func (c *RemoveDir) Run(ctx ExecutionContext) error {
+	dir, err := c.dir.Eval(ctx)
+	if err != nil {
+		return trace.Wrap(err)
 	}
-	val := int64(in.Value(ctx))
-	return &val
-}
-
-func EvalPInt32(ctx ExecutionContext, in IntVar) *int32 {
-	if in == nil {
-		return nil
+	if dir == "" {
+		return trace.BadParameter("empty dir to remove")
 	}
-	val := int32(in.Value(ctx))
-	return &val
-}
-
-func PInt32(in int32) *int32 {
-	return &in
-}
-
-// Var returns string variable
-func Var(name String) StringVar {
-	return StringVarFunc(func(ctx ExecutionContext) string {
-		val, ok := ctx.Value(ContextKey(string(name))).(string)
-		if !ok {
-			Log(ctx).Errorf("Failed to convert variable %q to string from %T, returning empty value.", name, name)
-			return ""
-		}
-		return val
-	})
-}
-
-// Define creates a define variable action
-func Define(name String, value interface{}) (Action, error) {
-	if name == "" {
-		return nil, trace.BadParameter("Define needs variable name")
+	log := Log(ctx)
+	err = os.RemoveAll(dir)
+	if err != nil {
+		return trace.ConvertSystemError(err)
 	}
-	if value == nil {
-		return nil, trace.BadParameter("nils are not supported here because they are evil")
-	}
-	return &DefineAction{
-		name:  string(name),
-		value: value,
-	}, nil
-}
-
-// DefineAction defines a variable
-type DefineAction struct {
-	name  string
-	value interface{}
-}
-
-// EvalString evaluates string, nil is evaluated
-// to empty string
-func EvalString(ctx ExecutionContext, v StringVar) string {
-	if v == nil {
-		return ""
-	}
-	return v.Value(ctx)
-}
-
-// Eval evaluates variable based on the execution context
-func Eval(ctx ExecutionContext, variable interface{}) interface{} {
-	switch v := variable.(type) {
-	case StringVar:
-		return v.Value(ctx)
-	default:
-		return v
-	}
-}
-
-// Run defines a variable on the context
-func (p *DefineAction) Run(ctx ExecutionContext) error {
-	v := ctx.Value(ContextKey(p.name))
-	if v != nil {
-		return trace.AlreadyExists("variable %q is already defined", p.name)
-	}
-	ctx.SetValue(ContextKey(p.name), Eval(ctx, p.value))
+	log.Infof("Removed directory path %v.", dir)
 	return nil
-}
-
-// WithTempDir creates a new temp dir, and defines a variable
-// with a given name
-func WithTempDir(name String, actions ...Action) (Action, error) {
-	if name == "" {
-		return nil, trace.BadParameter("TempDir needs name")
-	}
-	return &WithTempDirAction{
-		name:    string(name),
-		actions: actions,
-	}, nil
-}
-
-// WithTempDirAction creates one or many temporary directories,
-// executes action and deletes the temp directory later
-type WithTempDirAction struct {
-	name    string
-	actions []Action
-}
-
-// Run runs with temp dir action
-func (p *WithTempDirAction) Run(ctx ExecutionContext) error {
-	log := Log(ctx)
-	dir, err := ioutil.TempDir("", p.name)
-	if err != nil {
-		return trace.ConvertSystemError(err)
-	}
-	log.Infof("Created temporary directory %q with path %q.", p.name, dir)
-	ctx.SetValue(ContextKey(p.name), dir)
-	defer func() {
-		if err := trace.ConvertSystemError(os.RemoveAll(dir)); err != nil {
-			log.Errorf("Failed to delete temporary directory %q with path %q: %v.", p.name, dir, err)
-		} else {
-			log.Infof("Deleted temporary directory %q with path %q.", p.name, dir)
-		}
-	}()
-	err = Sequence(p.actions...).Run(ctx)
-	return trace.Wrap(err)
-}
-
-// WithChangeDir sets the current working directory
-// and executes the actions in a sequence
-func WithChangeDir(name StringVar, actions ...Action) (Action, error) {
-	if name == nil {
-		return nil, trace.BadParameter("WithChangeDir needs a directory name")
-	}
-	return &WithChangeDirAction{
-		name:    name,
-		actions: actions,
-	}, nil
-}
-
-// WithChangeDirAction sets the current directory value
-type WithChangeDirAction struct {
-	name    StringVar
-	actions []Action
-}
-
-// Run runs with temp dir action
-func (p *WithChangeDirAction) Run(ctx ExecutionContext) error {
-	log := Log(ctx)
-	name := p.name.Value(ctx)
-	if name == "" {
-		return trace.BadParameter("WithChangeDir executed with empty string on %v", name)
-	}
-	fi, err := os.Stat(name)
-	if err != nil {
-		return trace.ConvertSystemError(err)
-	}
-	if !fi.IsDir() {
-		return trace.BadParameter("%q is not a directory", name)
-	}
-	ctx.SetValue(KeyCurrentDir, name)
-	log.Infof("Changing current dir to %q.", name)
-	defer func() {
-		ctx.SetValue(KeyCurrentDir, nil)
-	}()
-	err = Sequence(p.actions...).Run(ctx)
-	return trace.Wrap(err)
 }
 
 // Shell runs shell
@@ -247,18 +116,21 @@ func Shell(script StringVar) (Action, error) {
 
 type ShellAction struct {
 	command StringVar
+	curDir  StringVar
 }
 
 func (s *ShellAction) Run(ctx ExecutionContext) error {
 	log := Log(ctx)
-	command := s.command.Value(ctx)
-	curDirI := ctx.Value(KeyCurrentDir)
+	command, err := s.command.Eval(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	var curDir string
-	if curDirI != nil {
-		curDir, _ = curDirI.(string)
-		log.Infof("Running %q with current directory set to %v.", command, curDirI)
-	} else {
-		log.Infof("Running %q.", command)
+	if s.curDir != nil {
+		curDir, err = s.curDir.Eval(ctx)
+		if err != nil {
+			return trace.Wrap(err)
+		}
 	}
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	w := Writer(log)
@@ -266,12 +138,20 @@ func (s *ShellAction) Run(ctx ExecutionContext) error {
 	cmd.Stdout = w
 	cmd.Stderr = w
 	cmd.Dir = curDir
-	err := cmd.Run()
-	return trace.Wrap(err)
+	return trace.Wrap(cmd.Run())
 }
 
 func (s *ShellAction) String() string {
 	return fmt.Sprintf("Shell()")
+}
+
+// NewParallel creates a new series of actions executed in parallel
+type NewParallel struct {
+}
+
+// NewInstance returns a new instance
+func (n *NewParallel) NewInstance(group Group) (Group, interface{}) {
+	return WithLexicalScope(group), Parallel
 }
 
 // Parallel runs actions in parallel
@@ -290,9 +170,10 @@ type ParallelAction struct {
 
 // Run runs actions in parallel
 func (p *ParallelAction) Run(ctx ExecutionContext) error {
+	scopeCtx := WithRuntimeScope(ctx)
 	errC := make(chan error, len(p.Actions))
 	for _, action := range p.Actions {
-		go p.runAction(ctx, action, errC)
+		go p.runAction(scopeCtx, action, errC)
 	}
 	var errors []error
 	for i := 0; i < len(p.Actions); i++ {
@@ -320,6 +201,33 @@ func (p *ParallelAction) runAction(ctx ExecutionContext, action Action, errC cha
 	}
 }
 
+// Defer defers the action executed in sequence
+func Defer(action Action) Action {
+	return &DeferAction{
+		Action: action,
+	}
+}
+
+// DeferAction runs actions in defer
+type DeferAction struct {
+	Action Action
+}
+
+// Run runs deferred action
+func (d *DeferAction) Run(ctx ExecutionContext) error {
+	return d.Action.Run(ctx)
+}
+
+// NewSequence creates a new sequence
+// with a new lexical scope
+type NewSequence struct {
+}
+
+// NewInstance returns a new instance of a function with a new lexical scope
+func (n *NewSequence) NewInstance(group Group) (Group, interface{}) {
+	return WithLexicalScope(group), Sequence
+}
+
 // Sequence groups sequence of commands together,
 // if one fails, the chain stop execution
 func Sequence(actions ...Action) Action {
@@ -334,17 +242,44 @@ type SequenceAction struct {
 	Actions []Action
 }
 
-// Run runs actions
+// Run runs actions in sequence
 func (s *SequenceAction) Run(ctx ExecutionContext) error {
+	scopeCtx := WithRuntimeScope(ctx)
 	var err error
-	for _, action := range s.Actions {
-		err = action.Run(ctx)
+	var deferred []Action
+	for i := range s.Actions {
+		action := s.Actions[i]
+		_, isDefer := action.(*DeferAction)
+		if isDefer {
+			deferred = append(deferred, action)
+			continue
+		}
+		err = action.Run(scopeCtx)
 		SetError(ctx, err)
 		if err != nil {
 			return trace.Wrap(err)
 		}
 	}
+	// deferred actions are executed in reverse order
+	// when defined, and do not prevent other deferreds from running
+	for i := len(deferred) - 1; i >= 0; i-- {
+		action := deferred[i]
+		err = action.Run(scopeCtx)
+		if err != nil {
+			SetError(ctx, err)
+		}
+	}
 	return Error(ctx)
+}
+
+// NewContinue creates a new continued sequence
+// with a new lexical scope
+type NewContinue struct {
+}
+
+// NewInstance returns a new instance of a function with a new lexical scope
+func (n *NewContinue) NewInstance(group Group) (Group, interface{}) {
+	return WithLexicalScope(group), Sequence
 }
 
 // Continue runs actions one by one,
@@ -361,8 +296,19 @@ type ContinueAction struct {
 }
 
 func (s *ContinueAction) Run(ctx ExecutionContext) error {
+	scopeCtx := WithRuntimeScope(ctx)
 	for _, action := range s.Actions {
-		SetError(ctx, action.Run(ctx))
+		SetError(ctx, action.Run(scopeCtx))
 	}
 	return Error(ctx)
+}
+
+// Test is a struct used for tests
+type Test struct {
+	// I is an integer variable
+	I IntVar
+	// S is a string variable
+	S StringVar
+	// B is a bool variable
+	B BoolVar
 }

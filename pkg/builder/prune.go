@@ -10,10 +10,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// NewPrune creates a new prune action
-func NewPrune(group force.Group) func() (force.Action, error) {
-	return func() (force.Action, error) {
-		pluginI, ok := group.GetVar(Plugin)
+// NewPrune specifies prune action - cleaning up
+// dangled leftovers from builds - images and tags, layers
+type NewPrune struct {
+}
+
+// NewInstance returns function creating new prune actions
+func (n *NewPrune) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func() (force.Action, error) {
+		pluginI, ok := group.GetPlugin(Plugin)
 		if !ok {
 			// plugin is not initialized, use defaults
 			group.Logger().Debugf("Builder plugin is not initialized, using default.")
@@ -93,7 +98,5 @@ func (b *Builder) Prune(ectx force.ExecutionContext) error {
 		return nil
 	})
 
-	err = eg2.Wait()
-	log.Debugf("Prune result: %#v.", usage, err)
-	return trace.Wrap(err)
+	return trace.Wrap(eg2.Wait())
 }

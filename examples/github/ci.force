@@ -15,8 +15,12 @@ Process(Spec{
 	// also, should be more strict with variables, reference of an undefined
 	// variable or shadowing of an existing one should be a problem
 	Run: PostStatusOf(
-		// create temporary directory "repo",
-		WithTempDir("repo", 
+		Sequence(
+			// Create temporary directory "repo"
+			Define("repo", TempDir()),
+			Defer(
+				RemoveDir(Var("repo")),
+			),
 			// Clone clones git repository into temp dir
 			Clone(Repo{
 				URL: "https://github.com/gravitational/force.git",
@@ -57,10 +61,10 @@ Process(Spec{
 					},
 				},
 			}),
+			// Push the built image
+			Push(Image{Tag: Var("image")}),
+			// Prune the build cache
+			Prune(),			
 		),
-		// Push the built image
-		Push(Image{Tag: Var("image")}),
-		// Prune the build cache
-		Prune(),
 	),
 })

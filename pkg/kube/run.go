@@ -19,11 +19,14 @@ import (
 	watch "k8s.io/apimachinery/pkg/watch"
 )
 
-// NewRun returns a function that wraps underlying action
-// and tracks the result, posting the result back
-func NewRun(group force.Group) func(Job) (force.Action, error) {
-	return func(job Job) (force.Action, error) {
-		pluginI, ok := group.GetVar(KubePlugin)
+// NewRun specifies new job runners
+type NewRun struct {
+}
+
+// NewRun returns functions creating kubernetes job runner action
+func (n *NewRun) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(job Job) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(KubePlugin)
 		if !ok {
 			group.Logger().Debugf("Kube plugin is not initialized, using default.")
 			k, err := New(Config{})
@@ -48,7 +51,10 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 		return trace.Wrap(err)
 	}
 	log := force.Log(ctx)
-	spec := r.job.Spec(ctx)
+	spec, err := r.job.Spec(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	jobs := r.plugin.client.BatchV1().Jobs(spec.Namespace)
 	job, err := jobs.Create(spec)
 	if err != nil {

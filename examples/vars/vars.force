@@ -1,0 +1,23 @@
+Process(Spec{
+	Name: "log",
+	Watch: Oneshot(),
+	Run: Sequence(
+		Define("dir", TempDir()),
+		Defer(
+			RemoveDir(Var("dir")),
+		),
+		Define("intVar", 1),
+		Define("boolVar", true),
+		Define("stringVar", "hello"),
+		Infof("Outer scope %#v, i: %v, b: %v, s: %v", Test{I: Var("intVar"), B: Var("boolVar"), S: Var("stringVar")}, Var("intVar"), Var("boolVar"), Var("stringVar")),
+		Infof("My dir is %v", Var("dir")),
+		Continue(
+			Define("intVar", 2),
+			Define("boolVar", false),
+			Define("stringVar", "bye"),
+			Infof("Inner scope i: %#v, b: %#v, s: %#v", Var("intVar"), Var("boolVar"), Var("stringVar")),
+		),
+		Infof("Outer scope after inner i: %#v, b: %#v, s: %#v", Var("intVar"), Var("boolVar"), Var("stringVar")),
+		Exit(),
+	),
+})

@@ -15,9 +15,13 @@ type Key string
 // Plugin is a name of the github plugin variable
 const Plugin = Key("builder")
 
-// NewPlugin returns a new builder with some configuration
-func NewPlugin(group force.Group) func(cfg Config) (*Builder, error) {
-	return func(cfg Config) (*Builder, error) {
+// NewPlugin specifies builder plugins
+type NewPlugin struct {
+}
+
+// NewInstance returns function creating new plugins based on configs
+func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(cfg Config) (*Builder, error) {
 		cfg.Context = group.Context()
 		cfg.Group = group
 		if err := cfg.CheckAndSetDefaults(); err != nil {
@@ -27,15 +31,19 @@ func NewPlugin(group force.Group) func(cfg Config) (*Builder, error) {
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		group.SetVar(Plugin, builder)
+		group.SetPlugin(Plugin, builder)
 		return builder, nil
 	}
 }
 
-// NewBuild returns a new Build action
-func NewBuild(group force.Group) func(Image) (force.Action, error) {
-	return func(img Image) (force.Action, error) {
-		pluginI, ok := group.GetVar(Plugin)
+// NewBuild creates build actions
+type NewBuild struct {
+}
+
+// NewInstance creates functions creating new Build action
+func (n *NewBuild) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(img Image) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(Plugin)
 		if !ok {
 			// plugin is not initialized, use defaults
 			group.Logger().Debugf("Builder plugin is not initialized, using default.")
@@ -60,6 +68,7 @@ func (b *Builder) NewBuild(img Image) (force.Action, error) {
 	}, nil
 }
 
+// BuildAction specifies biuldkit driven docker builds
 type BuildAction struct {
 	Builder *Builder
 	Image   Image

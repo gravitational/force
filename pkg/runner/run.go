@@ -17,6 +17,7 @@ import (
 // Runner listens for events and launches processes
 type Runner struct {
 	sync.RWMutex
+	*force.LexScope
 	debugOverride bool
 	processes     []force.Process
 	channels      []force.Channel
@@ -25,8 +26,9 @@ type Runner struct {
 	ctx           context.Context
 	runFlag       int32
 	exitEvent     force.ExitEvent
-	vars          map[interface{}]interface{}
+	plugins       map[interface{}]interface{}
 	logger        force.Logger
+	parser        *gParser
 }
 
 // Logger returns a logger associated with this runner
@@ -42,7 +44,7 @@ func (r *Runner) Logger() force.Logger {
 	// it from the plugin
 	// if the plugin is not set yet, use
 	// temporary default one
-	pluginI, ok := r.vars[logging.LoggingPlugin]
+	pluginI, ok := r.plugins[logging.LoggingPlugin]
 	if !ok {
 		return (&logging.Plugin{}).NewLogger()
 	}
@@ -61,20 +63,20 @@ func (r *Runner) IsDebug() bool {
 	return r.debugOverride
 }
 
-// SetVar sets process group-local variable
+// SetPlugin sets process group-local variable
 // all setters and getters are thread safe
-func (r *Runner) SetVar(key interface{}, val interface{}) {
+func (r *Runner) SetPlugin(key interface{}, val interface{}) {
 	r.Lock()
 	defer r.Unlock()
-	r.vars[key] = val
+	r.plugins[key] = val
 }
 
-// GetVar returns a process group local variable
+// GetPlugin returns a process group local variable
 // all setters and getters are thread safe
-func (r *Runner) GetVar(key interface{}) (interface{}, bool) {
+func (r *Runner) GetPlugin(key interface{}) (interface{}, bool) {
 	r.RLock()
 	defer r.RUnlock()
-	val, ok := r.vars[key]
+	val, ok := r.plugins[key]
 	return val, ok
 }
 
@@ -307,14 +309,12 @@ func (r *Runner) Process(spec force.Spec) (force.Process, error) {
 	return l, nil
 }
 
-// New returns a new instance of runner
-func New(ctx context.Context, debugOverride bool) *Runner {
-	ctx, cancel := context.WithCancel(ctx)
-	return &Runner{
-		debugOverride: debugOverride,
-		cancel:        cancel,
-		ctx:           ctx,
-		eventsC:       make(chan force.Event, 1024),
-		vars:          make(map[interface{}]interface{}),
-	}
+// NewProcess is a function that creates a new process
+type NewProcess struct {
+	runner *Runner
+}
+
+// NewInstance returns a new instance of the process
+func (n *NewProcess) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, n.runner.Process
 }

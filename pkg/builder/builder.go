@@ -185,21 +185,32 @@ const (
 
 // CheckAndSetDefaults checks and sets default values
 func (i *Image) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	if i.Tag == nil || i.Tag.Value(ctx) == "" {
+	tagName, err := force.EvalString(ctx, i.Tag)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if tagName == "" {
 		return trace.BadParameter("specify image tag, e.g. 'example'")
 	}
-	_, err := reference.ParseNormalizedNamed(i.Tag.Value(ctx))
+	_, err = reference.ParseNormalizedNamed(tagName)
 	if err != nil {
 		return trace.BadParameter("parsing image name %q failed: %v", i.Tag, err)
 	}
 	if i.Context == nil {
 		i.Context = force.String(CurrentDir)
 	}
-	contextPath := i.Context.Value(ctx)
+	contextPath, err := i.Context.Eval(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	if contextPath == "" {
 		i.Context = force.String(CurrentDir)
 	}
-	if i.Dockerfile == nil || i.Dockerfile.Value(ctx) == "" {
+	dockerfilePath, err := force.EvalString(ctx, i.Dockerfile)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if dockerfilePath == "" {
 		dockerfilePath, err := securejoin.SecureJoin(contextPath, Dockerfile)
 		if err != nil {
 			return trace.Wrap(err)

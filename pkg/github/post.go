@@ -30,12 +30,14 @@ func (p *Plugin) PostStatusOf(actions ...force.Action) (force.Action, error) {
 	}, nil
 }
 
+// PostStatusAction posts github status
 type PostStatusAction struct {
 	status Status
 	plugin *Plugin
 	repo   Repository
 }
 
+// Run posts github status
 func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
 	event, ok := ctx.Event().(*RepoEvent)
 	if !ok {

@@ -41,15 +41,19 @@ func New(cfg Config) (*Plugin, error) {
 	}, nil
 }
 
-// NewPluginFunc returns a new client bound to the process group
+// NewPlugin specifies new plugins
+type NewPlugin struct {
+}
+
+// NewInstance returns a new kubernetes client bound to the process group
 // and registers plugin within variable
-func NewPluginFunc(group force.Group) func(cfg Config) (*Plugin, error) {
-	return func(cfg Config) (*Plugin, error) {
+func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(cfg Config) (*Plugin, error) {
 		p, err := New(cfg)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		group.SetVar(KubePlugin, p)
+		group.SetPlugin(KubePlugin, p)
 		return p, nil
 	}
 }

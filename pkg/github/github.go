@@ -88,10 +88,13 @@ type Plugin struct {
 	client *GithubClient
 }
 
-// NewPlugin returns a new client bound to the process group
-// and registers plugin within variable
-func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
-	return func(cfg Config) (*Plugin, error) {
+// NewPlugin returns a function creating new plugins
+type NewPlugin struct {
+}
+
+// NewInstance returns a new instance
+func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(cfg Config) (*Plugin, error) {
 		if err := cfg.CheckAndSetDefaults(); err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -100,15 +103,21 @@ func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
 			return nil, trace.Wrap(err)
 		}
 		p := &Plugin{Config: cfg, client: client, start: time.Now().UTC()}
-		group.SetVar(GithubPlugin, p)
+		group.SetPlugin(GithubPlugin, p)
 		return p, nil
 	}
 }
 
 // NewWatch finds the initialized github plugin and returns a new watch
-func NewWatch(group force.Group) func(Source) (force.Channel, error) {
-	return func(src Source) (force.Channel, error) {
-		pluginI, ok := group.GetVar(GithubPlugin)
+type NewWatch struct {
+}
+
+// NewInstance returns a function creating new watchers
+func (n *NewWatch) NewInstance(group force.Group) (force.Group, interface{}) {
+	group.AddDefinition(KeyCommit, force.String(""))
+	group.AddDefinition(KeyPR, force.Int(0))
+	return group, func(src Source) (force.Channel, error) {
+		pluginI, ok := group.GetPlugin(GithubPlugin)
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
 		}
@@ -118,9 +127,16 @@ func NewWatch(group force.Group) func(Source) (force.Channel, error) {
 
 // NewPostStatusOf returns a function that wraps underlying action
 // and tracks the result, posting the result back
-func NewPostStatusOf(group force.Group) func(...force.Action) (force.Action, error) {
-	return func(inner ...force.Action) (force.Action, error) {
-		pluginI, ok := group.GetVar(GithubPlugin)
+type NewPostStatusOf struct {
+}
+
+// NewInstance returns a function creating new post status actions
+func (n *NewPostStatusOf) NewInstance(group force.Group) (force.Group, interface{}) {
+	// PostStatusOf creates a sequence, that's why it has to create a new lexical
+	// scope (as sequence expects one to be created)
+	scope := force.WithLexicalScope(group)
+	return scope, func(inner ...force.Action) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(GithubPlugin)
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
 		}
@@ -128,10 +144,14 @@ func NewPostStatusOf(group force.Group) func(...force.Action) (force.Action, err
 	}
 }
 
-// NewPostStatus posts new status
-func NewPostStatus(group force.Group) func(Status) (force.Action, error) {
-	return func(status Status) (force.Action, error) {
-		pluginI, ok := group.GetVar(GithubPlugin)
+// NewPostStatus creates actions that posts new status
+type NewPostStatus struct {
+}
+
+// NewInstance returns a function that creates new post status actions
+func (n *NewPostStatus) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(status Status) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(GithubPlugin)
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
 		}
@@ -259,8 +279,10 @@ func (r *RepoEvent) AddMetadata(ctx force.ExecutionContext) {
 		KeyPR:     r.PR.Number,
 	})
 	force.SetLog(ctx, logger)
-	ctx.SetValue(force.ContextKey(KeyCommit), r.PR.LastCommit.OID)
-	ctx.SetValue(force.ContextKey(KeyPR), r.PR.Number)
+	// Those variables can be set, as they are defined by
+	// PullRequests in a separate scope
+	ctx.SetValue(force.ContextKey(KeyCommit), force.String(r.PR.LastCommit.OID))
+	ctx.SetValue(force.ContextKey(KeyPR), force.Int(r.PR.Number))
 }
 
 func (r *RepoEvent) String() string {

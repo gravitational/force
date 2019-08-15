@@ -106,11 +106,12 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 			}
 			go func() {
 				execContext := &LocalContext{
-					RWMutex: &sync.RWMutex{},
-					context: ctx,
-					process: l,
-					event:   event,
-					id:      ShortID(),
+					RuntimeScope: force.WithRuntimeScope(nil),
+					RWMutex:      &sync.RWMutex{},
+					context:      ctx,
+					process:      l,
+					event:        event,
+					id:           ShortID(),
 				}
 				logger := l.logger.AddFields(map[string]interface{}{
 					force.KeyID: execContext.ID(),
@@ -145,6 +146,7 @@ type LocalContext struct {
 	event   force.Event
 	id      string
 	closers []io.Closer
+	*force.RuntimeScope
 }
 
 // AddCloser adds closer to the context
@@ -207,16 +209,4 @@ func (c *LocalContext) Event() force.Event {
 // Process returns a process associated with the context
 func (c *LocalContext) Process() force.Process {
 	return c.process
-}
-
-// Value returns a value in the execution context
-func (c *LocalContext) Value(val interface{}) interface{} {
-	return c.context.Value(val)
-}
-
-// SetValue sets a value associated with the keyto the execution context
-func (c *LocalContext) SetValue(key interface{}, val interface{}) {
-	c.Lock()
-	defer c.Unlock()
-	c.context = context.WithValue(c.context, key, val)
 }

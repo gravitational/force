@@ -21,7 +21,7 @@ tidy:
 .PHONY: github
 github:
 	$(MAKE) all
-	cd examples/github && force ci.force
+	cd examples/github && force -d ci.force
 
 .PHONY: buildbox
 buildbox:
@@ -38,3 +38,9 @@ teleport:
 kube:
 	$(MAKE) all
 	cd examples/kube && force -d kube.force --setup=./setup.force
+
+
+.PHONY: vars
+vars:
+	$(MAKE) all
+	cd examples/vars && force -d vars.force --setup=./setup.force

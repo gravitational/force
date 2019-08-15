@@ -132,10 +132,13 @@ func (l *Logger) AddFields(fields map[string]interface{}) force.Logger {
 	return &Logger{FieldLogger: fieldLogger, plugin: l.plugin}
 }
 
-// NewPlugin returns a new client bound to the process group
-// and registers plugin within variable
-func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
-	return func(cfg Config) (*Plugin, error) {
+// NewPlugin creates new instances of plugins
+type NewPlugin struct {
+}
+
+// NewInstance returns a new instance of a plugin bound to group
+func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(cfg Config) (*Plugin, error) {
 		if err := cfg.CheckAndSetDefaults(); err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -182,7 +185,39 @@ func NewPlugin(group force.Group) func(cfg Config) (*Plugin, error) {
 		p := &Plugin{
 			Config: cfg,
 		}
-		group.SetVar(LoggingPlugin, p)
+		group.SetPlugin(LoggingPlugin, p)
 		return p, nil
 	}
+}
+
+// Infof returns an action that logs in infor
+func Infof(format force.String, args ...interface{}) force.Action {
+	return &InfofAction{
+		format: format,
+		args:   args,
+	}
+}
+
+type InfofAction struct {
+	format force.String
+	args   []interface{}
+}
+
+func (s *InfofAction) Run(ctx force.ExecutionContext) error {
+	log := force.Log(ctx)
+	evalArgs := make([]interface{}, len(s.args))
+	var err error
+	for i := range s.args {
+		evalArgs[i], err = force.Eval(ctx, s.args[i])
+		if err != nil {
+			// use as is without eval
+			evalArgs[i] = s.args[i]
+		}
+	}
+	log.Infof(string(s.format), evalArgs...)
+	return nil
+}
+
+func (s *InfofAction) String() string {
+	return fmt.Sprintf("Infof()")
 }

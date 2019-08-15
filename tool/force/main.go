@@ -78,8 +78,7 @@ func generateAndStart(ctx context.Context, debug bool, setupFile, forceFile stri
 		return nil, trace.ConvertSystemError(err)
 	}
 	inputs = append(inputs, string(data))
-	run := runner.New(ctx, debug)
-	err = runner.Parse(inputs, run)
+	run, err := runner.Parse(runner.Input{Context: ctx, Scripts: inputs, Debug: debug})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}

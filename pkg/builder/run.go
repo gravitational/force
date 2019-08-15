@@ -30,13 +30,21 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	}
 
 	log := force.Log(ectx)
-	log.Infof("Building image %v.", img.Tag.Value(ectx))
+	tag, err := img.Tag.Eval(ectx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	dockerfilePath, err := img.Dockerfile.Eval(ectx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	log.Infof("Building image %v, dockerfile %v.", tag, dockerfilePath)
 
 	// create and execute a build session
 	frontendAttrs := map[string]string{
 		// We use the base for filename here because we already set up the
 		// local dirs which sets the path in createController.
-		"filename": filepath.Base(img.Dockerfile.Value(ectx)),
+		"filename": filepath.Base(dockerfilePath),
 		"target":   img.Target,
 		"platform": strings.Join(img.Platforms, ","),
 	}
@@ -46,7 +54,15 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 
 	// Get the build args and add them to frontend attrs.
 	for _, a := range img.Args {
-		frontendAttrs["build-arg:"+a.Key.Value(ectx)] = a.Val.Value(ectx)
+		key, err := a.Key.Eval(ectx)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		val, err := a.Val.Eval(ectx)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		frontendAttrs["build-arg:"+key] = val
 	}
 
 	sess, sessDialer, err := b.Session(ectx, img)
@@ -72,7 +88,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 			Exporter: "image",
 			ExporterAttrs: map[string]string{
 				// in the future will be multiple tags
-				"name": strings.Join([]string{img.Tag.Value(ectx)}, ","),
+				"name": strings.Join([]string{tag}, ","),
 			},
 			Frontend:      FrontendDockerfile,
 			FrontendAttrs: frontendAttrs,
@@ -86,7 +102,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	if err := eg.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Successfully built %v.", img.Tag.Value(ectx))
+	log.Infof("Successfully built %v.", tag)
 
 	return nil
 }
@@ -99,10 +115,18 @@ func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Sessi
 		return nil, nil, trace.Wrap(err, "failed to create session")
 	}
 
+	contextPath, err := img.Context.Eval(ctx)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	dockerfilePath, err := img.Dockerfile.Eval(ctx)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
 	var syncedDirs []filesync.SyncedDir
 	for name, d := range map[string]string{
-		"context":    img.Context.Value(ctx),
-		"dockerfile": filepath.Dir(img.Dockerfile.Value(ctx)),
+		"context":    contextPath,
+		"dockerfile": filepath.Dir(dockerfilePath),
 	} {
 		syncedDirs = append(syncedDirs, filesync.SyncedDir{Name: name, Dir: d})
 	}
@@ -116,7 +140,15 @@ func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Sessi
 	if len(img.Secrets) > 0 {
 		files := make([]secretsprovider.FileSource, len(img.Secrets))
 		for i, s := range img.Secrets {
-			files[i] = secretsprovider.FileSource{ID: s.ID.Value(ctx), FilePath: s.File.Value(ctx)}
+			id, err := s.ID.Eval(ctx)
+			if err != nil {
+				return nil, nil, trace.Wrap(err)
+			}
+			file, err := s.File.Eval(ctx)
+			if err != nil {
+				return nil, nil, trace.Wrap(err)
+			}
+			files[i] = secretsprovider.FileSource{ID: id, FilePath: file}
 		}
 		secretStore, err := secretsprovider.NewFileStore(files)
 		if err != nil {

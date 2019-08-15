@@ -12,8 +12,11 @@ Process(Spec{
 	// also, should be more strict with variables, reference of an undefined
 	// variable or shadowing of an existing one should be a problem
 	Run: PostStatusOf(
-		// create temporary directory "repo",
-		WithTempDir("repo", 
+		Sequence(
+			// Create temporary directory "repo",			
+			Define("repo", TempDir()),
+			// Remove it at the end of this sequence
+			Defer(RemoveDir(Var("repo"))),
 			// Clone clones git repository into temp dir
 			Clone(Repo{
 				URL: "https://github.com/gravitational/teleport.git",
@@ -30,6 +33,10 @@ Process(Spec{
 			Define("buildbox", "gcr.io/kubeadm-167321/buildbox:1.12.1"),
 			// Version to etcd to install in a container
 			Define("etcdVer", "v3.3.13"),
+			// UID is the uid to run the jobs
+			Define("uid", 1000),
+			// GID is the gid to run the jobs
+			Define("gid", 1000),
 			// Build builds dockerfile and tags it in the local storage
 			Build(Image{
 				// Set build context to the cloned repository
@@ -42,8 +49,8 @@ Process(Spec{
 				// Args are build arguments
 				Args: []Arg{
 					{Key: "BUILDBOX", Val: Var("buildbox")},
-					{Key: "UID", Val: "1000"},
-					{Key: "GID", Val: "1000"},
+					{Key: "UID", Val: Sprintf("%v", Var("uid"))},
+					{Key: "GID", Val: Sprintf("%v", Var("gid"))},
 					{Key: "ETCD_VER", Val: Var("etcdVer")},
 				},
 			}),
@@ -52,7 +59,7 @@ Process(Spec{
 				// Run the test job
 				Run(Job{
 					Name: Sprintf("tel-test-%v", ID()),
-					SecurityContext: &SecurityContext{RunAsUser: 1000, RunAsGroup: 1000},
+					SecurityContext: &SecurityContext{RunAsUser: Var("uid"), RunAsGroup: Var("gid")},
 					Volumes: []Volume{
 						{Name: "gocache", EmptyDir: &EmptyDir{}},
 						{Name: "etcd", EmptyDir: &EmptyDir{}},
@@ -79,7 +86,7 @@ Process(Spec{
 				// Run the integration job
 				Run(Job{
 					Name: Sprintf("tel-int-%v", ID()),
-					SecurityContext: &SecurityContext{RunAsUser: 1000, RunAsGroup: 1000},
+					SecurityContext: &SecurityContext{RunAsUser: Var("uid"), RunAsGroup: Var("gid")},
 					Volumes: []Volume{
 						{Name: "gocache", EmptyDir: &EmptyDir{}},
 					},

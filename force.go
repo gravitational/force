@@ -3,7 +3,6 @@ package force
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"sync/atomic"
 	"time"
@@ -11,8 +10,26 @@ import (
 	"github.com/gravitational/trace"
 )
 
+// LexicalScope is a lexical scope with variables
+type LexicalScope interface {
+	// AddDefinition adds variable definition in the current lexical scop
+	AddDefinition(name string, v interface{}) error
+
+	// GetDefinition gets a variable defined with DefineVarType
+	// not the actual variable value is returned, but a prototype
+	// value specifying the type
+	GetDefinition(name string) (interface{}, error)
+
+	// Variables returns a list of variable names
+	// defined in this scope (and the parent scopes)
+	Variables() []string
+}
+
 // Group represents a group of processes
 type Group interface {
+	// LexicalScope is a lexical scope
+	// represented by this group
+	LexicalScope
 	// BroadcastEvents will broadcast events
 	// to every process in a process group
 	BroadcastEvents() chan<- Event
@@ -24,13 +41,13 @@ type Group interface {
 	// Context returns a process group context
 	Context() context.Context
 
-	// SetVar sets process group-local variable
+	// SetPlugin sets process group-local plugin
 	// all setters and getters are thread safe
-	SetVar(key interface{}, val interface{})
+	SetPlugin(key interface{}, val interface{})
 
-	// GetVar returns a process group local variable
+	// GetPlugin returns a process group plugin
 	// all setters and getters are thread safe
-	GetVar(key interface{}) (val interface{}, exists bool)
+	GetPlugin(key interface{}) (val interface{}, exists bool)
 
 	// Logger returns a logger associated with this group
 	Logger() Logger
@@ -112,26 +129,6 @@ type Event interface {
 	Created() time.Time
 }
 
-// ExecutionContext represents an execution context
-// of a certain action execution chain,
-type ExecutionContext interface {
-	context.Context
-	// Event is an event that generated the action
-	Event() Event
-	// Process returns a process associated with context
-	Process() Process
-	// SetValue adds a key value pair to the context
-	SetValue(key interface{}, value interface{})
-	// ID is an execution unique identifier
-	ID() string
-	// AddCloser adds closer to the context
-	AddCloser(io.Closer)
-	// Close closes the context
-	// and releases all associated resources
-	// registered with Closer
-	Close() error
-}
-
 // SetError is a helper function that adds an error
 // to the context
 func SetError(ctx ExecutionContext, err error) {
@@ -158,60 +155,80 @@ func Error(ctx ExecutionContext) error {
 // BoolVar is a context bool variable
 // that returns a string value from the execution context
 type BoolVar interface {
-	// Value returns bool
-	Value(ctx ExecutionContext) bool
+	// Eval evaluates variable and returns bool
+	Eval(ctx ExecutionContext) (bool, error)
 }
 
 // Bool is a constant bool var
 type Bool bool
 
-// Value returns int value
-func (b Bool) Value(ctx ExecutionContext) bool {
-	return bool(b)
+// Eval evaluates variable and returns bool
+func (b Bool) Eval(ctx ExecutionContext) (bool, error) {
+	return bool(b), nil
+}
+
+// BoolVarFunc wraps function and returns an interface BoolVar
+type BoolVarFunc func(ctx ExecutionContext) (bool, error)
+
+// Eval evaluates variable and returns bool
+func (f BoolVarFunc) Eval(ctx ExecutionContext) (bool, error) {
+	return f(ctx)
 }
 
 // IntVar is a context int variable
 // that returns a string value from the execution context
 type IntVar interface {
-	// Value returns a string
-	Value(ctx ExecutionContext) int
+	// Eval evaluates variable and returns a string
+	Eval(ctx ExecutionContext) (int, error)
 }
 
 // Int is a constant int var
 type Int int
 
 // Value returns int value
-func (i Int) Value(ctx ExecutionContext) int {
-	return int(i)
+func (i Int) Eval(ctx ExecutionContext) (int, error) {
+	return int(i), nil
+}
+
+func (i *Int) String() string {
+	return fmt.Sprintf("%v", int(*i))
+}
+
+// IntVarFunc wraps function and returns an interface IntVar
+type IntVarFunc func(ctx ExecutionContext) (int, error)
+
+// Eval evaluates value and returns error
+func (f IntVarFunc) Eval(ctx ExecutionContext) (int, error) {
+	return f(ctx)
 }
 
 // StringVar is a context string variable
 // that returns a string value from the execution context
 type StringVar interface {
-	// Value returns a string
-	Value(ctx ExecutionContext) string
+	// Eval evaluates variable and returns string
+	Eval(ctx ExecutionContext) (string, error)
 }
 
 // String is a constant string variable
 type String string
 
-// Value returns a string value
-func (s String) Value(ctx ExecutionContext) string {
-	return string(s)
+// Value evaluates function and returns string
+func (s String) Eval(ctx ExecutionContext) (string, error) {
+	return string(s), nil
 }
 
-// StringVarFunc wraps function and returns an interface VarString
-type StringVarFunc func(ctx ExecutionContext) string
+// StringVarFunc wraps function and returns an interface StringVar
+type StringVarFunc func(ctx ExecutionContext) (string, error)
 
 // Value returns a string value
-func (f StringVarFunc) Value(ctx ExecutionContext) string {
+func (f StringVarFunc) Eval(ctx ExecutionContext) (string, error) {
 	return f(ctx)
 }
 
 // ID returns a current Force execution ID
 func ID() StringVar {
-	return StringVarFunc(func(ctx ExecutionContext) string {
-		return ctx.ID()
+	return StringVarFunc(func(ctx ExecutionContext) (string, error) {
+		return ctx.ID(), nil
 	})
 }
 

@@ -15,10 +15,14 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// NewPush returns a new push action
-func NewPush(group force.Group) func(Image) (force.Action, error) {
-	return func(img Image) (force.Action, error) {
-		pluginI, ok := group.GetVar(Plugin)
+// NewPush specifies new push actions
+type NewPush struct {
+}
+
+// NewInstance returns functions creating new push action
+func (n *NewPush) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(img Image) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(Plugin)
 		if !ok {
 			// plugin is not initialized, use defaults
 			logrus.Debugf("Builder plugin is not initialized, using default")
@@ -43,6 +47,7 @@ func (b *Builder) NewPush(img Image) (force.Action, error) {
 	}, nil
 }
 
+// PushAction returns new push actions
 type PushAction struct {
 	Builder *Builder
 	Image   Image
@@ -63,7 +68,11 @@ func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	}
 
 	log := force.Log(ectx)
-	log.Infof("Pushing image %v.", img.Tag.Value(ectx))
+	tag, err := img.Tag.Eval(ectx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	log.Infof("Pushing image %v.", tag)
 
 	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
@@ -78,13 +87,13 @@ func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	})
 	eg.Go(func() error {
 		defer sess.Close()
-		return b.push(ctx, img.Tag.Value(ectx), b.Config.Insecure)
+		return b.push(ctx, tag, b.Config.Insecure)
 	})
 
 	if err := eg.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Successfully pushed %v.", img.Tag.Value(ectx))
+	log.Infof("Successfully pushed %v.", tag)
 
 	return nil
 }

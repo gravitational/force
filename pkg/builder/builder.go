@@ -173,11 +173,11 @@ type Image struct {
 	// Tag is a tag in the spec of image:tag (optional tag part)
 	Tag force.StringVar
 	// NoCache turns off caching
-	NoCache bool
+	NoCache force.BoolVar
 	// Platforms is a list of target platforms
-	Platforms []string
+	Platforms []force.StringVar
 	// Target is the target build stage to build
-	Target string
+	Target force.StringVar
 	// Secrets is a list of secrets
 	// mounted in the build container
 	Secrets []Secret
@@ -263,7 +263,7 @@ func (i *Image) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	}
 
 	if len(i.Platforms) == 0 {
-		i.Platforms = []string{platforms.DefaultString()}
+		i.Platforms = []force.StringVar{force.String(platforms.DefaultString())}
 	}
 	for _, s := range i.Secrets {
 		if err := s.CheckAndSetDefaults(); err != nil {

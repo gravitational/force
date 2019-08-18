@@ -24,22 +24,35 @@ func main() {
 	reexec()
 	rand.Seed(time.Now().UnixNano())
 	ctx := setupSignalHandlers()
+
+	cfg := config{}
+
 	app := kingpin.New("force", "Force is simple CI/CD tool")
-	debug := app.Flag("debug", "Turn on debugging level").Short('d').Bool()
-	setupFile := app.Flag("setup", "Path to setup file").Default(SetupForce).String()
-	forceFile := app.Arg("file", "Force file to run").Default(GFile).String()
+	app.Flag("debug", "Turn on debugging level").Short('d').BoolVar(&cfg.debug)
+	app.Flag("setup", "Path to setup file").StringVar(&cfg.setupFile)
+	app.Arg("file", "Force file to run").StringVar(&cfg.forceFile)
+
+	app.Flag("id", "Optional run ID").Envar("FORCE_ID").StringVar(&cfg.id)
+	app.Flag("setup-script", "Path to setup file").Envar("FORCE_SETUP").StringVar(&cfg.setupScript)
+	app.Arg("file-script", "Force file to run").Envar("FORCE_SCRIPT").StringVar(&cfg.forceScript)
+
 	_, err := app.Parse(os.Args[1:])
 	if err != nil {
 		fmt.Printf("ERROR: %v", err)
 		os.Exit(1)
 	}
 
-	if err := initLogger(*debug); err != nil {
+	if err := initLogger(cfg.debug); err != nil {
 		fmt.Printf("Failed to init logger: %v", err)
 		os.Exit(1)
 	}
 
-	run, err := generateAndStart(ctx, *debug, *setupFile, *forceFile)
+	if err := cfg.CheckAndSetDefaults(); err != nil {
+		fmt.Printf("%v\n", err)
+		os.Exit(1)
+	}
+
+	run, err := generateAndStart(ctx, cfg)
 	if err != nil {
 		log.WithError(err).Errorf("Force exited.")
 		os.Exit(1)
@@ -58,28 +71,13 @@ func main() {
 	}
 }
 
-// GFile is a special file defining process
-const (
-	GFile = "G"
-	// SetupForce is a special file
-	// with setup for the properties
-	SetupForce = "setup.force"
-)
-
-func generateAndStart(ctx context.Context, debug bool, setupFile, forceFile string) (*runner.Runner, error) {
-	setupScript, err := ioutil.ReadFile(setupFile)
-	if err == nil {
-		log.Debugf("Found setup file %q.", SetupForce)
-	}
-	script, err := ioutil.ReadFile(forceFile)
-	if err != nil {
-		return nil, trace.ConvertSystemError(err)
-	}
+func generateAndStart(ctx context.Context, cfg config) (*runner.Runner, error) {
 	run, err := runner.Parse(runner.Input{
 		Context: ctx,
-		Setup:   string(setupScript),
-		Script:  string(script),
-		Debug:   debug,
+		ID:      cfg.id,
+		Setup:   cfg.setupScript,
+		Script:  cfg.forceScript,
+		Debug:   cfg.debug,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -117,6 +115,62 @@ func initLogger(debug bool) error {
 		EnableColors:     trace.IsTerminal(os.Stderr),
 	})
 	log.SetOutput(os.Stderr)
+	return nil
+}
+
+// GFile is a special file defining process
+const (
+	GFile = "G"
+	// SetupForce is a special file
+	// with setup for the properties
+	SetupForce = "setup.force"
+)
+
+// config contains force cli parameters
+type config struct {
+	id          string
+	setupFile   string
+	forceFile   string
+	setupScript string
+	forceScript string
+	debug       bool
+}
+
+func (c *config) CheckAndSetDefaults() error {
+	if c.setupFile != "" && c.setupScript != "" {
+		return trace.BadParameter("supply either setup-script or setup file, not both")
+	}
+	if c.setupFile == "" && c.setupScript == "" {
+		fi, _ := os.Stat(SetupForce)
+		if fi != nil {
+			log.Debugf("Found setup file %v.", SetupForce)
+			c.setupFile = SetupForce
+		}
+	}
+	if c.forceFile != "" && c.forceScript != "" {
+		return trace.BadParameter("supply either script or file, not both")
+	}
+	if c.forceFile == "" && c.forceScript == "" {
+		fi, _ := os.Stat(GFile)
+		if fi != nil {
+			log.Debugf("Found default script %v.", GFile)
+		}
+		c.forceFile = GFile
+	}
+	if c.setupFile != "" {
+		setupScript, err := ioutil.ReadFile(c.setupFile)
+		if err != nil {
+			return trace.ConvertSystemError(err)
+		}
+		c.setupScript = string(setupScript)
+	}
+	if c.forceFile != "" {
+		forceScript, err := ioutil.ReadFile(c.forceFile)
+		if err != nil {
+			return trace.ConvertSystemError(err)
+		}
+		c.forceScript = string(forceScript)
+	}
 	return nil
 }
 

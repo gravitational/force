@@ -22,6 +22,8 @@ import (
 
 // Input is an input to parser
 type Input struct {
+	// ID specifies run ID
+	ID string
 	// Setup is an optional setup script to parse
 	// it sets up a group of processes
 	Setup string
@@ -37,6 +39,9 @@ type Input struct {
 func (i *Input) CheckAndSetDefaults() error {
 	if i.Context == nil {
 		return trace.BadParameter("missing parameter Context")
+	}
+	if i.ID == "" {
+		i.ID = ShortID()
 	}
 	if len(i.Script) == 0 {
 		return trace.BadParameter("missing parameter Script")
@@ -167,6 +172,8 @@ func Parse(i Input) (*Runner, error) {
 				return kube.Job{}, nil
 			case "Container":
 				return kube.Container{}, nil
+			case "PodSecurityContext":
+				return kube.PodSecurityContext{}, nil
 			case "SecurityContext":
 				return kube.SecurityContext{}, nil
 			case "EnvVar":
@@ -175,8 +182,12 @@ func Parse(i Input) (*Runner, error) {
 				return kube.Volume{}, nil
 			case "VolumeMount":
 				return kube.VolumeMount{}, nil
-			case "EmptyDir":
-				return kube.EmptyDir{}, nil
+			case "EmptyDirSource":
+				return kube.EmptyDirSource{}, nil
+			case "SecretSource":
+				return kube.SecretSource{}, nil
+			case "ConfigMapSource":
+				return kube.ConfigMapSource{}, nil
 			default:
 				return nil, trace.BadParameter("unsupported struct: %v", name)
 			}
@@ -201,7 +212,7 @@ func Parse(i Input) (*Runner, error) {
 		setupContext := force.NewContext(force.ContextConfig{
 			Context: i.Context,
 			Process: proc,
-			ID:      ShortID(),
+			ID:      i.ID,
 			Event:   &force.OneshotEvent{Time: time.Now().UTC()},
 		})
 		if err := proc.Action().Run(setupContext); err != nil {

@@ -59,10 +59,10 @@ Process(Spec{
 				// Run the test job
 				Run(Job{
 					Name: Sprintf("tel-test-%v", ID()),
-					SecurityContext: &SecurityContext{RunAsUser: Var("uid"), RunAsGroup: Var("gid")},
+					SecurityContext: &PodSecurityContext{RunAsUser: Var("uid"), RunAsGroup: Var("gid")},
 					Volumes: []Volume{
-						{Name: "gocache", EmptyDir: &EmptyDir{}},
-						{Name: "etcd", EmptyDir: &EmptyDir{}},
+						{Name: "gocache", EmptyDir: &EmptyDirSource{}},
+						{Name: "etcd", EmptyDir: &EmptyDirSource{}},
 					},
 					Containers: []Container{
 						{
@@ -86,9 +86,9 @@ Process(Spec{
 				// Run the integration job
 				Run(Job{
 					Name: Sprintf("tel-int-%v", ID()),
-					SecurityContext: &SecurityContext{RunAsUser: Var("uid"), RunAsGroup: Var("gid")},
+					SecurityContext: &PodSecurityContext{RunAsUser: Var("uid"), RunAsGroup: Var("gid")},
 					Volumes: []Volume{
-						{Name: "gocache", EmptyDir: &EmptyDir{}},
+						{Name: "gocache", EmptyDir: &EmptyDirSource{}},
 					},
 					Containers: []Container{
 						{

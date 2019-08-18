@@ -18,6 +18,7 @@ type Container struct {
 	ImagePullPolicy force.StringVar
 	TTY             force.BoolVar
 	Stdin           force.BoolVar
+	SecurityContext *SecurityContext
 }
 
 func (c *Container) CheckAndSetDefaults(ctx force.ExecutionContext) error {
@@ -38,6 +39,11 @@ func (c *Container) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	}
 	if c.ImagePullPolicy == nil {
 		c.ImagePullPolicy = force.String(string(corev1.PullAlways))
+	}
+	if c.SecurityContext != nil {
+		if err := c.SecurityContext.CheckAndSetDefaults(ctx); err != nil {
+			return trace.Wrap(err)
+		}
 	}
 	for _, e := range c.Env {
 		if err := e.CheckAndSetDefaults(ctx); err != nil {
@@ -91,6 +97,13 @@ func (c *Container) Spec(ctx force.ExecutionContext) (*corev1.Container, error) 
 		TTY:             tty,
 		Stdin:           stdin,
 	}
+	if c.SecurityContext != nil {
+		spec, err := c.SecurityContext.Spec(ctx)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		out.SecurityContext = spec
+	}
 	for _, e := range c.Env {
 		spec, err := e.Spec(ctx)
 		if err != nil {
@@ -106,6 +119,24 @@ func (c *Container) Spec(ctx force.ExecutionContext) (*corev1.Container, error) 
 		out.VolumeMounts = append(out.VolumeMounts, *spec)
 	}
 	return out, nil
+}
+
+type SecurityContext struct {
+	Privileged force.BoolVar
+}
+
+func (s *SecurityContext) CheckAndSetDefaults(ctx force.ExecutionContext) error {
+	return nil
+}
+
+func (s *SecurityContext) Spec(ctx force.ExecutionContext) (*corev1.SecurityContext, error) {
+	privileged, err := force.EvalBool(ctx, s.Privileged)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &corev1.SecurityContext{
+		Privileged: &privileged,
+	}, nil
 }
 
 type EnvVar struct {
@@ -181,12 +212,22 @@ func (v *VolumeMount) Spec(ctx force.ExecutionContext) (*corev1.VolumeMount, err
 
 // Volume represents a named volume in a pod that may be accessed by any container in the pod.
 type Volume struct {
-	Name     force.StringVar
-	EmptyDir *EmptyDir
+	Name      force.StringVar
+	EmptyDir  *EmptyDirSource
+	Secret    *SecretSource
+	ConfigMap *ConfigMapSource
 }
 
-type EmptyDir struct {
+type EmptyDirSource struct {
 	Medium force.String
+}
+
+type SecretSource struct {
+	Name force.String
+}
+
+type ConfigMapSource struct {
+	Name force.String
 }
 
 func (v *Volume) CheckAndSetDefaults(ctx force.ExecutionContext) error {
@@ -197,8 +238,8 @@ func (v *Volume) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	if name == "" {
 		return trace.BadParameter("specify Volume{Name: ``}")
 	}
-	if v.EmptyDir == nil {
-		return trace.BadParameter("specify EmptyDir, this is the only volume supported")
+	if v.EmptyDir == nil && v.Secret == nil && v.ConfigMap == nil {
+		return trace.BadParameter("specify at least one volume source")
 	}
 	return nil
 }
@@ -208,16 +249,43 @@ func (v *Volume) Spec(ctx force.ExecutionContext) (*corev1.Volume, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	medium, err := force.EvalString(ctx, v.EmptyDir.Medium)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &corev1.Volume{
+	volume := &corev1.Volume{
 		Name: name,
-		VolumeSource: corev1.VolumeSource{
-			EmptyDir: &corev1.EmptyDirVolumeSource{
-				Medium: corev1.StorageMedium(medium),
+	}
+	if v.EmptyDir != nil {
+		medium, err := force.EvalString(ctx, v.EmptyDir.Medium)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		volume.VolumeSource.EmptyDir = &corev1.EmptyDirVolumeSource{
+			Medium: corev1.StorageMedium(medium),
+		}
+	}
+	if v.Secret != nil {
+		name, err := force.EvalString(ctx, v.Secret.Name)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if name == "" {
+			return nil, trace.BadParameter("provide &Secret{Name: ``}")
+		}
+		volume.VolumeSource.Secret = &corev1.SecretVolumeSource{
+			SecretName: name,
+		}
+	}
+	if v.ConfigMap != nil {
+		name, err := force.EvalString(ctx, v.ConfigMap.Name)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if name == "" {
+			return nil, trace.BadParameter("provide &ConfigMap{Name: ``}")
+		}
+		volume.VolumeSource.ConfigMap = &corev1.ConfigMapVolumeSource{
+			LocalObjectReference: corev1.LocalObjectReference{
+				Name: name,
 			},
-		},
-	}, nil
+		}
+	}
+	return volume, nil
 }

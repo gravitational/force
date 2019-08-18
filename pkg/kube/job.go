@@ -39,20 +39,20 @@ type Job struct {
 	Name            force.StringVar
 	Namespace       force.StringVar
 	Containers      []Container
-	SecurityContext *SecurityContext
+	SecurityContext *PodSecurityContext
 	Volumes         []Volume
 }
 
-type SecurityContext struct {
+type PodSecurityContext struct {
 	RunAsUser  force.IntVar
 	RunAsGroup force.IntVar
 }
 
-func (s *SecurityContext) CheckAndSetDefaults(ctx force.ExecutionContext) error {
+func (s *PodSecurityContext) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	return nil
 }
 
-func (s *SecurityContext) Spec(ctx force.ExecutionContext) (*corev1.PodSecurityContext, error) {
+func (s *PodSecurityContext) Spec(ctx force.ExecutionContext) (*corev1.PodSecurityContext, error) {
 	runAsUser, err := force.EvalPInt64(ctx, s.RunAsUser)
 	if err != nil {
 		return nil, trace.Wrap(err)

@@ -41,14 +41,26 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	log.Infof("Building image %v, dockerfile %v.", tag, dockerfilePath)
 
 	// create and execute a build session
+	platforms, err := force.EvalStringVars(ectx, img.Platforms)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	target, err := force.EvalString(ectx, img.Target)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	frontendAttrs := map[string]string{
 		// We use the base for filename here because we already set up the
 		// local dirs which sets the path in createController.
 		"filename": filepath.Base(dockerfilePath),
-		"target":   img.Target,
-		"platform": strings.Join(img.Platforms, ","),
+		"target":   target,
+		"platform": strings.Join(platforms, ","),
 	}
-	if img.NoCache {
+	noCache, err := force.EvalBool(ectx, img.NoCache)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if noCache {
 		frontendAttrs["no-cache"] = ""
 	}
 

@@ -52,10 +52,10 @@ inception:
 	cd inception && force -d inception.force --setup=./setup.force
 
 
-.PHONY: hello
-hello:
+.PHONY: kbuild
+kbuild:
 	$(MAKE) all
-	cd examples/hello && force hello.force
+	cd examples/kbuild && force kbuild.force
 
 
 .PHONY: marshal

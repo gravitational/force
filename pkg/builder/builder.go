@@ -25,7 +25,6 @@ SOFTWARE.
 package builder
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -58,66 +57,111 @@ const (
 	FrontendDockerfile = "dockerfile.v0"
 )
 
-// Config specifies builder config
-type Config struct {
-	// Context
-	Context context.Context
+// BuilderConfig specifies builder config
+type BuilderConfig struct {
+	// Context is an execution context for the plugin setup
+	Context force.ExecutionContext `code:"-"`
+	// Group is a process group that this plugin sets up for
+	Group force.Group `code:"-"`
 	// GlobalContext is a base directory path for overlayfs other types
 	// of snapshotting
-	GlobalContext force.String
+	GlobalContext force.StringVar
 	// Backend specifies build backend
-	Backend force.String
+	Backend force.StringVar
 	// SessionName is a default build session name
-	SessionName force.String
+	SessionName force.StringVar
 	// Server is an optional registry server to login into
-	Server force.String
+	Server force.StringVar
 	// Username is the registry username
-	Username force.String
+	Username force.StringVar
 	// Secret is a registry secret
-	Secret force.String
-	// SecretFile is a path to secret
-	SecretFile force.String
+	Secret force.StringVar
+	// SecretFile is a path to registry secret file
+	SecretFile force.StringVar
 	// Insecure turns off security for image pull/push
-	Insecure bool
-	// Group is a builder plugin group
-	Group force.Group
+	Insecure force.BoolVar
+}
+
+// evaluatedConfig contains evaluated configuration parameters
+type evaluatedConfig struct {
+	group         force.Group
+	context       force.ExecutionContext
+	server        string
+	username      string
+	secret        string
+	globalContext string
+	backend       string
+	sessionName   string
+	insecure      bool
 }
 
 // CheckAndSetDefaults checks and sets default values
-func (i *Config) CheckAndSetDefaults() error {
+func (i *BuilderConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
 	if i.Context == nil {
-		i.Context = context.TODO()
+		return nil, trace.BadParameter("missing parameter Context")
 	}
 	if i.Group == nil {
-		return trace.BadParameter("missing parameter Group")
+		return nil, trace.BadParameter("missing parameter Group")
 	}
-	if i.GlobalContext == "" {
+	cfg := evaluatedConfig{
+		group:   i.Group,
+		context: i.Context,
+	}
+	var err error
+	cfg.globalContext, err = force.EvalString(ctx, i.GlobalContext)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if cfg.globalContext == "" {
 		baseDir := os.Getenv("HOME")
 		if baseDir == "" {
 			baseDir = os.TempDir()
 		}
-		i.GlobalContext = force.String(filepath.Join(baseDir, ".local", "share", "img"))
+		cfg.globalContext = filepath.Join(baseDir, ".local", "share", "img")
 	}
-	if i.Backend == "" {
-		err := overlay.Supported(string(i.GlobalContext))
+	cfg.backend, err = force.EvalString(ctx, i.GlobalContext)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if cfg.backend == "" {
+		err := overlay.Supported(cfg.globalContext)
 		if err == nil {
-			i.Backend = OverlayFSBackend
+			cfg.backend = OverlayFSBackend
 		} else {
-			i.Backend = NativeBackend
+			cfg.backend = NativeBackend
 			force.Debugf("Picking native backend, overlayfs is not supported: %v.", err)
 		}
 	}
-	if i.SessionName == "" {
-		i.SessionName = SessionName
+	if cfg.sessionName, err = force.EvalString(ctx, i.SessionName); err != nil {
+		return nil, trace.Wrap(err)
 	}
-	if i.SecretFile != "" {
-		data, err := ioutil.ReadFile(string(i.SecretFile))
+	if cfg.sessionName == "" {
+		i.SessionName = force.String(SessionName)
+	}
+	if cfg.username, err = force.EvalString(ctx, i.Username); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	secretFile, err := force.EvalString(ctx, i.SecretFile)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if secretFile != "" {
+		data, err := ioutil.ReadFile(secretFile)
 		if err != nil {
-			return trace.ConvertSystemError(err)
+			return nil, trace.ConvertSystemError(err)
 		}
 		i.Secret = force.String(data)
 	}
-	return nil
+	if cfg.secret, err = force.EvalString(ctx, i.Secret); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if cfg.server, err = force.EvalString(ctx, i.Server); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if cfg.insecure, err = force.EvalBool(ctx, i.Insecure); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &cfg, nil
 }
 
 // Image specifies docker image to build
@@ -239,8 +283,9 @@ func (i Image) String() string {
 }
 
 // New returns a new builder
-func New(cfg Config) (*Builder, error) {
-	if err := cfg.CheckAndSetDefaults(); err != nil {
+func New(cfg BuilderConfig) (*Builder, error) {
+	evalCfg, err := cfg.CheckAndSetDefaults(nil)
+	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	if err := utils.RuncBinaryExists(cfg.Context); err != nil {
@@ -248,7 +293,7 @@ func New(cfg Config) (*Builder, error) {
 	}
 
 	// Create the directory used for build snapshots
-	root := filepath.Join(string(cfg.GlobalContext), RuncExecutor, string(cfg.Backend))
+	root := filepath.Join(string(evalCfg.globalContext), RuncExecutor, string(evalCfg.backend))
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -259,12 +304,12 @@ func New(cfg Config) (*Builder, error) {
 	}
 
 	b := &Builder{
-		Config:      cfg,
+		cfg:         *evalCfg,
 		sessManager: sessManager,
 		root:        root,
 	}
 	// Create the worker opts.
-	opt, err := b.createWorkerOpt(b.Context, true)
+	opt, err := b.createWorkerOpt(b.cfg.context, true)
 	if err != nil {
 		return nil, trace.Wrap(err, "creating worker opt failed")
 	}
@@ -280,7 +325,8 @@ func New(cfg Config) (*Builder, error) {
 
 // Builder is a new container image builder
 type Builder struct {
-	Config
+	// cfg is evaluated config
+	cfg         evaluatedConfig
 	logger      force.Logger
 	sessManager *session.Manager
 	root        string

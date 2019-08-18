@@ -87,6 +87,8 @@ type Channel interface {
 
 // Action is an action triggered as a part of the process
 type Action interface {
+	// CodeMarshaler allows to marshal action into code
+	CodeMarshaler
 	// Run runs the action in the context of the worker,
 	// could modify the context to add metadata, fields or error
 	Run(ctx ExecutionContext) error
@@ -97,10 +99,10 @@ type Spec struct {
 	Name    String
 	Watch   Channel
 	Run     Action
-	EventsC chan Event
+	EventsC chan Event `code:"-"`
 	// Group if set, will assign the process to a specific group,
 	// otherwise, will be set to the default runner
-	Group Group
+	Group Group `code:"-"`
 }
 
 // processNumber is a helper number to generate
@@ -114,7 +116,11 @@ func (s *Spec) CheckAndSetDefaults() error {
 		s.Name = String(fmt.Sprintf("%v-%v", host, num))
 	}
 	if s.Watch == nil {
-		return trace.BadParameter("the Process is missing Spec{Watch:}, in case if you need an unconditional execution, use Spec{Watch: Oneshot()}")
+		oneshot, err := Oneshot()
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		s.Watch = oneshot
 	}
 	if s.Run == nil {
 		return trace.BadParameter("the Process needs Spec{Run:} parameter")
@@ -185,6 +191,11 @@ type IntVar interface {
 // Int is a constant int var
 type Int int
 
+// MarshalCode marshals the variable to code representation
+func (i Int) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return MarshalCode(ctx, int(i))
+}
+
 // Value returns int value
 func (i Int) Eval(ctx ExecutionContext) (int, error) {
 	return int(i), nil
@@ -227,9 +238,21 @@ func (f StringVarFunc) Eval(ctx ExecutionContext) (string, error) {
 
 // ID returns a current Force execution ID
 func ID() StringVar {
-	return StringVarFunc(func(ctx ExecutionContext) (string, error) {
-		return ctx.ID(), nil
-	})
+	return &IDAction{}
+}
+
+// IDAction returns force ID
+type IDAction struct {
+}
+
+// Eval evaluates id of the current execution context
+func (i *IDAction) Eval(ctx ExecutionContext) (string, error) {
+	return ctx.ID(), nil
+}
+
+// MarshalCode marshals ID action to code
+func (i *IDAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(ID).MarshalCode(ctx)
 }
 
 // CloserFunc wraps function

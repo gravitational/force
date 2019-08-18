@@ -284,6 +284,29 @@ func (r *Runner) Close() error {
 	return nil
 }
 
+// Setup creates a new setup process
+func (r *Runner) Setup(actions ...force.Action) (force.Process, error) {
+	oneshotC, err := force.Oneshot()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	spec := force.Spec{
+		Name:  "setup",
+		Watch: oneshotC,
+		Run:   force.Sequence(actions...),
+		Group: r,
+	}
+	logger := r.Logger().AddFields(map[string]interface{}{
+		force.KeyProc:   spec.Name,
+		trace.Component: spec.Name,
+	})
+	l, err := NewLocalProcess(r.Context(), logger, spec)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return l, nil
+}
+
 // Process creates a local process
 func (r *Runner) Process(spec force.Spec) (force.Process, error) {
 	if err := spec.CheckAndSetDefaults(); err != nil {
@@ -300,12 +323,6 @@ func (r *Runner) Process(spec force.Spec) (force.Process, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	r.AddProcess(l)
-	// TODO: how to deduplicate event sources?
-	if spec.Watch != nil {
-		r.Logger().Debugf("Add event source %v.", spec.Watch)
-		r.AddChannel(spec.Watch)
-	}
 	return l, nil
 }
 
@@ -317,4 +334,15 @@ type NewProcess struct {
 // NewInstance returns a new instance of the process
 func (n *NewProcess) NewInstance(group force.Group) (force.Group, interface{}) {
 	return group, n.runner.Process
+}
+
+// NewSetupProcess creates new setup process
+type NewSetupProcess struct {
+	runner *Runner
+}
+
+// NewInstance returns a new instance of a function
+// that does nothing but grouping methods together
+func (n *NewSetupProcess) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, n.runner.Setup
 }

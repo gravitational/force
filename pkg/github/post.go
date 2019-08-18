@@ -68,6 +68,11 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
 	return trace.Wrap(err)
 }
 
+// MarshalCode marshals the action into code representation
+func (p *PostStatusAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.NewFnCall(p.plugin.PostStatus, p.status).MarshalCode(ctx)
+}
+
 // PostStatusOfAction executes an action and posts its status
 // to the github
 type PostStatusOfAction struct {
@@ -107,6 +112,17 @@ func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) error {
 		plugin: p.plugin,
 	}
 	return trace.NewAggregate(err, postResult.Run(ctx))
+}
+
+// MarshalCode marshals the action into code representation
+func (p *PostStatusOfAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	call := &force.FnCall{
+		Fn: p.plugin.PostStatusOf,
+	}
+	for i := range p.actions {
+		call.Args = append(call.Args, p.actions[i])
+	}
+	return call.MarshalCode(ctx)
 }
 
 type Status struct {

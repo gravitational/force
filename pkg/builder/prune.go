@@ -10,6 +10,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Prune creates prune actions
+func Prune() (force.Action, error) {
+	return &PruneAction{}, nil
+}
+
 // NewPrune specifies prune action - cleaning up
 // dangled leftovers from builds - images and tags, layers
 type NewPrune struct {
@@ -17,41 +22,31 @@ type NewPrune struct {
 
 // NewInstance returns function creating new prune actions
 func (n *NewPrune) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func() (force.Action, error) {
-		pluginI, ok := group.GetPlugin(Plugin)
-		if !ok {
-			// plugin is not initialized, use defaults
-			group.Logger().Debugf("Builder plugin is not initialized, using default.")
-			builder, err := New(Config{
-				Context: group.Context(),
-				Group:   group,
-			})
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			return builder.NewPrune()
-		}
-		return pluginI.(*Builder).NewPrune()
-	}
+	return group, Prune
 }
 
-// NewPrune returns a new prune action
-func (b *Builder) NewPrune() (force.Action, error) {
-	return &PruneAction{
-		Builder: b,
-	}, nil
-}
-
+// PruneAction prunes all leftover
+// build layers and snapshots from the local storage
 type PruneAction struct {
-	Builder *Builder
+	builder *Builder
 }
 
+// Run runs prune action
 func (p *PruneAction) Run(ctx force.ExecutionContext) error {
-	return p.Builder.Prune(ctx)
+	pluginI, ok := ctx.Process().Group().GetPlugin(Plugin)
+	if !ok {
+		return trace.NotFound("initialize Builder plugin in the setup section")
+	}
+	return pluginI.(*Builder).Prune(ctx)
 }
 
 func (p *PruneAction) String() string {
 	return "Prune()"
+}
+
+// MarshalCode marshals the action into code representation
+func (p *PruneAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.NewFnCall(Prune).MarshalCode(ctx)
 }
 
 // Prune clears build cache

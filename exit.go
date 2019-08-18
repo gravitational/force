@@ -53,6 +53,12 @@ func (e *SendAction) Run(ctx ExecutionContext) error {
 	}
 }
 
+// MarshalCode marshals action to code representation
+func (e *SendAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{Fn: Exit}
+	return call.MarshalCode(ctx)
+}
+
 // ExitEvent is a special event
 // tells the process group to exit with a specified code
 type ExitEvent interface {

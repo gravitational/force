@@ -76,6 +76,11 @@ func (o *OneshotChannel) String() string {
 	return fmt.Sprintf("Oneshot()")
 }
 
+// MarshalCode marshals channel to code
+func (o *OneshotChannel) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Oneshot).MarshalCode(ctx)
+}
+
 func (o *OneshotChannel) Start(pctx context.Context) error {
 	go func() {
 		select {

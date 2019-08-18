@@ -110,7 +110,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 // Session creates the session manager and returns the session and it's
 // dialer.
 func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Session, session.Dialer, error) {
-	sess, err := session.NewSession(ctx, string(b.SessionName), "")
+	sess, err := session.NewSession(ctx, string(b.cfg.sessionName), "")
 	if err != nil {
 		return nil, nil, trace.Wrap(err, "failed to create session")
 	}

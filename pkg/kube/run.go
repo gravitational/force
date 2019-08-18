@@ -17,7 +17,13 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	watch "k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
 )
+
+// Run creates new run action
+func Run(job Job) (force.Action, error) {
+	return &RunAction{job: job}, nil
+}
 
 // NewRun specifies new job runners
 type NewRun struct {
@@ -25,28 +31,22 @@ type NewRun struct {
 
 // NewRun returns functions creating kubernetes job runner action
 func (n *NewRun) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(job Job) (force.Action, error) {
-		pluginI, ok := group.GetPlugin(KubePlugin)
-		if !ok {
-			group.Logger().Debugf("Kube plugin is not initialized, using default.")
-			k, err := New(Config{})
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			return k.Run(job)
-		}
-		return pluginI.(*Plugin).Run(job)
-	}
+	return group, Run
 }
 
 // RunAction runs kubernetes job to it's completion
 type RunAction struct {
-	job    Job
-	plugin *Plugin
+	job Job
 }
 
 // Run runs kubernetes job
 func (r *RunAction) Run(ctx force.ExecutionContext) error {
+	pluginI, ok := ctx.Process().Group().GetPlugin(KubePlugin)
+	if !ok {
+		return trace.BadParameter("initialize Kube plugin")
+	}
+	plugin := pluginI.(*Plugin)
+
 	if err := r.job.CheckAndSetDefaults(ctx); err != nil {
 		return trace.Wrap(err)
 	}
@@ -55,7 +55,7 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	jobs := r.plugin.client.BatchV1().Jobs(spec.Namespace)
+	jobs := plugin.client.BatchV1().Jobs(spec.Namespace)
 	job, err := jobs.Create(spec)
 	if err != nil {
 		return trace.Wrap(err)
@@ -72,11 +72,11 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	waitC := make(chan error, 1)
 	go func() {
 		defer waitCancel()
-		waitC <- r.wait(ctx, *job)
+		waitC <- r.wait(ctx, plugin.client, *job)
 	}()
 
 	// wait for stream logs to finish, so it can capture all the available logs
-	err = r.streamLogs(ctx, waitCtx, *job, writer)
+	err = r.streamLogs(ctx, waitCtx, plugin.client, *job, writer)
 	if err != nil {
 		// report the error, but return job status returned by wait
 		log.WithError(err).Warningf("Streaming logs for %v has failed.", job.Name)
@@ -90,19 +90,24 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	}
 }
 
+// MarshalCode marshals the action into code representation
+func (s *RunAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.NewFnCall(Run, s.job).MarshalCode(ctx)
+}
+
 // streamLogs streams logs until the job is either failed or done, the context
 // ctx should cancel whenever the job is done
-func (r *RunAction) streamLogs(ctx context.Context, jobCtx context.Context, job batchv1.Job, out io.Writer) error {
+func (r *RunAction) streamLogs(ctx context.Context, jobCtx context.Context, client *kubernetes.Clientset, job batchv1.Job, out io.Writer) error {
 	// watches is a list of active watches
 	var watches []context.Context
 	interval := retry.NewUnlimitedExponentialBackOff()
 	err := retry.WithInterval(ctx, interval, func() error {
-		watcher, err := r.newPodWatch(job)
+		watcher, err := r.newPodWatch(client, job)
 		if err != nil {
 			return &backoff.PermanentError{err}
 		}
 		defer watcher.Stop()
-		watches, err = r.monitorPods(ctx, watcher.ResultChan(), jobCtx, job, out, watches)
+		watches, err = r.monitorPods(ctx, client, watcher.ResultChan(), jobCtx, job, out, watches)
 		if err != nil && !trace.IsRetryError(err) {
 			return &backoff.PermanentError{Err: err}
 		}
@@ -113,10 +118,10 @@ func (r *RunAction) streamLogs(ctx context.Context, jobCtx context.Context, job 
 
 // Wait waits for job to complete or fail, cancel on the context cancels
 // the wait call that is otherwise blocking
-func (r *RunAction) wait(ctx context.Context, job batchv1.Job) error {
+func (r *RunAction) wait(ctx context.Context, client *kubernetes.Clientset, job batchv1.Job) error {
 	interval := retry.NewUnlimitedExponentialBackOff()
 	err := retry.WithInterval(ctx, interval, func() error {
-		watcher, err := r.newJobWatch(job)
+		watcher, err := r.newJobWatch(client, job)
 		if err != nil {
 			return &backoff.PermanentError{Err: err}
 		}
@@ -133,8 +138,8 @@ func (r *RunAction) wait(ctx context.Context, job batchv1.Job) error {
 	return nil
 }
 
-func (r *RunAction) newJobWatch(job batchv1.Job) (watch.Interface, error) {
-	jobs := r.plugin.client.BatchV1().Jobs(job.Namespace)
+func (r *RunAction) newJobWatch(client *kubernetes.Clientset, job batchv1.Job) (watch.Interface, error) {
+	jobs := client.BatchV1().Jobs(job.Namespace)
 	watcher, err := jobs.Watch(metav1.ListOptions{
 		TypeMeta: metav1.TypeMeta{
 			Kind: job.Kind,
@@ -148,8 +153,8 @@ func (r *RunAction) newJobWatch(job batchv1.Job) (watch.Interface, error) {
 	return watcher, nil
 }
 
-func (r *RunAction) newPodWatch(job batchv1.Job) (watch.Interface, error) {
-	pods := r.plugin.client.CoreV1().Pods(job.Namespace)
+func (r *RunAction) newPodWatch(client *kubernetes.Clientset, job batchv1.Job) (watch.Interface, error) {
+	pods := client.CoreV1().Pods(job.Namespace)
 	watcher, err := pods.Watch(metav1.ListOptions{
 		TypeMeta: metav1.TypeMeta{
 			Kind: KindPod,
@@ -163,13 +168,13 @@ func (r *RunAction) newPodWatch(job batchv1.Job) (watch.Interface, error) {
 	return watcher, nil
 }
 
-func (r *RunAction) monitorPods(ctx context.Context, eventsC <-chan watch.Event, jobCtx context.Context, job batchv1.Job, w io.Writer, watches []context.Context) ([]context.Context, error) {
+func (r *RunAction) monitorPods(ctx context.Context, client *kubernetes.Clientset, eventsC <-chan watch.Event, jobCtx context.Context, job batchv1.Job, w io.Writer, watches []context.Context) ([]context.Context, error) {
 	// podSet keeps state of currently monitored pods
 	podSet := map[string]corev1.Pod{}
 
 	log := force.Log(ctx)
 	var err error
-	watches, err = r.checkJob(ctx, job, podSet, watches, w)
+	watches, err = r.checkJob(ctx, client, job, podSet, watches, w)
 	if err == nil {
 		return watches, nil
 	}
@@ -179,7 +184,7 @@ func (r *RunAction) monitorPods(ctx context.Context, eventsC <-chan watch.Event,
 			if !ok {
 				return watches, trace.Retry(nil, "events channel closed")
 			}
-			watches, err = r.checkJob(ctx, job, podSet, watches, w)
+			watches, err = r.checkJob(ctx, client, job, podSet, watches, w)
 			if err == nil {
 				return watches, nil
 			} else if !trace.IsCompareFailed(err) {
@@ -205,9 +210,9 @@ func (r *RunAction) monitorPods(ctx context.Context, eventsC <-chan watch.Event,
 }
 
 // checkJob checks job for new pods arrivals and returns job status
-func (r *RunAction) checkJob(ctx context.Context, job batchv1.Job, podSet map[string]corev1.Pod, watches []context.Context, out io.Writer) ([]context.Context, error) {
+func (r *RunAction) checkJob(ctx context.Context, client *kubernetes.Clientset, job batchv1.Job, podSet map[string]corev1.Pod, watches []context.Context, out io.Writer) ([]context.Context, error) {
 	firstRun := len(watches) == 0
-	newSet, err := r.collectPods(job)
+	newSet, err := r.collectPods(client, job)
 	if err != nil {
 		return watches, trace.Wrap(err)
 	}
@@ -224,19 +229,19 @@ func (r *RunAction) checkJob(ctx context.Context, job batchv1.Job, podSet map[st
 				watches = append(watches, watchCtx)
 				go func() {
 					defer watchCancel()
-					r.streamPodContainerLogs(ctx, pod, *containerDiff.new, out)
+					r.streamPodContainerLogs(ctx, client, pod, *containerDiff.new, out)
 				}()
 			}
 		}
 	}
-	return watches, r.getJobStatus(job)
+	return watches, r.getJobStatus(client, job)
 }
 
 // collectPods collects pods created by this job and returns map
 // with podName: pod pairs
-func (r *RunAction) collectPods(job batchv1.Job) (map[string]corev1.Pod, error) {
+func (r *RunAction) collectPods(client *kubernetes.Clientset, job batchv1.Job) (map[string]corev1.Pod, error) {
 	set := podSelector(job)
-	podList, err := r.plugin.client.CoreV1().Pods(job.Namespace).List(metav1.ListOptions{
+	podList, err := client.CoreV1().Pods(job.Namespace).List(metav1.ListOptions{
 		LabelSelector: set.AsSelector().String(),
 	})
 	if err != nil {
@@ -255,9 +260,9 @@ func (r *RunAction) collectPods(job batchv1.Job) (map[string]corev1.Pod, error) 
 }
 
 // streamPodContainerLogs attempts to stream pod logs to the provided out writer
-func (r *RunAction) streamPodContainerLogs(ctx context.Context, pod corev1.Pod, container corev1.ContainerStatus, out io.Writer) error {
+func (r *RunAction) streamPodContainerLogs(ctx context.Context, client *kubernetes.Clientset, pod corev1.Pod, container corev1.ContainerStatus, out io.Writer) error {
 	log := force.Log(ctx)
-	req := r.plugin.client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 		Container: container.Name,
 		Follow:    true,
 	})
@@ -280,8 +285,8 @@ func (r *RunAction) streamPodContainerLogs(ctx context.Context, pod corev1.Pod, 
 	return nil
 }
 
-func (r *RunAction) getJobStatus(ref batchv1.Job) error {
-	jobs := r.plugin.client.BatchV1().Jobs(ref.Namespace)
+func (r *RunAction) getJobStatus(client *kubernetes.Clientset, ref batchv1.Job) error {
+	jobs := client.BatchV1().Jobs(ref.Namespace)
 	job, err := jobs.Get(ref.Name, metav1.GetOptions{})
 	if err != nil {
 		return trace.Wrap(err)

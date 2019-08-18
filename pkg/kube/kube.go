@@ -14,62 +14,68 @@ type Key string
 // KubePlugin is a name of the github plugin variable
 const KubePlugin = Key("kube")
 
-// Config is a configuration
-type Config struct {
+// kubeConfig is a configuration
+type KubeConfig struct {
 	// Path is a path to kubernetes config file
-	Path force.String
+	Path force.StringVar
 }
 
 // CheckAndSetDefaults checks and sets defaults
-func (cfg *Config) CheckAndSetDefaults() error {
-	return nil
+func (cfg *KubeConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
+	ecfg := evaluatedConfig{}
+	var err error
+	if ecfg.path, err = force.EvalString(ctx, cfg.Path); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &ecfg, nil
 }
 
-// New returns a new instance of the kubernetes plugin
-func New(cfg Config) (*Plugin, error) {
-	if err := cfg.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	client, config, err := GetClient(string(cfg.Path))
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &Plugin{
-		Config: cfg,
-		client: client,
-		config: config,
-	}, nil
+type evaluatedConfig struct {
+	path string
+}
+
+// Kube returns a new instance of the kubernetes plugin
+func Kube(cfg KubeConfig) (*NewPlugin, error) {
+	return &NewPlugin{cfg: cfg}, nil
 }
 
 // NewPlugin specifies new plugins
 type NewPlugin struct {
+	cfg KubeConfig
 }
 
 // NewInstance returns a new kubernetes client bound to the process group
 // and registers plugin within variable
 func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg Config) (*Plugin, error) {
-		p, err := New(cfg)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		group.SetPlugin(KubePlugin, p)
-		return p, nil
+	return group, Kube
+}
+
+// MarshalCode marshals plugin to code representation
+func (n *NewPlugin) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.NewFnCall(Kube, n.cfg).MarshalCode(ctx)
+}
+
+func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
+	cfg, err := n.cfg.CheckAndSetDefaults(ctx)
+	if err != nil {
+		return trace.Wrap(err)
 	}
+	client, config, err := GetClient(cfg.path)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	plugin := &Plugin{
+		cfg:    *cfg,
+		client: client,
+		config: config,
+	}
+	ctx.Process().Group().SetPlugin(KubePlugin, plugin)
+	return nil
 }
 
 // Plugin is a new plugin
 type Plugin struct {
-	Config
+	cfg    evaluatedConfig
 	client *kubernetes.Clientset
 	config *rest.Config
-}
-
-// Run executes inner action and posts result of it's execution
-// to github
-func (p *Plugin) Run(job Job) (force.Action, error) {
-	return &RunAction{
-		job:    job,
-		plugin: p,
-	}, nil
 }

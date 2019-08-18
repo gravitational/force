@@ -57,3 +57,13 @@ hello:
 	$(MAKE) all
 	cd examples/hello && force hello.force
 
+
+.PHONY: marshal
+marshal:
+	$(MAKE) all
+	cd examples/marshal && force marshal.force
+
+
+.PHONY: sloccount
+sloccount:
+	find . -path ./vendor -prune -o -name "*.go" -print0 | xargs -0 wc -l

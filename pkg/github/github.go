@@ -18,18 +18,27 @@ type Key string
 // GithubPlugin is a name of the github plugin variable
 const GithubPlugin = Key("github")
 
-// Config is a github plugin config
-type Config struct {
+// GithubConfig is a github plugin config
+type GithubConfig struct {
 	// Token is an access token
-	Token force.String
+	Token force.StringVar
+}
+
+type evaluatedConfig struct {
+	token string
 }
 
 // CheckAndSetDefaults checks and sets default values
-func (cfg *Config) CheckAndSetDefaults() error {
-	if cfg.Token == "" {
-		return trace.BadParameter("set Config.Token parameter")
+func (cfg *GithubConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
+	e := evaluatedConfig{}
+	var err error
+	if e.token, err = force.EvalString(ctx, cfg.Token); err != nil {
+		return nil, trace.Wrap(err)
 	}
-	return nil
+	if e.token == "" {
+		return nil, trace.BadParameter("set GithubConfig{Token: ``} parameter")
+	}
+	return &e, nil
 }
 
 // Source is a source repository to watch
@@ -49,7 +58,7 @@ func (s *Source) CheckAndSetDefaults() error {
 		return trace.Wrap(err)
 	}
 	if s.Branch == "" {
-		s.Branch = MasterBranch
+		s.Branch = force.String(MasterBranch)
 	}
 	return nil
 }
@@ -83,29 +92,44 @@ type Repository struct {
 type Plugin struct {
 	// start is a plugin start time
 	start  time.Time
-	Config Config
-
+	cfg    evaluatedConfig
 	client *GithubClient
+}
+
+// Github creates a new action setting up a github plugin
+func Github(cfg GithubConfig) (force.Action, error) {
+	return &NewPlugin{
+		cfg: cfg,
+	}, nil
 }
 
 // NewPlugin returns a function creating new plugins
 type NewPlugin struct {
+	cfg GithubConfig
 }
 
 // NewInstance returns a new instance
 func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg Config) (*Plugin, error) {
-		if err := cfg.CheckAndSetDefaults(); err != nil {
-			return nil, trace.Wrap(err)
-		}
-		client, err := NewGithubClient(group.Context(), cfg)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		p := &Plugin{Config: cfg, client: client, start: time.Now().UTC()}
-		group.SetPlugin(GithubPlugin, p)
-		return p, nil
+	return group, Github
+}
+
+func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
+	ecfg, err := n.cfg.CheckAndSetDefaults(ctx)
+	if err != nil {
+		return trace.Wrap(err)
 	}
+	client, err := newGithubClient(ctx, *ecfg)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	p := &Plugin{cfg: *ecfg, client: client, start: time.Now().UTC()}
+	ctx.Process().Group().SetPlugin(GithubPlugin, p)
+	return nil
+}
+
+// MarshalCode marshals plugin setup to code representation
+func (n *NewPlugin) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.NewFnCall(Github, n.cfg).MarshalCode(ctx)
 }
 
 // NewWatch finds the initialized github plugin and returns a new watch
@@ -186,6 +210,11 @@ type RepoWatcher struct {
 // String returns user friendly representation of the watcher
 func (r *RepoWatcher) String() string {
 	return fmt.Sprintf("RepoWatcher(%v/%v)", r.source.Repo.Owner, r.source.Repo.Name)
+}
+
+// MarshalCode marshals things to code
+func (r *RepoWatcher) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.NewFnCall(r.plugin.Watch, r.source).MarshalCode(ctx)
 }
 
 // Start starts watch on a repo

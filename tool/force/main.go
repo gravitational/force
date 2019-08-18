@@ -67,18 +67,20 @@ const (
 )
 
 func generateAndStart(ctx context.Context, debug bool, setupFile, forceFile string) (*runner.Runner, error) {
-	var inputs []string
-	data, err := ioutil.ReadFile(setupFile)
+	setupScript, err := ioutil.ReadFile(setupFile)
 	if err == nil {
 		log.Debugf("Found setup file %q.", SetupForce)
-		inputs = append(inputs, string(data))
 	}
-	data, err = ioutil.ReadFile(forceFile)
+	script, err := ioutil.ReadFile(forceFile)
 	if err != nil {
 		return nil, trace.ConvertSystemError(err)
 	}
-	inputs = append(inputs, string(data))
-	run, err := runner.Parse(runner.Input{Context: ctx, Scripts: inputs, Debug: debug})
+	run, err := runner.Parse(runner.Input{
+		Context: ctx,
+		Setup:   string(setupScript),
+		Script:  string(script),
+		Debug:   debug,
+	})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}

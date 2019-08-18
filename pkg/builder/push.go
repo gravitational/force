@@ -11,9 +11,15 @@ import (
 	"github.com/gravitational/trace"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/push"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
+
+// Push creates new push action
+func Push(img Image) (force.Action, error) {
+	return &PushAction{
+		image: img,
+	}, nil
+}
 
 // NewPush specifies new push actions
 type NewPush struct {
@@ -21,46 +27,30 @@ type NewPush struct {
 
 // NewInstance returns functions creating new push action
 func (n *NewPush) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(img Image) (force.Action, error) {
-		pluginI, ok := group.GetPlugin(Plugin)
-		if !ok {
-			// plugin is not initialized, use defaults
-			logrus.Debugf("Builder plugin is not initialized, using default")
-			builder, err := New(Config{
-				Context: group.Context(),
-				Group:   group,
-			})
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			group.SetPlugin(Plugin, builder)
-			return builder.NewPush(img)
-		}
-		return pluginI.(*Builder).NewPush(img)
-	}
-}
-
-// NewPush returns a new push action that pushes
-// the locally built container to the registry
-func (b *Builder) NewPush(img Image) (force.Action, error) {
-	return &PushAction{
-		Image:   img,
-		Builder: b,
-	}, nil
+	return group, Push
 }
 
 // PushAction returns new push actions
 type PushAction struct {
-	Builder *Builder
-	Image   Image
+	image Image
 }
 
-func (b *PushAction) Run(ctx force.ExecutionContext) error {
-	return b.Builder.Push(ctx, b.Image)
+// MarshalCode marshals the action into code representation
+func (p *PushAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.NewFnCall(Push, p.image).MarshalCode(ctx)
+}
+
+// Run pushes image to remote repository
+func (p *PushAction) Run(ctx force.ExecutionContext) error {
+	pluginI, ok := ctx.Process().Group().GetPlugin(Plugin)
+	if !ok {
+		return trace.NotFound("initialize Builder plugin in the setup section")
+	}
+	return pluginI.(*Builder).Push(ctx, p.image)
 }
 
 func (b *PushAction) String() string {
-	return fmt.Sprintf("Push(tag=%v)", b.Image.Tag)
+	return fmt.Sprintf("Push(tag=%v)", b.image.Tag)
 }
 
 // Push pushes image to remote registry
@@ -89,7 +79,7 @@ func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	})
 	eg.Go(func() error {
 		defer sess.Close()
-		return b.push(ctx, tag, b.Config.Insecure)
+		return b.push(ctx, tag, b.cfg.insecure)
 	})
 
 	if err := eg.Wait(); err != nil {

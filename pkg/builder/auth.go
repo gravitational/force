@@ -13,7 +13,7 @@ func (b *Builder) Register(server *grpc.Server) {
 }
 
 func (b *Builder) Credentials(ctx context.Context, req *auth.CredentialsRequest) (*auth.CredentialsResponse, error) {
-	logger := b.Group.Logger()
+	logger := b.cfg.group.Logger()
 	logger.Debugf("Credentials request %v.", req)
 
 	// default registry - no login supported
@@ -21,17 +21,17 @@ func (b *Builder) Credentials(ctx context.Context, req *auth.CredentialsRequest)
 		return &auth.CredentialsResponse{}, nil
 	}
 
-	if b.Config.Server == "" {
+	if b.cfg.server == "" {
 		return nil, trace.NotFound("no credentials use BuilderConfig{Username: `...`, Secret: `...`, Server: %q} to setup credentials", req.Host)
 	}
 
-	if string(b.Config.Server) != req.Host {
-		return nil, trace.NotFound("no credentials found for %q, only for %q", req.Host, b.Config.Server)
+	if b.cfg.server != req.Host {
+		return nil, trace.NotFound("no credentials found for %q, only for %q", req.Host, b.cfg.server)
 	}
 
-	logger.Debugf("Authorized as %v in %v.", b.Config.Username, req.Host)
+	logger.Debugf("Authorized as %v in %v.", b.cfg.username, req.Host)
 	return &auth.CredentialsResponse{
-		Username: string(b.Config.Username),
-		Secret:   string(b.Config.Secret),
+		Username: string(b.cfg.username),
+		Secret:   string(b.cfg.secret),
 	}, nil
 }

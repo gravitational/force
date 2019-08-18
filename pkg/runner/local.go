@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/gravitational/force"
@@ -47,6 +45,11 @@ func (l *LocalProcess) Channel() force.Channel {
 
 func (l *LocalProcess) Action() force.Action {
 	return l.Run
+}
+
+func (l *LocalProcess) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	call := &force.FnCall{FnName: "Process", Args: []interface{}{l.Spec}}
+	return call.MarshalCode(ctx)
 }
 
 // Done returns a channel that signals that process has completed
@@ -105,23 +108,15 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 				return
 			}
 			go func() {
-				execContext := &LocalContext{
-					RuntimeScope: force.WithRuntimeScope(nil),
-					RWMutex:      &sync.RWMutex{},
-					context:      ctx,
-					process:      l,
-					event:        event,
-					id:           ShortID(),
-				}
+				execContext := force.NewContext(force.ContextConfig{
+					Context: ctx,
+					Process: l,
+					Event:   event,
+					ID:      ShortID(),
+				})
 				logger := l.logger.AddFields(map[string]interface{}{
 					force.KeyID: execContext.ID(),
 				})
-				defer func() {
-					err := execContext.Close()
-					if err != nil {
-						logger.Errorf("Error closing context: %v", err)
-					}
-				}()
 				// add a process logger to the context
 				force.SetLog(execContext, logger)
 				// add optional data from the event
@@ -136,77 +131,4 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 			}()
 		}
 	}
-}
-
-// LocalContext implements local execution context
-type LocalContext struct {
-	*sync.RWMutex
-	context context.Context
-	process force.Process
-	event   force.Event
-	id      string
-	closers []io.Closer
-	*force.RuntimeScope
-}
-
-// AddCloser adds closer to the context
-func (c *LocalContext) AddCloser(closer io.Closer) {
-	c.Lock()
-	defer c.Unlock()
-	c.closers = append(c.closers, closer)
-}
-
-// Close closes the context
-// and releases all associated resources
-// registered with Closer
-func (c *LocalContext) Close() error {
-	// this is to prevent possible deadlock on panic
-	if c == nil {
-		return nil
-	}
-	c.Lock()
-	closers := c.closers
-	c.closers = nil
-	c.Unlock()
-	var errs []error
-	for _, c := range closers {
-		errs = append(errs, c.Close())
-	}
-	return trace.NewAggregate(errs...)
-}
-
-// ID is an execution unique identifier
-func (c *LocalContext) ID() string {
-	return c.id
-}
-
-// Deadline returns the time when work done on behalf of this context
-// should be canceled. Deadline returns ok==false when no deadline is
-// set. Successive calls to Deadline return the same results.
-func (c *LocalContext) Deadline() (deadline time.Time, ok bool) {
-	return c.context.Deadline()
-}
-
-func (c *LocalContext) Done() <-chan struct{} {
-	return c.context.Done()
-}
-
-// Err returns an error associated with the context
-// If Done is not yet closed, Err returns nil.
-// If Done is closed, Err returns a non-nil error explaining why:
-// Canceled if the context was canceled
-// or DeadlineExceeded if the context's deadline passed.
-// After Err returns a non-nil error, successive calls to Err return the same error.
-func (c *LocalContext) Err() error {
-	return c.context.Err()
-}
-
-// Event is an event that generated the action
-func (c *LocalContext) Event() force.Event {
-	return c.event
-}
-
-// Process returns a process associated with the context
-func (c *LocalContext) Process() force.Process {
-	return c.process
 }

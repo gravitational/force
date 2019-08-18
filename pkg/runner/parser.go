@@ -6,11 +6,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
-	"strings"
+	"time"
 
 	"github.com/gravitational/force"
 	"github.com/gravitational/force/pkg/builder"
@@ -22,22 +20,13 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// NewGroup creates a new group
-type NewGroup struct {
-}
-
-// NewInstance returns a new instance of a function
-// that does nothing but grouping methods together
-func (n *NewGroup) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(vars ...interface{}) force.Group {
-		return group
-	}
-}
-
 // Input is an input to parser
 type Input struct {
-	// Scripts is a list of scripts to parse
-	Scripts []string
+	// Setup is an optional setup script to parse
+	// it sets up a group of processes
+	Setup string
+	// Script is a script to parse
+	Script string
 	// Context is a global context
 	Context context.Context
 	// Debug turns on global debug mode
@@ -49,13 +38,14 @@ func (i *Input) CheckAndSetDefaults() error {
 	if i.Context == nil {
 		return trace.BadParameter("missing parameter Context")
 	}
-	if len(i.Scripts) == 0 {
-		return trace.BadParameter("provide at least one script to parse")
+	if len(i.Script) == 0 {
+		return trace.BadParameter("missing parameter Script")
 	}
 	return nil
 }
 
-// Parse returns a new instance of runner
+// Parse returns a new instance of runner and a set of processes
+// to execute in a sequence
 func Parse(i Input) (*Runner, error) {
 	if err := i.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
@@ -74,7 +64,7 @@ func Parse(i Input) (*Runner, error) {
 		functions: map[string]force.Function{
 			// Standard library functions
 			"Process": &NewProcess{runner: runner},
-			"Setup":   &NewGroup{},
+			"Setup":   &NewSetupProcess{runner: runner},
 
 			// Action runners
 			"Sequence": &force.NewSequence{},
@@ -109,11 +99,13 @@ func Parse(i Input) (*Runner, error) {
 			"ID":        &force.NopScope{Func: force.ID},
 			"Sprintf":   &force.NopScope{Func: force.Sprintf},
 			"Strings":   &force.NopScope{Func: force.Strings},
-			"TrimSpace": &force.NopScope{Func: force.NewTrimSpace},
+			"TrimSpace": &force.NopScope{Func: force.TrimSpace},
+			"Marshal":   &force.NopScope{Func: force.Marshal},
+			"Unquote":   &force.NopScope{Func: force.Unquote},
 
 			// Temp dir operators
-			"TempDir":   &force.NopScope{Func: force.NewTempDir},
-			"RemoveDir": &force.NopScope{Func: force.NewRemoveDir},
+			"TempDir":   &force.NopScope{Func: force.TempDir},
+			"RemoveDir": &force.NopScope{Func: force.RemoveDir},
 
 			// Github functions
 			"Github":       &github.NewPlugin{},
@@ -146,17 +138,17 @@ func Parse(i Input) (*Runner, error) {
 				return force.Spec{}, nil
 				// Github structs
 			case "GithubConfig":
-				return github.Config{}, nil
+				return github.GithubConfig{}, nil
 			case "Source":
 				return github.Source{}, nil
 				// Git structs
 			case "GitConfig":
-				return git.Config{}, nil
+				return git.GitConfig{}, nil
 			case "Repo":
 				return git.Repo{}, nil
 				// Container builder structs
 			case "BuilderConfig":
-				return builder.Config{}, nil
+				return builder.BuilderConfig{}, nil
 			case "Image":
 				return builder.Image{}, nil
 			case "Secret":
@@ -165,12 +157,12 @@ func Parse(i Input) (*Runner, error) {
 				return builder.Arg{}, nil
 				// Log structs
 			case "LogConfig":
-				return logging.Config{}, nil
+				return logging.LogConfig{}, nil
 			case "Output":
 				return logging.Output{}, nil
 				// Kube structs
 			case "KubeConfig":
-				return kube.Config{}, nil
+				return kube.KubeConfig{}, nil
 			case "Job":
 				return kube.Job{}, nil
 			case "Container":
@@ -191,23 +183,56 @@ func Parse(i Input) (*Runner, error) {
 		},
 	}
 	runner.parser = g
-	for _, input := range i.Scripts {
-		expr, err := parser.ParseExpr(input)
+	// Setup the runner
+	if i.Setup != "" {
+		expr, err := parser.ParseExpr(i.Setup)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		_, err = g.parseNode(runner, expr)
+		procI, err := g.parseNode(runner, expr)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
+		proc, ok := procI.(force.Process)
+		if !ok {
+			return nil, trace.BadParameter("expected Setup")
+		}
+		// create a local setup context and run the setup process
+		setupContext := force.NewContext(force.ContextConfig{
+			Context: i.Context,
+			Process: proc,
+			ID:      ShortID(),
+			Event:   &force.OneshotEvent{Time: time.Now().UTC()},
+		})
+		if err := proc.Action().Run(setupContext); err != nil {
+			return nil, trace.Wrap(err)
+		}
+	}
+	expr, err := parser.ParseExpr(i.Script)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	procI, err := g.parseNode(runner, expr)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	proc, ok := procI.(force.Process)
+	if !ok {
+		return nil, trace.BadParameter("expected Process or Setup, got something else")
 	}
 
 	// if after parsing, logging plugin is not set up
 	// set it up with default plugin instance
-	_, ok := runner.GetPlugin(logging.LoggingPlugin)
+	_, ok = runner.GetPlugin(logging.LoggingPlugin)
 	if !ok {
 		runner.SetPlugin(logging.LoggingPlugin, &logging.Plugin{})
 	}
+
+	runner.AddProcess(proc)
+	runner.Logger().Debugf("Add event source %v.", proc.Channel())
+	runner.AddChannel(proc.Channel())
+
 	return runner, nil
 }
 
@@ -445,7 +470,7 @@ func literalToValue(a *ast.BasicLit) (interface{}, error) {
 func callFunction(f interface{}, args []interface{}) (v interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = trace.BadParameter("failed calling function %v %v", functionName(f), r)
+			err = trace.BadParameter("failed calling function %v %v", force.FunctionName(f), r)
 		}
 	}()
 	arguments := make([]reflect.Value, len(args))
@@ -490,9 +515,4 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 		field.Set(reflect.ValueOf(val))
 	}
 	return st.Elem().Interface(), nil
-}
-
-func functionName(i interface{}) string {
-	fullPath := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
-	return strings.TrimPrefix(filepath.Ext(fullPath), ".")
 }

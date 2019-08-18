@@ -20,19 +20,43 @@ func Eval(ctx ExecutionContext, variable interface{}) (interface{}, error) {
 	}
 }
 
+// SprintfAction when called evals
+// arguments and sprintfs them to string
+type SprintfAction struct {
+	format String
+	args   []interface{}
+}
+
+// Eval evaluates actions
+func (a *SprintfAction) Eval(ctx ExecutionContext) (string, error) {
+	eval := make([]interface{}, len(a.args))
+	var err error
+	for i := range a.args {
+		eval[i], err = Eval(ctx, a.args[i])
+		if err != nil {
+			return "", trace.Wrap(err)
+		}
+	}
+	return fmt.Sprintf(string(a.format), eval...), nil
+}
+
+// MarshalCode marshals Sprintf to code representation
+func (a *SprintfAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Sprintf,
+		Args: make([]interface{}, 0, len(a.args)+1),
+	}
+	call.Args = append(call.Args, a.format)
+	call.Args = append(call.Args, a.args...)
+	return call.MarshalCode(ctx)
+}
+
 // Sprintf is just like Sprintf
 func Sprintf(format String, args ...interface{}) StringVar {
-	return StringVarFunc(func(ctx ExecutionContext) (string, error) {
-		eval := make([]interface{}, len(args))
-		var err error
-		for i := range args {
-			eval[i], err = Eval(ctx, args[i])
-			if err != nil {
-				return "", trace.Wrap(err)
-			}
-		}
-		return fmt.Sprintf(string(format), eval...), nil
-	})
+	return &SprintfAction{
+		format: format,
+		args:   args,
+	}
 }
 
 // EvalString evaluates empty or missing string into ""

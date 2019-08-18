@@ -10,12 +10,12 @@ type NewVarRef struct {
 
 // NewInstance returns a new instance
 func (n *NewVarRef) NewInstance(group Group) (Group, interface{}) {
-	return group, VarRef(group)
+	return group, Var(group)
 }
 
-// VarRef returns a new function that references a variable
+// Var returns a new function that references a variable
 // based on the defined type
-func VarRef(group Group) func(name String) (interface{}, error) {
+func Var(group Group) func(name String) (interface{}, error) {
 	return func(name String) (interface{}, error) {
 		v, err := group.GetDefinition(string(name))
 		if err != nil {
@@ -23,71 +23,95 @@ func VarRef(group Group) func(name String) (interface{}, error) {
 		}
 		switch v.(type) {
 		case StringVar:
-			return StringVarRef(string(name)), nil
+			return &StringVarRef{name: string(name)}, nil
 		case String:
-			return StringVarRef(string(name)), nil
+			return &StringVarRef{name: string(name)}, nil
 		case IntVar:
-			return IntVarRef(string(name)), nil
+			return &IntVarRef{name: string(name)}, nil
 		case Int:
-			return IntVarRef(string(name)), nil
+			return &IntVarRef{name: string(name)}, nil
 		case BoolVar:
-			return BoolVarRef(string(name)), nil
+			return &BoolVarRef{name: string(name)}, nil
 		case Bool:
-			return BoolVarRef(string(name)), nil
+			return &BoolVarRef{name: string(name)}, nil
 		}
 		return nil, trace.BadParameter("unsupported reference type %v", v)
 	}
 }
 
-// StringVarRef returns new string variable reference
-func StringVarRef(name string) StringVar {
-	return StringVarFunc(func(ctx ExecutionContext) (string, error) {
-		i := ctx.Value(ContextKey(name))
-		if i == nil {
-			return "", trace.BadParameter("variable %v is not set", name)
-		}
-		switch val := i.(type) {
-		case string:
-			return val, nil
-		case StringVar:
-			return val.Eval(ctx)
-		}
-		return "", trace.BadParameter("failed to convert variable %q to string from %T.", name, name)
-	})
+// StringVarRef is a string variable reference
+type StringVarRef struct {
+	name string
 }
 
-// IntVarRef returns new int variable reference
-func IntVarRef(name string) IntVar {
-	return IntVarFunc(func(ctx ExecutionContext) (int, error) {
-		i := ctx.Value(ContextKey(name))
-		if i == nil {
-			return -1, trace.BadParameter("variable %v is not set", name)
-		}
-		switch val := i.(type) {
-		case int:
-			return val, nil
-		case IntVar:
-			return val.Eval(ctx)
-		}
-		return -1, trace.BadParameter("failed to convert variable %q to int from %T.", name, name)
-	})
+// Eval evaluates string var reference
+func (s *StringVarRef) Eval(ctx ExecutionContext) (string, error) {
+	i := ctx.Value(ContextKey(s.name))
+	if i == nil {
+		return "", trace.BadParameter("variable %v is not set", s.name)
+	}
+	switch val := i.(type) {
+	case string:
+		return val, nil
+	case StringVar:
+		return val.Eval(ctx)
+	}
+	return "", trace.BadParameter("failed to convert variable %q to string", s.name)
 }
 
-// BoolVarRef returns new bool variable reference
-func BoolVarRef(name string) BoolVar {
-	return BoolVarFunc(func(ctx ExecutionContext) (bool, error) {
-		i := ctx.Value(ContextKey(name))
-		if i == nil {
-			return false, trace.BadParameter("variable %v is not set", name)
-		}
-		switch val := i.(type) {
-		case bool:
-			return val, nil
-		case BoolVar:
-			return val.Eval(ctx)
-		}
-		return false, trace.BadParameter("failed to convert variable %q to int from %T.", name, name)
-	})
+// MarshalCode evaluates bool variable reference to code representation
+func (s *StringVarRef) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Var, s.name).MarshalCode(ctx)
+}
+
+// IntVarRef is a new integer variable reference
+type IntVarRef struct {
+	name string
+}
+
+// Eval evalutates int variable
+func (i *IntVarRef) Eval(ctx ExecutionContext) (int, error) {
+	iface := ctx.Value(ContextKey(i.name))
+	if iface == nil {
+		return -1, trace.BadParameter("variable %v is not set", i.name)
+	}
+	switch val := iface.(type) {
+	case int:
+		return val, nil
+	case IntVar:
+		return val.Eval(ctx)
+	}
+	return -1, trace.BadParameter("failed to convert variable %q to int", i.name)
+}
+
+// MarshalCode evaluates bool variable reference to code representation
+func (i *IntVarRef) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Var, i.name).MarshalCode(ctx)
+}
+
+// BoolVarRef is a bool variable reference
+type BoolVarRef struct {
+	name string
+}
+
+// Eval evaluates reference to it's bool variable
+func (b *BoolVarRef) Eval(ctx ExecutionContext) (bool, error) {
+	i := ctx.Value(ContextKey(b.name))
+	if i == nil {
+		return false, trace.BadParameter("variable %v is not set", b.name)
+	}
+	switch val := i.(type) {
+	case bool:
+		return val, nil
+	case BoolVar:
+		return val.Eval(ctx)
+	}
+	return false, trace.BadParameter("failed to convert variable %q to bool", b.name)
+}
+
+// MarshalCode evaluates bool variable reference to code representation
+func (b *BoolVarRef) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Var, b.name).MarshalCode(ctx)
 }
 
 // NewDefine specifies a new define action
@@ -127,4 +151,13 @@ func (p *DefineAction) Run(ctx ExecutionContext) error {
 	}
 	ctx.SetValue(ContextKey(p.name), val)
 	return nil
+}
+
+// MarshalCode marshals action into code representation
+func (p *DefineAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Define,
+		Args: []interface{}{p.name, p.value},
+	}
+	return call.MarshalCode(ctx)
 }

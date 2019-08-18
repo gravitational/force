@@ -11,20 +11,20 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// NewTrimSpace trims space and newlines
-func NewTrimSpace(s StringVar) *TrimSpace {
-	return &TrimSpace{
+// TrimSpace trims space and newlines
+func TrimSpace(s StringVar) *TrimSpaceAction {
+	return &TrimSpaceAction{
 		s: s,
 	}
 }
 
-// TrimSpace trims space
-type TrimSpace struct {
+// TrimSpaceAction trims space
+type TrimSpaceAction struct {
 	s StringVar
 }
 
 // Eval trims space
-func (n *TrimSpace) Eval(ctx ExecutionContext) (string, error) {
+func (n *TrimSpaceAction) Eval(ctx ExecutionContext) (string, error) {
 	v, err := n.s.Eval(ctx)
 	if err != nil {
 		return "", trace.Wrap(err)
@@ -52,19 +52,54 @@ func EvalStringVars(ctx ExecutionContext, in []StringVar) ([]string, error) {
 	return out, nil
 }
 
-// Env returns environment variable
-func Env(key String) String {
-	return String(os.Getenv(string(key)))
+// Env returns action fetching environment variable
+func Env(key String) *EnvAction {
+	return &EnvAction{
+		key: key,
+	}
+}
+
+// EnvAction fetches environment variable
+type EnvAction struct {
+	key String
+}
+
+// Eval fetches environment variable
+func (e *EnvAction) Eval(ctx ExecutionContext) (string, error) {
+	return os.Getenv(string(e.key)), nil
+}
+
+// MarshalCode marshals code
+func (e *EnvAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Env, e.key).MarshalCode(ctx)
 }
 
 // ExpectEnv returns environment var by key or
 // error if variable not defined
-func ExpectEnv(key String) (String, error) {
-	val := os.Getenv(string(key))
-	if val == "" {
-		return String(""), trace.NotFound("define environment variable %q", key)
+func ExpectEnv(key String) *ExpectEnvAction {
+	return &ExpectEnvAction{
+		key: key,
 	}
-	return String(val), nil
+}
+
+// ExpectEnvAction fetches environment variable
+// and verifies it's not empty
+type ExpectEnvAction struct {
+	key String
+}
+
+// Eval fetches environment variable and verifies it's not empty
+func (e *ExpectEnvAction) Eval(ctx ExecutionContext) (string, error) {
+	val := os.Getenv(string(e.key))
+	if val == "" {
+		return "", trace.NotFound("define environment variable %q", e.key)
+	}
+	return val, nil
+}
+
+// MarshalCode marshals code
+func (e *ExpectEnvAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(ExpectEnv, e.key).MarshalCode(ctx)
 }
 
 // Strings returns a list of strings evaluated from the arguments
@@ -83,15 +118,21 @@ func Strings(args ...interface{}) ([]StringVar, error) {
 	return out, nil
 }
 
-// NewTempDir returns new temp dir
-func NewTempDir() interface{} {
-	return &TempDir{}
+// TempDir returns new temp dir
+func TempDir() Action {
+	return &TempDirAction{}
 }
 
-type TempDir struct {
+// TempDirAction creates temporary directory
+type TempDirAction struct {
 }
 
-func (c *TempDir) Eval(ctx ExecutionContext) (string, error) {
+func (c *TempDirAction) Run(ctx ExecutionContext) error {
+	_, err := c.Eval(ctx)
+	return trace.Wrap(err)
+}
+
+func (c *TempDirAction) Eval(ctx ExecutionContext) (string, error) {
 	log := Log(ctx)
 	dir, err := ioutil.TempDir("", "")
 	if err != nil {
@@ -101,16 +142,25 @@ func (c *TempDir) Eval(ctx ExecutionContext) (string, error) {
 	return dir, nil
 }
 
-// NewRemoveDir returns a n action rm
-func NewRemoveDir(dir StringVar) interface{} {
-	return &RemoveDir{dir: dir}
+func (c *TempDirAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(TempDir).MarshalCode(ctx)
 }
 
-type RemoveDir struct {
+// RemoveDir returns rm dir action
+func RemoveDir(dir StringVar) Action {
+	return &RemoveDirAction{dir: dir}
+}
+
+// RemoveDirAction removes directory
+type RemoveDirAction struct {
 	dir StringVar
 }
 
-func (c *RemoveDir) Run(ctx ExecutionContext) error {
+func (c *RemoveDirAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(RemoveDir, c.dir).MarshalCode(ctx)
+}
+
+func (c *RemoveDirAction) Run(ctx ExecutionContext) error {
 	dir, err := c.dir.Eval(ctx)
 	if err != nil {
 		return trace.Wrap(err)
@@ -188,6 +238,15 @@ func (s *ShellAction) Eval(ctx ExecutionContext) (string, error) {
 	return buf.String(), trace.Wrap(err)
 }
 
+// MarshalCode marshals action into code representation
+func (s *ShellAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Shell,
+		Args: []interface{}{s.script},
+	}
+	return call.MarshalCode(ctx)
+}
+
 // run runs shell action and captures stdout and stderr to writer
 func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
 	if err := s.script.CheckAndSetDefaults(ctx); err != nil {
@@ -231,7 +290,7 @@ func (n *NewParallel) NewInstance(group Group) (Group, interface{}) {
 // Parallel runs actions in parallel
 func Parallel(actions ...Action) Action {
 	return &ParallelAction{
-		Actions: actions,
+		actions: actions,
 	}
 }
 
@@ -239,22 +298,22 @@ func Parallel(actions ...Action) Action {
 // waits for all to complete, if any of them fail,
 // returns error
 type ParallelAction struct {
-	Actions []Action
+	actions []Action
 }
 
 // Run runs actions in parallel
 func (p *ParallelAction) Run(ctx ExecutionContext) error {
 	scopeCtx := WithRuntimeScope(ctx)
-	errC := make(chan error, len(p.Actions))
-	for _, action := range p.Actions {
+	errC := make(chan error, len(p.actions))
+	for _, action := range p.actions {
 		go p.runAction(scopeCtx, action, errC)
 	}
 	var errors []error
-	for i := 0; i < len(p.Actions); i++ {
+	for i := 0; i < len(p.actions); i++ {
 		select {
 		case err := <-errC:
 			if err != nil {
-				Log(ctx).WithError(err).Warningf("Action %v has failed.", p.Actions[i])
+				Log(ctx).WithError(err).Warningf("Action %v has failed.", p.actions[i])
 				errors = append(errors, err)
 			}
 		case <-ctx.Done():
@@ -265,6 +324,18 @@ func (p *ParallelAction) Run(ctx ExecutionContext) error {
 		SetError(ctx, trace.NewAggregate(errors...))
 	}
 	return Error(ctx)
+}
+
+// MarshalCode marshals action into code representation
+func (p *ParallelAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Parallel,
+		Args: make([]interface{}, len(p.actions)),
+	}
+	for i := range p.actions {
+		call.Args[i] = p.actions[i]
+	}
+	return call.MarshalCode(ctx)
 }
 
 func (p *ParallelAction) runAction(ctx ExecutionContext, action Action, errC chan error) {
@@ -278,18 +349,23 @@ func (p *ParallelAction) runAction(ctx ExecutionContext, action Action, errC cha
 // Defer defers the action executed in sequence
 func Defer(action Action) Action {
 	return &DeferAction{
-		Action: action,
+		action: action,
 	}
 }
 
 // DeferAction runs actions in defer
 type DeferAction struct {
-	Action Action
+	action Action
 }
 
 // Run runs deferred action
 func (d *DeferAction) Run(ctx ExecutionContext) error {
-	return d.Action.Run(ctx)
+	return d.action.Run(ctx)
+}
+
+// MarshalCode marshals action into code representation
+func (d *DeferAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Defer, d.action).MarshalCode(ctx)
 }
 
 // NewSequence creates a new sequence
@@ -306,14 +382,26 @@ func (n *NewSequence) NewInstance(group Group) (Group, interface{}) {
 // if one fails, the chain stop execution
 func Sequence(actions ...Action) Action {
 	return &SequenceAction{
-		Actions: actions,
+		actions: actions,
 	}
 }
 
 // SequenceAction runs actions in a sequence,
 // if the action fails, next actions are not run
 type SequenceAction struct {
-	Actions []Action
+	actions []Action
+}
+
+// MarshalCode marshals action into code representation
+func (p *SequenceAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Sequence,
+		Args: make([]interface{}, len(p.actions)),
+	}
+	for i := range p.actions {
+		call.Args[i] = p.actions[i]
+	}
+	return call.MarshalCode(ctx)
 }
 
 // Run runs actions in sequence
@@ -321,8 +409,8 @@ func (s *SequenceAction) Run(ctx ExecutionContext) error {
 	scopeCtx := WithRuntimeScope(ctx)
 	var err error
 	var deferred []Action
-	for i := range s.Actions {
-		action := s.Actions[i]
+	for i := range s.actions {
+		action := s.actions[i]
 		_, isDefer := action.(*DeferAction)
 		if isDefer {
 			deferred = append(deferred, action)
@@ -360,21 +448,33 @@ func (n *NewContinue) NewInstance(group Group) (Group, interface{}) {
 // if one fails, it will continue running others
 func Continue(actions ...Action) Action {
 	return &ContinueAction{
-		Actions: actions,
+		actions: actions,
 	}
 }
 
 // ContinueAction runs actions
 type ContinueAction struct {
-	Actions []Action
+	actions []Action
 }
 
 func (s *ContinueAction) Run(ctx ExecutionContext) error {
 	scopeCtx := WithRuntimeScope(ctx)
-	for _, action := range s.Actions {
+	for _, action := range s.actions {
 		SetError(ctx, action.Run(scopeCtx))
 	}
 	return Error(ctx)
+}
+
+// MarshalCode marshals action into code representation
+func (p *ContinueAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Continue,
+		Args: make([]interface{}, len(p.actions)),
+	}
+	for i := range p.actions {
+		call.Args[i] = p.actions[i]
+	}
+	return call.MarshalCode(ctx)
 }
 
 // Test is a struct used for tests

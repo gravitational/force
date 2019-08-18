@@ -16,19 +16,28 @@ import (
 type Key string
 
 // GitPlugin is a name of the github plugin variable
-const GitPlugin = Key("git")
+const GitPlugin = Key("Git")
 
-// Config is a configuration
-type Config struct {
+// GitConfig is a configuration
+type GitConfig struct {
 	// Token is an access token
-	Token force.String
+	Token force.StringVar
 }
 
-func (cfg *Config) CheckAndSetDefaults() error {
-	if cfg.Token == "" {
-		return trace.BadParameter("set Config{Token:``} parameter")
+func (cfg *GitConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
+	ecfg := evaluatedConfig{}
+	var err error
+	if ecfg.token, err = force.EvalString(ctx, cfg.Token); err != nil {
+		return nil, trace.Wrap(err)
 	}
-	return nil
+	if ecfg.token == "" {
+		return nil, trace.BadParameter("set GitConfig{Token:``} parameter")
+	}
+	return &ecfg, nil
+}
+
+type evaluatedConfig struct {
+	token string
 }
 
 // Repo is a repository to clone
@@ -56,24 +65,53 @@ func (r *Repo) CheckAndSetDefaults() error {
 type Plugin struct {
 	// start is a plugin start time
 	start time.Time
-	Config
+	cfg   evaluatedConfig
 }
 
 // NewPlugin creates new plugins
 type NewPlugin struct {
+	cfg GitConfig
 }
 
 // NewInstance returns function creating new client bound to the process group
 // and registers plugin variable
 func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg Config) (*Plugin, error) {
-		if err := cfg.CheckAndSetDefaults(); err != nil {
-			return nil, trace.Wrap(err)
-		}
-		p := &Plugin{Config: cfg, start: time.Now().UTC()}
-		group.SetPlugin(GitPlugin, p)
-		return p, nil
+	return group, func(cfg GitConfig) (force.Action, error) {
+		return &NewPlugin{
+			cfg: cfg,
+		}, nil
 	}
+}
+
+// Run sets up git plugin for the process group
+func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
+	ecfg, err := n.cfg.CheckAndSetDefaults(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	plugin := &Plugin{cfg: *ecfg, start: time.Now().UTC()}
+	ctx.Process().Group().SetPlugin(GitPlugin, plugin)
+	return nil
+}
+
+// MarshalCode marshals plugin code to representation
+func (n *NewPlugin) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	call := &force.FnCall{
+		FnName: string(GitPlugin),
+		Args:   []interface{}{n.cfg},
+	}
+	return call.MarshalCode(ctx)
+}
+
+// Clone executes inner action and posts result of it's execution
+// to github
+func Clone(repo Repo) (force.Action, error) {
+	if err := repo.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &CloneAction{
+		repo: repo,
+	}, nil
 }
 
 // NewClone creates functions cloning repositories
@@ -83,34 +121,21 @@ type NewClone struct {
 // NewInstance returns a function that wraps underlying action
 // and tracks the result, posting the result back
 func (n *NewClone) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(repo Repo) (force.Action, error) {
-		pluginI, ok := group.GetPlugin(GitPlugin)
-		if !ok {
-			return nil, trace.NotFound("github plugin is not initialized, use Github to initialize it")
-		}
-		return pluginI.(*Plugin).Clone(repo)
-	}
-}
-
-// Clone executes inner action and posts result of it's execution
-// to github
-func (p *Plugin) Clone(repo Repo) (force.Action, error) {
-	if err := repo.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &CloneAction{
-		repo:   repo,
-		plugin: p,
-	}, nil
+	return group, Clone
 }
 
 // CloneAction clones repository
 type CloneAction struct {
-	repo   Repo
-	plugin *Plugin
+	repo Repo
 }
 
 func (p *CloneAction) Run(ctx force.ExecutionContext) error {
+	pluginI, ok := ctx.Process().Group().GetPlugin(GitPlugin)
+	if !ok {
+		return trace.NotFound("initialize Git plugin in the setup section")
+	}
+	plugin := pluginI.(*Plugin)
+
 	log := force.Log(ctx)
 
 	into, err := p.repo.Into.Eval(ctx)
@@ -137,7 +162,7 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		// https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/
 		Auth: &http.BasicAuth{
 			Username: "token", // this can be anything except an empty string
-			Password: string(p.plugin.Token),
+			Password: string(plugin.cfg.token),
 		},
 		URL: string(p.repo.URL),
 	})
@@ -195,4 +220,13 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 	}
 
 	return nil
+}
+
+// MarshalCode marshals action into code representation
+func (c *CloneAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	call := &force.FnCall{
+		Fn:   Clone,
+		Args: []interface{}{c.repo},
+	}
+	return call.MarshalCode(ctx)
 }

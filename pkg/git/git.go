@@ -1,7 +1,9 @@
 package git
 
 import (
+	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gravitational/force"
@@ -9,7 +11,9 @@ import (
 	"github.com/gravitational/trace"
 	git "gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
+	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
 // Key is a wrapper around string to namespace a variable
@@ -22,6 +26,14 @@ const GitPlugin = Key("Git")
 type GitConfig struct {
 	// Token is an access token
 	Token force.StringVar
+	// TokenFile is a path to access token
+	TokenFile force.StringVar
+	// User force.StringVar
+	User force.StringVar
+	// PrivateKeyFile is a path to SSH private key
+	PrivateKeyFile force.StringVar
+	// KnownHostsFile is a file with known_hosts public keys
+	KnownHostsFile force.StringVar
 }
 
 func (cfg *GitConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
@@ -30,14 +42,59 @@ func (cfg *GitConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluate
 	if ecfg.token, err = force.EvalString(ctx, cfg.Token); err != nil {
 		return nil, trace.Wrap(err)
 	}
-	if ecfg.token == "" {
-		return nil, trace.BadParameter("set GitConfig{Token:``} parameter")
+	tokenFile, err := force.EvalString(ctx, cfg.TokenFile)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if tokenFile != "" {
+		data, err := ioutil.ReadFile(tokenFile)
+		if err != nil {
+			return nil, trace.ConvertSystemError(err)
+		}
+		ecfg.token = strings.TrimSpace(string(data))
+	}
+	if ecfg.privateKeyFile, err = force.EvalString(ctx, cfg.PrivateKeyFile); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if ecfg.knownHostsFile, err = force.EvalString(ctx, cfg.KnownHostsFile); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if ecfg.token == "" && ecfg.privateKeyFile == "" {
+		return nil, trace.BadParameter("set GitConfig{Token:``} or GitConfig{PrivateKey: ``} parameters")
+	}
+	if ecfg.privateKeyFile != "" && ecfg.user == "" {
+		ecfg.user = "git"
 	}
 	return &ecfg, nil
 }
 
 type evaluatedConfig struct {
-	token string
+	token          string
+	user           string
+	privateKeyFile string
+	knownHostsFile string
+}
+
+func (e *evaluatedConfig) Auth() (transport.AuthMethod, error) {
+	if e.privateKeyFile != "" {
+		keys, err := ssh.NewPublicKeysFromFile(e.user, e.privateKeyFile, "")
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if e.knownHostsFile != "" {
+			helper, err := ssh.NewKnownHostsCallback(e.knownHostsFile)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			keys.HostKeyCallback = helper
+		}
+		return keys, nil
+	}
+	return &http.BasicAuth{
+		// this can be anything except an empty string
+		Username: "token",
+		Password: string(e.token),
+	}, nil
 }
 
 // Repo is a repository to clone
@@ -156,15 +213,14 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 	log.Infof("Cloning repository %v into %v.", p.repo.URL, into)
 	start := time.Now()
 
+	auth, err := plugin.cfg.Auth()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
 	r, err := git.PlainClone(into, false, &git.CloneOptions{
-		// The intended use of a GitHub personal access token is in replace of your password
-		// because access tokens can easily be revoked.
-		// https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/
-		Auth: &http.BasicAuth{
-			Username: "token", // this can be anything except an empty string
-			Password: string(plugin.cfg.token),
-		},
-		URL: string(p.repo.URL),
+		Auth: auth,
+		URL:  string(p.repo.URL),
 	})
 	if err != nil {
 		return trace.Wrap(err)
@@ -211,8 +267,9 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		err = sub.Update(&git.SubmoduleUpdateOptions{
+		err = sub.UpdateContext(ctx, &git.SubmoduleUpdateOptions{
 			Init: true,
+			Auth: auth,
 		})
 		if err != nil {
 			return trace.Wrap(err)

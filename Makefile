@@ -33,7 +33,6 @@ teleport:
 	$(MAKE) all
 	cd examples/teleport && force teleport.force --setup=../github/setup.force
 
-
 .PHONY: kube
 kube:
 	$(MAKE) all

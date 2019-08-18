@@ -3,7 +3,9 @@ package github
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gravitational/force"
@@ -22,6 +24,8 @@ const GithubPlugin = Key("github")
 type GithubConfig struct {
 	// Token is an access token
 	Token force.StringVar
+	// TokenFile is a path to access token
+	TokenFile force.StringVar
 }
 
 type evaluatedConfig struct {
@@ -34,6 +38,17 @@ func (cfg *GithubConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evalu
 	var err error
 	if e.token, err = force.EvalString(ctx, cfg.Token); err != nil {
 		return nil, trace.Wrap(err)
+	}
+	tokenFile, err := force.EvalString(ctx, cfg.TokenFile)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if tokenFile != "" {
+		data, err := ioutil.ReadFile(tokenFile)
+		if err != nil {
+			return nil, trace.ConvertSystemError(err)
+		}
+		e.token = strings.TrimSpace(string(data))
 	}
 	if e.token == "" {
 		return nil, trace.BadParameter("set GithubConfig{Token: ``} parameter")

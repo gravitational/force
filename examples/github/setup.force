@@ -7,12 +7,13 @@ Setup(
 	Github(GithubConfig{
 		// Token is a github access token
 		// passed to all callers in the group
-		Token: ExpectEnv("GITHUB_ACCESS_TOKEN"),
+		TokenFile: ExpectEnv("GITHUB_ACCESS_TOKEN_FILE"),
 	}),
 
 	// Git sets up git client for cloning repositories
 	Git(GitConfig{
-		Token: ExpectEnv("GITHUB_ACCESS_TOKEN"),
+		PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
+		KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
 	}),
 
 	// Builder configures docker builder

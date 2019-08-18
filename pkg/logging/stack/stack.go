@@ -92,7 +92,7 @@ func convertEntry(entry *logrus.Entry) logging.Entry {
 				Function: t.Func,
 			}
 		}
-		if len(traceErr.Fields) > 0 {
+		if ok && len(traceErr.Fields) > 0 {
 			for key, val := range convertLabels(traceErr.Fields) {
 				e.Labels[key] = val
 			}

@@ -181,7 +181,7 @@ func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
 
 // MarshalCode marshals plugin setup to code
 func (n *NewPlugin) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	return force.NewFnCall(ctx, n.cfg).MarshalCode(ctx)
+	return force.NewFnCall(Log, n.cfg).MarshalCode(ctx)
 }
 
 // Run sets up logging plugin for the instance group

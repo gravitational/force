@@ -1,0 +1,22 @@
+Process(Spec{
+	Watch: PullRequests(Source{
+		Repo: "gravitational/force",
+		Branch: "master",
+	}),
+	Run: PostStatusOf(func(){
+		repoDir := TempDir()
+		Clone(Repo{
+			URL: "git@github.com:gravitational/force.git",
+			Into: repoDir,
+			Hash: commit,
+		})
+		tag := Sprintf("gcr.io/kubeadm-167321/force-demo:%v", commit)
+		currentDir := CurrentDir()		
+		Build(Image{
+			Dockerfile: Sprintf("%v/examples/demo/4-docker/Dockerfile", currentDir),
+			Context: repoDir,
+			Tag: tag,
+		})
+		Push(Image{Tag: tag})
+	}),
+})

@@ -2,7 +2,6 @@ package force
 
 import (
 	"fmt"
-
 	"github.com/gravitational/trace"
 )
 

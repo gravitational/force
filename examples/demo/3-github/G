@@ -1,0 +1,15 @@
+Process(Spec{
+	Watch: PullRequests(Source{
+		Repo: "gravitational/force",
+		Branch: "master",
+	}),
+	Run: func(){
+		repoDir := TempDir()
+		Clone(Repo{
+			URL: "git@github.com:gravitational/force.git",
+			Into: repoDir,
+			Hash: commit,
+		})
+		Shell(Script{Command: Sprintf("cd %v && ls -lR", repoDir)})
+	},
+})

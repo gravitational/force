@@ -101,6 +101,7 @@ func Parse(i Input) (*Runner, error) {
 
 			// Helper functions
 			"Shell":     &force.NopScope{Func: force.Shell},
+			"Command":   &force.NopScope{Func: force.Command},
 			"ID":        &force.NopScope{Func: force.ID},
 			"Sprintf":   &force.NopScope{Func: force.Sprintf},
 			"Strings":   &force.NopScope{Func: force.Strings},
@@ -109,8 +110,9 @@ func Parse(i Input) (*Runner, error) {
 			"Unquote":   &force.NopScope{Func: force.Unquote},
 
 			// Temp dir operators
-			"TempDir":   &force.NopScope{Func: force.TempDir},
-			"RemoveDir": &force.NopScope{Func: force.RemoveDir},
+			"TempDir":    &force.NopScope{Func: force.TempDir},
+			"CurrentDir": &force.NopScope{Func: force.CurrentDir},
+			"RemoveDir":  &force.NopScope{Func: force.RemoveDir},
 
 			// Github functions
 			"Github":       &github.NewPlugin{},
@@ -278,7 +280,11 @@ func (g *gParser) parseNode(scope force.Group, node ast.Node) (interface{}, erro
 		// this function can create a new lexical scope
 		newScope, fn := newFn.NewInstance(scope)
 		// arguments should be evaluated within a new lexical scope
-		arguments, err := g.evaluateArguments(newScope, n.Args)
+		nodes := make([]ast.Node, len(n.Args))
+		for i := range n.Args {
+			nodes[i] = n.Args[i]
+		}
+		arguments, err := g.evaluateArguments(newScope, nodes)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -293,7 +299,7 @@ func (g *gParser) parseNode(scope force.Group, node ast.Node) (interface{}, erro
 	return nil, trace.BadParameter("unsupported expression type %T", node)
 }
 
-func (g *gParser) evaluateArguments(scope force.Group, nodes []ast.Expr) ([]interface{}, error) {
+func (g *gParser) evaluateArguments(scope force.Group, nodes []ast.Node) ([]interface{}, error) {
 	out := make([]interface{}, len(nodes))
 	for i, n := range nodes {
 		val, err := g.evaluateExpr(scope, n)
@@ -301,6 +307,22 @@ func (g *gParser) evaluateArguments(scope force.Group, nodes []ast.Expr) ([]inte
 			return nil, trace.Wrap(err)
 		}
 		out[i] = val
+	}
+	return out, nil
+}
+
+func (g *gParser) evaluateStatements(scope force.Group, nodes []ast.Node) ([]force.Action, error) {
+	out := make([]force.Action, len(nodes))
+	for i, n := range nodes {
+		val, err := g.evaluateExpr(scope, n)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		statement, ok := val.(force.Action)
+		if !ok {
+			return nil, trace.BadParameter("expected statement, got %v instead", val)
+		}
+		out[i] = statement
 	}
 	return out, nil
 }
@@ -328,7 +350,7 @@ func (g *gParser) evaluateStructFields(scope force.Group, nodes []ast.Expr) (map
 	return out, nil
 }
 
-func (g *gParser) evaluateExpr(scope force.Group, n ast.Expr) (interface{}, error) {
+func (g *gParser) evaluateExpr(scope force.Group, n ast.Node) (interface{}, error) {
 	switch l := n.(type) {
 	case *ast.CompositeLit:
 		switch literal := l.Type.(type) {
@@ -392,24 +414,69 @@ func (g *gParser) evaluateExpr(scope force.Group, n ast.Expr) (interface{}, erro
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		return val, nil
+		return force.Var(scope)(force.String(val))
 	case *ast.CallExpr:
-		name, err := getIdentifier(l.Fun)
+		var newFn force.Function
+		// could be inline function call
+		var err error
+		var newScope force.Group
+		var fn interface{}
+		switch call := l.Fun.(type) {
+		case *ast.Ident:
+			newFn, err = g.getFunction(call.Name)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			// new function can create a new lexical scope
+			// returned with NewInstance call
+			newScope, fn = newFn.NewInstance(scope)
+		case *ast.FuncLit:
+			expr, err := g.evaluateExpr(scope, l.Fun)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			var ok bool
+			newFn, ok = expr.(force.Function)
+			if !ok {
+				return nil, trace.BadParameter("expected lambda function, got %v instead", expr)
+			}
+			newScope, fn = newFn.NewInstance(scope)
+		}
+		// evaluate arguments within a new lexical scope
+		nodes := make([]ast.Node, len(l.Args))
+		for i := range l.Args {
+			nodes[i] = l.Args[i]
+		}
+		arguments, err := g.evaluateArguments(newScope, nodes)
 		if err != nil {
 			return nil, err
 		}
-		newFn, err := g.getFunction(name)
+		return callFunction(fn, arguments)
+	case *ast.AssignStmt:
+		if len(l.Lhs) != 1 {
+			return nil, trace.BadParameter("multiple assignment expressions are not supported")
+		}
+		id, ok := l.Lhs[0].(*ast.Ident)
+		if !ok {
+			return nil, trace.BadParameter("expected identifier, got %T", l.Lhs[0])
+		}
+		newFn, err := g.getFunction("Define")
 		if err != nil {
-			return nil, err
+			return nil, trace.Wrap(err)
 		}
 		// new function can create a new lexical scope
 		// returned with NewInstance call
 		newScope, fn := newFn.NewInstance(scope)
 		// evaluate arguments within a new lexical scope
-		arguments, err := g.evaluateArguments(newScope, l.Args)
+		nodes := make([]ast.Node, len(l.Rhs))
+		for i := range l.Rhs {
+			nodes[i] = l.Rhs[i]
+		}
+		arguments, err := g.evaluateArguments(newScope, nodes)
 		if err != nil {
 			return nil, err
 		}
+		arguments = append([]interface{}{force.String(id.Name)}, arguments...)
 		return callFunction(fn, arguments)
 	case *ast.UnaryExpr:
 		if l.Op != token.AND {
@@ -425,6 +492,29 @@ func (g *gParser) evaluateExpr(scope force.Group, n ast.Expr) (interface{}, erro
 		ptr := reflect.New(reflect.TypeOf(expr))
 		ptr.Elem().Set(reflect.ValueOf(expr))
 		return ptr.Interface(), nil
+	case *ast.FuncLit:
+		if l.Type.Params != nil && len(l.Type.Params.List) != 0 {
+			return nil, trace.BadParameter("functions with arguments are not supported")
+		}
+		if l.Type.Results != nil && len(l.Type.Results.List) != 0 {
+			return nil, trace.BadParameter("functions with return values are not supported")
+		}
+		newScope := force.WithLexicalScope(scope)
+		// evaluate arguments within a new lexical scope
+		nodes := make([]ast.Node, len(l.Body.List))
+		for i := range l.Body.List {
+			nodes[i] = l.Body.List[i]
+		}
+		statements, err := g.evaluateStatements(newScope, nodes)
+		if err != nil {
+			return nil, err
+		}
+		return &lambdaFunction{
+			scope:      newScope,
+			statements: statements,
+		}, nil
+	case *ast.ExprStmt:
+		return g.evaluateExpr(scope, l.X)
 	default:
 		return nil, trace.BadParameter("%T is not supported", n)
 	}
@@ -476,6 +566,28 @@ func literalToValue(a *ast.BasicLit) (interface{}, error) {
 		return force.String(value), nil
 	}
 	return nil, trace.BadParameter("unsupported function argument type: '%v'", a.Kind)
+}
+
+type lambdaFunction struct {
+	scope      force.Group
+	statements []force.Action
+}
+
+// NewInstance returns a new instance of a function with a new lexical scope
+func (f *lambdaFunction) NewInstance(_ force.Group) (force.Group, interface{}) {
+	return f.scope, func() force.Action {
+		return force.Sequence(f.statements...)
+	}
+}
+
+func (f *lambdaFunction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	return force.Sequence(f.statements...).MarshalCode(ctx)
+}
+
+// Run runs the action in the context of the worker,
+// could modify the context to add metadata, fields or error
+func (f *lambdaFunction) Run(ctx force.ExecutionContext) error {
+	return force.Sequence(f.statements...).Run(ctx)
 }
 
 func callFunction(f interface{}, args []interface{}) (v interface{}, err error) {

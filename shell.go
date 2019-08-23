@@ -146,6 +146,32 @@ func (c *TempDirAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 	return NewFnCall(TempDir).MarshalCode(ctx)
 }
 
+// CurrentDir returns current dir
+func CurrentDir() Action {
+	return &CurrentDirAction{}
+}
+
+// CurrentDirAction returns current dir
+type CurrentDirAction struct {
+}
+
+func (c *CurrentDirAction) Run(ctx ExecutionContext) error {
+	_, err := c.Eval(ctx)
+	return trace.Wrap(err)
+}
+
+func (c *CurrentDirAction) Eval(ctx ExecutionContext) (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", trace.ConvertSystemError(err)
+	}
+	return dir, nil
+}
+
+func (c *CurrentDirAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(CurrentDir).MarshalCode(ctx)
+}
+
 // RemoveDir returns rm dir action
 func RemoveDir(dir StringVar) Action {
 	return &RemoveDirAction{dir: dir}
@@ -210,6 +236,15 @@ func (s *Script) CheckAndSetDefaults(ctx ExecutionContext) error {
 		return trace.Wrap(err)
 	}
 	return nil
+}
+
+// Command is a shortcut for shell action
+func Command(cmd String) (Action, error) {
+	return &ShellAction{
+		script: Script{
+			Command: cmd,
+		},
+	}, nil
 }
 
 // Shell runs shell script

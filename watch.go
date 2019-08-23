@@ -11,13 +11,13 @@ import (
 	"github.com/gravitational/trace"
 )
 
-func Files(files ...string) (Channel, error) {
+func Files(files ...String) (Channel, error) {
 	if len(files) == 0 {
 		return nil, trace.BadParameter("Files() needs at least one file")
 	}
 	expanded := []string{}
 	for _, file := range files {
-		matches, err := filepath.Glob(file)
+		matches, err := filepath.Glob(string(file))
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -25,7 +25,7 @@ func Files(files ...string) (Channel, error) {
 	}
 	return &FSNotify{
 		Files: expanded,
-		// TODO(klizhentas): queues have to be configurable
+		// TODO(klizhentas): queues have to be configurable?
 		eventsC: make(chan Event, 1024),
 	}, nil
 }
@@ -75,7 +75,7 @@ func (f *FSNotify) Start(pctx context.Context) error {
 	}()
 
 	for _, file := range f.Files {
-		err = watcher.Add(file)
+		err = watcher.Add(string(file))
 		if err != nil {
 			return trace.ConvertSystemError(err)
 		}

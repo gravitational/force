@@ -11,11 +11,33 @@ oneshot:
 vendor:
 	go mod vendor
 
-
 .PHONY: tidy
 tidy:
 	go mod tidy
 
+
+##
+
+.PHONY: 1-simple
+1-simple:
+	$(MAKE) all
+	cd examples/demo/1-simple && force
+
+.PHONY: 2-watch
+2-watch:
+	$(MAKE) all
+	force -d examples/demo/2-watch/G
+
+.PHONY: 3-github
+3-github:
+	$(MAKE) all
+	force examples/demo/3-github/G --setup=./examples/github/setup.force
+
+.PHONY: 4-docker
+4-docker:
+	$(MAKE) all
+	force examples/demo/4-docker/G --setup=./examples/github/setup.force
+##
 
 
 .PHONY: github

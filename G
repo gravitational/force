@@ -5,8 +5,8 @@
 // and runs go install command whenever any change occurs
 Process(Spec{
 	Name: "all",
-	Run: Sequence(
-		Shell(Script{Command: `go install -mod=vendor github.com/gravitational/force/tool/force`}),
-		Exit(),
-	),
+	Run: func(){
+		Shell(Script{Command: `go install -mod=vendor github.com/gravitational/force/tool/force`})
+		Exit()
+	},
 })

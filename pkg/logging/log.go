@@ -239,7 +239,7 @@ func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
 }
 
 // Infof returns an action that logs in infor
-func Infof(format force.String, args ...interface{}) force.Action {
+func Infof(format force.StringVar, args ...interface{}) force.Action {
 	return &InfofAction{
 		format: format,
 		args:   args,
@@ -247,14 +247,17 @@ func Infof(format force.String, args ...interface{}) force.Action {
 }
 
 type InfofAction struct {
-	format force.String
+	format force.StringVar
 	args   []interface{}
 }
 
 func (s *InfofAction) Run(ctx force.ExecutionContext) error {
 	log := force.Log(ctx)
+	format, err := force.EvalString(ctx, s.format)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	evalArgs := make([]interface{}, len(s.args))
-	var err error
 	for i := range s.args {
 		evalArgs[i], err = force.Eval(ctx, s.args[i])
 		if err != nil {
@@ -262,7 +265,7 @@ func (s *InfofAction) Run(ctx force.ExecutionContext) error {
 			evalArgs[i] = err.Error()
 		}
 	}
-	log.Infof(string(s.format), evalArgs...)
+	log.Infof(format, evalArgs...)
 	return nil
 }
 

@@ -64,7 +64,7 @@ kube:
 .PHONY: vars
 vars:
 	$(MAKE) all
-	cd examples/vars && force -d vars.force --setup=./setup.force
+	cd examples/vars && force -d  --include=vars.force
 
 
 .PHONY: inception

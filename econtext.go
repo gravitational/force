@@ -22,15 +22,6 @@ type ExecutionContext interface {
 	ID() string
 }
 
-// ExecutionScope is a variable scope
-// defined during execution
-type ExecutionScope interface {
-	// SetValue sets a key value pair to the context
-	SetValue(key interface{}, value interface{}) error
-	// Value returns a value defined in the context
-	Value(key interface{}) interface{}
-}
-
 // WithRuntimeScope wraps a group to create a new runtime scope
 func WithRuntimeScope(ctx ExecutionContext) *RuntimeScope {
 	return &RuntimeScope{

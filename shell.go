@@ -415,7 +415,7 @@ func (n *NewSequence) NewInstance(group Group) (Group, interface{}) {
 
 // Sequence groups sequence of commands together,
 // if one fails, the chain stop execution
-func Sequence(actions ...Action) Action {
+func Sequence(actions ...Action) ScopeAction {
 	return &SequenceAction{
 		actions: actions,
 	}
@@ -439,9 +439,8 @@ func (p *SequenceAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-// Run runs actions in sequence
-func (s *SequenceAction) Run(ctx ExecutionContext) error {
-	scopeCtx := WithRuntimeScope(ctx)
+// RunWithScope runs actions in sequence using the passed scope
+func (s *SequenceAction) RunWithScope(ctx ExecutionContext) error {
 	var err error
 	var deferred []Action
 	for i := range s.actions {
@@ -451,7 +450,7 @@ func (s *SequenceAction) Run(ctx ExecutionContext) error {
 			deferred = append(deferred, action)
 			continue
 		}
-		err = action.Run(scopeCtx)
+		err = action.Run(ctx)
 		SetError(ctx, err)
 		if err != nil {
 			return trace.Wrap(err)
@@ -461,12 +460,17 @@ func (s *SequenceAction) Run(ctx ExecutionContext) error {
 	// when defined, and do not prevent other deferreds from running
 	for i := len(deferred) - 1; i >= 0; i-- {
 		action := deferred[i]
-		err = action.Run(scopeCtx)
+		err = action.Run(ctx)
 		if err != nil {
 			SetError(ctx, err)
 		}
 	}
 	return Error(ctx)
+}
+
+// Run runs actions in sequence
+func (s *SequenceAction) Run(ctx ExecutionContext) error {
+	return s.RunWithScope(WithRuntimeScope(ctx))
 }
 
 // NewContinue creates a new continued sequence

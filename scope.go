@@ -113,6 +113,8 @@ func checkDefinedType(v interface{}) error {
 		return nil
 	case Bool:
 		return nil
+	case Action:
+		return nil
 	}
 	return trace.BadParameter("%T is not a supported variable type, supported are int, bool and string", v)
 }

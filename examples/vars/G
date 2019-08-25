@@ -1,0 +1,27 @@
+Process(Spec{
+	Name: "log",
+	Watch: Oneshot(),
+	Run: func(){
+		infof("hello")
+		/*
+		dir := TempDir()
+		Infof("My dir is %v", dir)
+		Exit()
+		Defer(
+			RemoveDir(dir),
+		)
+		intVar := 1
+		boolVar := true
+		stringVar := "hello"
+		infof(Sprintf("Outer scope %#v, i: %v, b: %v, s: %v", Test{I: intVar, B: boolVar, S: stringVar}, intVar, boolVar, stringVar))
+		Infof("Outer scope %#v, i: %v, b: %v, s: %v", Test{I: intVar, B: boolVar, S: stringVar}, intVar, boolVar, stringVar)
+		func(){
+			intVar := 2
+			boolVar := false
+			stringVar := "byte"
+			Infof("Inner scope i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
+		}()
+		Infof("Outer scope after inner i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
+*/
+	},
+})

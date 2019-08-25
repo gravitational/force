@@ -2,8 +2,11 @@ Process(Spec{
 	Name: "log",
 	Watch: Oneshot(),
 	Run: func(){
-		infof("hello")
-		/*
+		v := "hello"
+		infof(v)
+		infof(Marshal(func(){
+			Infof(Unquote(v))
+		}()))
 		dir := TempDir()
 		Infof("My dir is %v", dir)
 		Exit()
@@ -22,6 +25,5 @@ Process(Spec{
 			Infof("Inner scope i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
 		}()
 		Infof("Outer scope after inner i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
-*/
 	},
 })

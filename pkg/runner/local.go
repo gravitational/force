@@ -62,7 +62,7 @@ func (l *LocalProcess) Events() chan<- force.Event {
 	return l.eventsC
 }
 
-func (l *LocalProcess) Start(ctx context.Context) error {
+func (l *LocalProcess) Start(ctx force.ExecutionContext) error {
 	go l.triggerActions(ctx)
 	return nil
 }
@@ -90,7 +90,7 @@ func ShortID() string {
 	return hex.EncodeToString(b)
 }
 
-func (l *LocalProcess) triggerActions(ctx context.Context) {
+func (l *LocalProcess) triggerActions(ctx force.ExecutionContext) {
 	for {
 		select {
 		case <-l.ctx.Done():
@@ -109,7 +109,7 @@ func (l *LocalProcess) triggerActions(ctx context.Context) {
 			}
 			go func() {
 				execContext := force.NewContext(force.ContextConfig{
-					Context: ctx,
+					Parent:  ctx,
 					Process: l,
 					Event:   event,
 					ID:      ShortID(),

@@ -21,7 +21,7 @@ type LambdaFunction struct {
 }
 
 func (f *LambdaFunction) NewInstance(group Group) (Group, interface{}) {
-	return f.Scope, f
+	return group, f
 }
 
 // RunWithScope runs actions in sequence using the passed scope
@@ -93,7 +93,25 @@ func (f *LambdaFunctionCall) RunWithScope(scope ExecutionContext) error {
 
 // MarshalCode marshals code
 func (f *LambdaFunctionCall) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return Sequence(f.AllStatements()...).MarshalCode(ctx)
+	buf := &bytes.Buffer{}
+	data, err := f.LambdaFunction.MarshalCode(ctx)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	buf.Write(data)
+	io.WriteString(buf, "(")
+	for i, arg := range f.Arguments {
+		if i != 0 {
+			io.WriteString(buf, ", ")
+		}
+		data, err := arg.MarshalCode(ctx)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		buf.Write(data)
+	}
+	io.WriteString(buf, ")")
+	return buf.Bytes(), nil
 }
 
 // Run runs the action in the context of the worker,

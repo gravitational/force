@@ -163,14 +163,15 @@ func Parse(i Input) (*Runner, error) {
 		"Run":  &kube.NewRun{},
 	}
 
+	globalContext := force.NewContext(force.ContextConfig{
+		Parent:  &force.WrapContext{Context: runner.ctx},
+		Process: nil,
+		ID:      i.ID,
+		Event:   &force.OneshotEvent{Time: time.Now().UTC()},
+	})
 	g := &gParser{
 		runner: runner,
-		scope: force.WithRuntimeScope(force.NewContext(force.ContextConfig{
-			Context: i.Context,
-			Process: nil,
-			ID:      i.ID,
-			Event:   &force.OneshotEvent{Time: time.Now().UTC()},
-		})),
+		scope:  force.WithRuntimeScope(globalContext),
 		getStruct: func(name string) (interface{}, error) {
 			switch name {
 			// Standard library structs
@@ -252,7 +253,7 @@ func Parse(i Input) (*Runner, error) {
 		}
 		// create a local setup context and run the setup process
 		setupContext := force.NewContext(force.ContextConfig{
-			Context: i.Context,
+			Parent:  &force.WrapContext{Context: i.Context},
 			Process: proc,
 			ID:      i.ID,
 			Event:   &force.OneshotEvent{Time: time.Now().UTC()},
@@ -261,6 +262,7 @@ func Parse(i Input) (*Runner, error) {
 			return nil, trace.Wrap(err)
 		}
 	}
+	g.useGlobalScope = true
 	for _, script := range i.IncludeScripts {
 		expr, err := parser.ParseExpr(script)
 		if err != nil {
@@ -279,6 +281,7 @@ func Parse(i Input) (*Runner, error) {
 			return nil, trace.Wrap(err)
 		}
 	}
+	g.useGlobalScope = false
 
 	expr, err := parser.ParseExpr(i.Script)
 	if err != nil {
@@ -314,6 +317,8 @@ type gParser struct {
 	scope     *force.RuntimeScope
 	structs   map[string]interface{}
 	getStruct func(name string) (interface{}, error)
+	// useGlobalScope evaluates lambda functions in the same scope
+	useGlobalScope bool
 }
 
 func (g *gParser) parseArguments(scope force.Group, nodes []ast.Node) ([]interface{}, error) {
@@ -460,6 +465,8 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 				return nil, trace.BadParameter("expected lambda function, got %v instead", expr)
 			}
 			newScope, fn = newFn.NewInstance(scope)
+		default:
+			return nil, trace.BadParameter("unsupported function %T", l.Fun)
 		}
 		// evaluate arguments within a new lexical scope
 		nodes := make([]ast.Node, len(l.Args))
@@ -477,11 +484,12 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 		if len(arguments) != len(lambda.Params) {
 			return nil, trace.BadParameter("expected %v params, found %v", len(lambda.Params), len(arguments))
 		}
+		callScope := force.WithLexicalScope(lambda.Scope)
 		// in case of lambda function, passed arguments
 		// are converted into defined statements
 		callArgs := make([]force.Action, len(arguments))
 		for i, param := range lambda.Params {
-			def, err := force.Define(lambda.Scope)(force.String(param.Name), arguments[i])
+			def, err := force.Define(callScope)(force.String(param.Name), arguments[i])
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
@@ -492,31 +500,18 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 			Arguments:      callArgs,
 		}, nil
 	case *ast.AssignStmt:
-		if len(l.Lhs) != 1 {
+		if len(l.Lhs) != 1 || len(l.Rhs) != 1 {
 			return nil, trace.BadParameter("multiple assignment expressions are not supported")
 		}
 		id, ok := l.Lhs[0].(*ast.Ident)
 		if !ok {
 			return nil, trace.BadParameter("expected identifier, got %T", l.Lhs[0])
 		}
-		newFn, err := g.getFunction("Define")
+		value, err := g.parseExpr(scope, l.Rhs[0])
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		// new function can create a new lexical scope
-		// returned with NewInstance call
-		newScope, fn := newFn.NewInstance(scope)
-		// evaluate arguments within a new lexical scope
-		nodes := make([]ast.Node, len(l.Rhs))
-		for i := range l.Rhs {
-			nodes[i] = l.Rhs[i]
-		}
-		arguments, err := g.parseArguments(newScope, nodes)
-		if err != nil {
-			return nil, err
-		}
-		arguments = append([]interface{}{force.String(id.Name)}, arguments...)
-		return callFunction(fn, arguments)
+		return force.Define(scope)(force.String(id.Name), value)
 	case *ast.UnaryExpr:
 		if l.Op != token.AND {
 			return nil, trace.BadParameter("operator %v is not supported", l.Op)
@@ -535,8 +530,12 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 		if l.Type.Results != nil && len(l.Type.Results.List) != 0 {
 			return nil, trace.BadParameter("functions with return values are not supported")
 		}
-		lambda := &force.LambdaFunction{
-			Scope: force.WithLexicalScope(scope),
+		lambda := &force.LambdaFunction{}
+		// Include statements evaluate all definitions in the global scope
+		if !g.useGlobalScope {
+			lambda.Scope = force.WithLexicalScope(scope)
+		} else {
+			lambda.Scope = scope
 		}
 		if l.Type.Params != nil && len(l.Type.Params.List) != 0 {
 			for i, p := range l.Type.Params.List {

@@ -1,5 +1,6 @@
 func() {
+	testVar := "message(%v)"
 	infof := func(message string) {
-		Infof(message)
+		Infof(testVar, message)
 	}
 }()

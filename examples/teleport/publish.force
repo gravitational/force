@@ -1,0 +1,56 @@
+func(){
+	BuildAndPublishImage := func(commit string) {
+		// image is a test image to build
+		image := Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, commit)
+		// buildbox is a version of the buildbox
+		buildbox := "gcr.io/kubeadm-167321/buildbox:1.12.1"
+		// Version to etcd to install in a container
+		etcdVer := "v3.3.13"
+		// UID is the uid to run the jobs
+		uid := 1000
+		// GID is the gid to run the jobs
+		gid := 1000
+		// build script is a build script to run
+		buildScript := Marshal(
+			Process(Spec{
+				Name: "kbuild",
+				Run: func(){
+					Defer(Exit())
+					// Create temporary directory
+					tempDir := TempDir()
+					// Remove it at the end of this sequence
+					Defer(RemoveDir(tempDir))
+					// Clone clones git repository into temp dir
+					Clone(Repo{
+						URL: "git@github.com:gravitational/teleport.git",
+						Into: tempDir,
+						// Commit is a commit variable defined by pull request watch,
+						// the problem is that there is no namespacing here
+						Hash: Unquote(commit),
+						// Submodules is an optional submodule to init
+						Submodules: Strings("e"),
+					})
+					// Build builds dockerfile and tags it in the local storage
+					Build(Image{
+						// Set build context to the cloned repository
+						Context: tempDir,
+						// Dockerfile is a dockerfile to build (from current dir),
+						Dockerfile: "/mnt/scripts/test.dockerfile",
+						// Tag is the tag to build - here, as you see, we need to reimplement
+						// Sprintf and every other method that works with our vars
+						Tag: Unquote(image),
+						// Args are build arguments
+						Args: []Arg{
+							{Key: "BUILDBOX", Val: Unquote(buildbox)},
+							{Key: "UID", Val: Sprintf("%v", Unquote(uid))},
+							{Key: "GID", Val: Sprintf("%v", Unquote(gid))},
+							{Key: "ETCD_VER", Val: Unquote(etcdVer)},
+						},
+					})
+					Push(Image{Tag: Unquote(image)})
+				},
+			}),
+		)
+		RunBuildJob(buildScript)
+	}
+}()

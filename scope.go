@@ -1,6 +1,7 @@
 package force
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/gravitational/trace"
@@ -96,7 +97,11 @@ func (l *LexScope) Variables() []string {
 	if l.Group == nil {
 		return out
 	}
-	return append(out, l.Group.Variables()...)
+	parent := l.Group.Variables()
+	for _, p := range parent {
+		out = append(out, fmt.Sprintf("p(%v)", p))
+	}
+	return out
 }
 
 func checkDefinedType(v interface{}) error {

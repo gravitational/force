@@ -67,7 +67,7 @@ type Process interface {
 	// Events returns a channel that receives events
 	Events() chan<- Event
 	// Start is a non blocking call
-	Start(ctx context.Context) error
+	Start(ctx ExecutionContext) error
 	// Runner returns a process group
 	// this process belongs to
 	Group() Group

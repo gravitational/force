@@ -14,10 +14,8 @@ func Eval(ctx ExecutionContext, variable interface{}) (interface{}, error) {
 		return v.Eval(ctx)
 	case StringVar:
 		return v.Eval(ctx)
-	case Action:
-		return v, nil
 	default:
-		return nil, trace.BadParameter("unsupported value %T", v)
+		return v, nil
 	}
 }
 

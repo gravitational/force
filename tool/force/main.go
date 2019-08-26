@@ -29,12 +29,13 @@ func main() {
 
 	app := kingpin.New("force", "Force is simple CI/CD tool")
 	app.Flag("debug", "Turn on debugging level").Short('d').BoolVar(&cfg.debug)
-	app.Flag("setup", "Path to setup file").StringVar(&cfg.setupFile)
+	app.Flag("setup", "Path to setup file").Short('s').StringVar(&cfg.setupFile)
+	app.Flag("include", "Force library file to include").Short('i').StringsVar(&cfg.includeFiles)
 	app.Arg("file", "Force file to run").StringVar(&cfg.forceFile)
 
 	app.Flag("id", "Optional run ID").Envar("FORCE_ID").StringVar(&cfg.id)
-	app.Flag("setup-script", "Path to setup file").Envar("FORCE_SETUP").StringVar(&cfg.setupScript)
-	app.Arg("file-script", "Force file to run").Envar("FORCE_SCRIPT").StringVar(&cfg.forceScript)
+	app.Flag("setup-script", "Setup script contents").Envar("FORCE_SETUP").StringVar(&cfg.setupScript)
+	app.Arg("file-script", "Force script contents").Envar("FORCE_SCRIPT").StringVar(&cfg.forceScript)
 
 	_, err := app.Parse(os.Args[1:])
 	if err != nil {
@@ -73,11 +74,12 @@ func main() {
 
 func generateAndStart(ctx context.Context, cfg config) (*runner.Runner, error) {
 	run, err := runner.Parse(runner.Input{
-		Context: ctx,
-		ID:      cfg.id,
-		Setup:   cfg.setupScript,
-		Script:  cfg.forceScript,
-		Debug:   cfg.debug,
+		Context:        ctx,
+		ID:             cfg.id,
+		Setup:          cfg.setupScript,
+		Script:         cfg.forceScript,
+		Debug:          cfg.debug,
+		IncludeScripts: cfg.includeScripts,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -128,12 +130,14 @@ const (
 
 // config contains force cli parameters
 type config struct {
-	id          string
-	setupFile   string
-	forceFile   string
-	setupScript string
-	forceScript string
-	debug       bool
+	id             string
+	setupFile      string
+	forceFile      string
+	includeFiles   []string
+	includeScripts []string
+	setupScript    string
+	forceScript    string
+	debug          bool
 }
 
 func (c *config) CheckAndSetDefaults() error {
@@ -170,6 +174,15 @@ func (c *config) CheckAndSetDefaults() error {
 			return trace.ConvertSystemError(err)
 		}
 		c.forceScript = string(forceScript)
+	}
+	if len(c.includeFiles) != 0 {
+		for _, path := range c.includeFiles {
+			forceScript, err := ioutil.ReadFile(path)
+			if err != nil {
+				return trace.ConvertSystemError(err)
+			}
+			c.includeScripts = append(c.includeScripts, string(forceScript))
+		}
 	}
 	return nil
 }

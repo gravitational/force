@@ -22,15 +22,6 @@ type ExecutionContext interface {
 	ID() string
 }
 
-// ExecutionScope is a variable scope
-// defined during execution
-type ExecutionScope interface {
-	// SetValue sets a key value pair to the context
-	SetValue(key interface{}, value interface{}) error
-	// Value returns a value defined in the context
-	Value(key interface{}) interface{}
-}
-
 // WithRuntimeScope wraps a group to create a new runtime scope
 func WithRuntimeScope(ctx ExecutionContext) *RuntimeScope {
 	return &RuntimeScope{
@@ -76,10 +67,10 @@ func (l *RuntimeScope) Value(key interface{}) interface{} {
 	return l.ExecutionContext.Value(key)
 }
 
-// NewContext returns a new context
+// NewContext returns a new context wraping context
 func NewContext(cfg ContextConfig) *Context {
 	return &Context{
-		RuntimeScope: WithRuntimeScope(nil),
+		RuntimeScope: WithRuntimeScope(cfg.Parent),
 		RWMutex:      &sync.RWMutex{},
 		cfg:          cfg,
 	}
@@ -87,8 +78,8 @@ func NewContext(cfg ContextConfig) *Context {
 
 // ContextConfig sets up local context
 type ContextConfig struct {
-	// Context is a context to wrap
-	Context context.Context
+	// Parent is a context to wrap
+	Parent ExecutionContext
 	// Process is a process
 	Process Process
 	// Event is event
@@ -113,12 +104,12 @@ func (c *Context) ID() string {
 // should be canceled. Deadline returns ok==false when no deadline is
 // set. Successive calls to Deadline return the same results.
 func (c *Context) Deadline() (deadline time.Time, ok bool) {
-	return c.cfg.Context.Deadline()
+	return c.RuntimeScope.ExecutionContext.Deadline()
 }
 
 // Done returns channel that is closed when the context is closed
 func (c *Context) Done() <-chan struct{} {
-	return c.cfg.Context.Done()
+	return c.RuntimeScope.ExecutionContext.Done()
 }
 
 // Err returns an error associated with the context
@@ -128,7 +119,7 @@ func (c *Context) Done() <-chan struct{} {
 // or DeadlineExceeded if the context's deadline passed.
 // After Err returns a non-nil error, successive calls to Err return the same error.
 func (c *Context) Err() error {
-	return c.cfg.Context.Err()
+	return c.RuntimeScope.ExecutionContext.Err()
 }
 
 // Event is an event that generated the action
@@ -139,4 +130,29 @@ func (c *Context) Event() Event {
 // Process returns a process associated with the context
 func (c *Context) Process() Process {
 	return c.cfg.Process
+}
+
+// WrapContext wraps context
+type WrapContext struct {
+	context.Context
+}
+
+// ID is an execution unique identifier
+func (c *WrapContext) ID() string {
+	return ""
+}
+
+// Event is an event that generated the action
+func (c *WrapContext) Event() Event {
+	return nil
+}
+
+// Process returns a process associated with the context
+func (c *WrapContext) Process() Process {
+	return nil
+}
+
+// SetValue sets a key value pair
+func (w *WrapContext) SetValue(key interface{}, value interface{}) error {
+	return trace.NotImplemented("can't set values on empty context")
 }

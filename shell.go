@@ -102,8 +102,18 @@ func (e *ExpectEnvAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 	return NewFnCall(ExpectEnv, e.key).MarshalCode(ctx)
 }
 
+// StringVarSlice is a wrapper around
+// a slice of string variables that adds interface
+// method to evaluate to slice of strings
+type StringVarSlice []StringVar
+
+// Eval evaluates a list of string var references to strings
+func (s StringVarSlice) Eval(ctx ExecutionContext) ([]string, error) {
+	return EvalStringVars(ctx, s)
+}
+
 // Strings returns a list of strings evaluated from the arguments
-func Strings(args ...interface{}) ([]StringVar, error) {
+func Strings(args ...interface{}) (StringsVar, error) {
 	out := make([]StringVar, len(args))
 	for i := range args {
 		switch v := args[i].(type) {
@@ -115,7 +125,7 @@ func Strings(args ...interface{}) ([]StringVar, error) {
 			return nil, trace.BadParameter("argument %q is not a string", args[i])
 		}
 	}
-	return out, nil
+	return StringVarSlice(out), nil
 }
 
 // TempDir returns new temp dir
@@ -415,7 +425,7 @@ func (n *NewSequence) NewInstance(group Group) (Group, interface{}) {
 
 // Sequence groups sequence of commands together,
 // if one fails, the chain stop execution
-func Sequence(actions ...Action) Action {
+func Sequence(actions ...Action) ScopeAction {
 	return &SequenceAction{
 		actions: actions,
 	}
@@ -439,9 +449,8 @@ func (p *SequenceAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-// Run runs actions in sequence
-func (s *SequenceAction) Run(ctx ExecutionContext) error {
-	scopeCtx := WithRuntimeScope(ctx)
+// RunWithScope runs actions in sequence using the passed scope
+func (s *SequenceAction) RunWithScope(ctx ExecutionContext) error {
 	var err error
 	var deferred []Action
 	for i := range s.actions {
@@ -451,7 +460,7 @@ func (s *SequenceAction) Run(ctx ExecutionContext) error {
 			deferred = append(deferred, action)
 			continue
 		}
-		err = action.Run(scopeCtx)
+		err = action.Run(ctx)
 		SetError(ctx, err)
 		if err != nil {
 			return trace.Wrap(err)
@@ -461,12 +470,17 @@ func (s *SequenceAction) Run(ctx ExecutionContext) error {
 	// when defined, and do not prevent other deferreds from running
 	for i := len(deferred) - 1; i >= 0; i-- {
 		action := deferred[i]
-		err = action.Run(scopeCtx)
+		err = action.Run(ctx)
 		if err != nil {
 			SetError(ctx, err)
 		}
 	}
 	return Error(ctx)
+}
+
+// Run runs actions in sequence
+func (s *SequenceAction) Run(ctx ExecutionContext) error {
+	return s.RunWithScope(WithRuntimeScope(ctx))
 }
 
 // NewContinue creates a new continued sequence

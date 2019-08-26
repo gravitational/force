@@ -53,7 +53,7 @@ buildbox:
 .PHONY: teleport
 teleport:
 	$(MAKE) all
-	cd examples/teleport && force teleport.force --setup=../github/setup.force
+	cd examples/teleport && force teleport.force --setup=../github/setup.force  -i build.force
 
 .PHONY: kube
 kube:
@@ -64,7 +64,7 @@ kube:
 .PHONY: vars
 vars:
 	$(MAKE) all
-	cd examples/vars && force -d vars.force --setup=./setup.force
+	cd examples/vars && force -d  --include=vars.force
 
 
 .PHONY: inception

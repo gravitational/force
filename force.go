@@ -67,7 +67,7 @@ type Process interface {
 	// Events returns a channel that receives events
 	Events() chan<- Event
 	// Start is a non blocking call
-	Start(ctx context.Context) error
+	Start(ctx ExecutionContext) error
 	// Runner returns a process group
 	// this process belongs to
 	Group() Group
@@ -91,7 +91,16 @@ type Action interface {
 	CodeMarshaler
 	// Run runs the action in the context of the worker,
 	// could modify the context to add metadata, fields or error
+	// sometimes, creates a new execution scope
 	Run(ctx ExecutionContext) error
+}
+
+// ScopeAction can run in the context of the scope instead of creating
+// a new one
+type ScopeAction interface {
+	Action
+	// RunWithScope runs actions in sequence using the passed scope
+	RunWithScope(scope ExecutionContext) error
 }
 
 // Spec is a process specification
@@ -218,6 +227,13 @@ func (f IntVarFunc) Eval(ctx ExecutionContext) (int, error) {
 type StringVar interface {
 	// Eval evaluates variable and returns string
 	Eval(ctx ExecutionContext) (string, error)
+}
+
+// StringsVar is a context string variable
+// that returns a string value from the execution context
+type StringsVar interface {
+	// Eval evaluates variable and returns string
+	Eval(ctx ExecutionContext) ([]string, error)
 }
 
 // String is a constant string variable

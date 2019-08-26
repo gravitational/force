@@ -11,7 +11,7 @@ import (
 type Container struct {
 	Name            force.StringVar
 	Image           force.StringVar
-	Command         []force.StringVar
+	Command         force.StringsVar
 	WorkingDir      force.StringVar
 	Env             []EnvVar
 	VolumeMounts    []VolumeMount
@@ -68,7 +68,7 @@ func (c *Container) Spec(ctx force.ExecutionContext) (*corev1.Container, error) 
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	command, err := force.EvalStringVars(ctx, c.Command)
+	command, err := c.Command.Eval(ctx)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}

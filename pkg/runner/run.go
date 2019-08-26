@@ -102,7 +102,7 @@ func (r *Runner) AddProcess(p force.Process) {
 	defer r.Unlock()
 	r.processes = append(r.processes, p)
 	if r.isRunning() {
-		p.Start(r.ctx)
+		p.Start(r.parser.scope)
 		go r.wait(p)
 	}
 }
@@ -271,7 +271,7 @@ func (r *Runner) Start() {
 	}
 	go r.fanOutEvents()
 	for _, p := range r.processes {
-		if err := p.Start(r.ctx); err != nil {
+		if err := p.Start(r.parser.scope); err != nil {
 			log.Errorf("%v has failed to start: %v.", p, err)
 		}
 		go r.wait(p)

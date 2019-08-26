@@ -34,9 +34,46 @@ func Var(group Group) func(name String) (interface{}, error) {
 			return &BoolVarRef{name: string(name)}, nil
 		case Bool:
 			return &BoolVarRef{name: string(name)}, nil
+		case []String:
+			return &StringsVarRef{name: string(name)}, nil
+		case []StringVar:
+			return &StringsVarRef{name: string(name)}, nil
 		}
 		return nil, trace.BadParameter("unsupported reference type %v", v)
 	}
+}
+
+// StringsVarRef is a string variable reference
+type StringsVarRef struct {
+	name string
+}
+
+// Eval evaluates string var reference
+func (s *StringsVarRef) Eval(ctx ExecutionContext) ([]string, error) {
+	i := ctx.Value(ContextKey(s.name))
+	if i == nil {
+		return nil, trace.BadParameter("variable %v is not set", s.name)
+	}
+	switch val := i.(type) {
+	case []string:
+		return val, nil
+	case []String:
+		out := make([]string, len(val))
+		for i, s := range val {
+			out[i] = string(s)
+		}
+		return out, nil
+	case []StringVar:
+		return EvalStringVars(ctx, val)
+	case StringsVar:
+		return val.Eval(ctx)
+	}
+	return nil, trace.BadParameter("failed to convert variable %v to []string with type %T", s.name, i)
+}
+
+// MarshalCode evaluates bool variable reference to code representation
+func (s *StringsVarRef) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Var, s.name).MarshalCode(ctx)
 }
 
 // StringVarRef is a string variable reference

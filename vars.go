@@ -1,6 +1,8 @@
 package force
 
 import (
+	"reflect"
+
 	"github.com/gravitational/trace"
 )
 
@@ -15,37 +17,67 @@ func (n *NewVarRef) NewInstance(group Group) (Group, interface{}) {
 
 // Var returns a new function that references a variable
 // based on the defined type
-func Var(group Group) func(name String) (interface{}, error) {
-	return func(name String) (interface{}, error) {
-		v, err := group.GetDefinition(string(name))
+func Var(group Group) func(name String, fields ...String) (interface{}, error) {
+	return func(name String, fields ...String) (interface{}, error) {
+		val, err := group.GetDefinition(string(name))
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
+
+		v, err := GetField(val, name, fields...)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+
 		switch v.(type) {
 		case StringVar:
-			return &StringVarRef{name: string(name)}, nil
+			return &StringVarRef{name: name, fields: fields}, nil
 		case String:
-			return &StringVarRef{name: string(name)}, nil
+			return &StringVarRef{name: name, fields: fields}, nil
 		case IntVar:
-			return &IntVarRef{name: string(name)}, nil
+			return &IntVarRef{name: name, fields: fields}, nil
 		case Int:
-			return &IntVarRef{name: string(name)}, nil
+			return &IntVarRef{name: name, fields: fields}, nil
 		case BoolVar:
-			return &BoolVarRef{name: string(name)}, nil
+			return &BoolVarRef{name: name, fields: fields}, nil
 		case Bool:
-			return &BoolVarRef{name: string(name)}, nil
+			return &BoolVarRef{name: name, fields: fields}, nil
 		case []String:
-			return &StringsVarRef{name: string(name)}, nil
+			return &StringsVarRef{name: name, fields: fields}, nil
 		case []StringVar:
-			return &StringsVarRef{name: string(name)}, nil
+			return &StringsVarRef{name: name, fields: fields}, nil
+		case StringVarSlice:
+			return &StringsVarRef{name: name, fields: fields}, nil
 		}
-		return nil, trace.BadParameter("unsupported reference type %v", v)
+		return nil, trace.BadParameter("unsupported reference type %T", v)
 	}
+}
+
+// GetField returns field from struct v or error
+func GetField(v interface{}, name String, fields ...String) (interface{}, error) {
+	if v == nil {
+		return nil, trace.BadParameter("%v is not set, does not have field %v", v, name)
+	}
+	if len(fields) == 0 {
+		return v, nil
+	}
+	vType := reflect.TypeOf(v)
+	if vType.Kind() != reflect.Struct {
+		return nil, trace.BadParameter("%v has to be struct to have field %v", name, fields[0])
+	}
+	fieldName := fields[0]
+	vVal := reflect.ValueOf(v)
+	field := vVal.FieldByName(string(fieldName))
+	if !field.IsValid() {
+		return nil, trace.BadParameter("%v does not have a field %v in %#v", name, fieldName, v)
+	}
+	return GetField(field.Interface(), fieldName, fields[1:]...)
 }
 
 // StringsVarRef is a string variable reference
 type StringsVarRef struct {
-	name string
+	name   String
+	fields []String
 }
 
 // Eval evaluates string var reference
@@ -54,7 +86,11 @@ func (s *StringsVarRef) Eval(ctx ExecutionContext) ([]string, error) {
 	if i == nil {
 		return nil, trace.BadParameter("variable %v is not set", s.name)
 	}
-	switch val := i.(type) {
+	f, err := GetField(i, s.name, s.fields...)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	switch val := f.(type) {
 	case []string:
 		return val, nil
 	case []String:
@@ -78,7 +114,8 @@ func (s *StringsVarRef) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 
 // StringVarRef is a string variable reference
 type StringVarRef struct {
-	name string
+	name   String
+	fields []String
 }
 
 // Eval evaluates string var reference
@@ -87,13 +124,17 @@ func (s *StringVarRef) Eval(ctx ExecutionContext) (string, error) {
 	if i == nil {
 		return "", trace.BadParameter("variable %v is not set", s.name)
 	}
-	switch val := i.(type) {
+	f, err := GetField(i, s.name, s.fields...)
+	if err != nil {
+		return "", trace.Wrap(err)
+	}
+	switch val := f.(type) {
 	case string:
 		return val, nil
 	case StringVar:
 		return val.Eval(ctx)
 	}
-	return "", trace.BadParameter("failed to convert variable %q to string", s.name)
+	return "", trace.BadParameter("failed to convert variable %q of type %T to string", s.name, f)
 }
 
 // MarshalCode evaluates bool variable reference to code representation
@@ -103,7 +144,8 @@ func (s *StringVarRef) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 
 // IntVarRef is a new integer variable reference
 type IntVarRef struct {
-	name string
+	name   String
+	fields []String
 }
 
 // Eval evalutates int variable
@@ -112,9 +154,15 @@ func (i *IntVarRef) Eval(ctx ExecutionContext) (int, error) {
 	if iface == nil {
 		return -1, trace.BadParameter("variable %v is not set", i.name)
 	}
-	switch val := iface.(type) {
+	f, err := GetField(iface, i.name, i.fields...)
+	if err != nil {
+		return -1, trace.Wrap(err)
+	}
+	switch val := f.(type) {
 	case int:
 		return val, nil
+	case Int:
+		return int(val), nil
 	case IntVar:
 		return val.Eval(ctx)
 	}
@@ -128,7 +176,8 @@ func (i *IntVarRef) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 
 // BoolVarRef is a bool variable reference
 type BoolVarRef struct {
-	name string
+	name   String
+	fields []String
 }
 
 // Eval evaluates reference to it's bool variable
@@ -137,7 +186,11 @@ func (b *BoolVarRef) Eval(ctx ExecutionContext) (bool, error) {
 	if i == nil {
 		return false, trace.BadParameter("variable %v is not set", b.name)
 	}
-	switch val := i.(type) {
+	f, err := GetField(i, b.name, b.fields...)
+	if err != nil {
+		return false, trace.Wrap(err)
+	}
+	switch val := f.(type) {
 	case bool:
 		return val, nil
 	case BoolVar:

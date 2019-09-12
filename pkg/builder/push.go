@@ -14,35 +14,37 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Push creates new push action
-func Push(img Image) (force.Action, error) {
-	return &PushAction{
-		image: img,
-	}, nil
-}
-
 // NewPush specifies new push actions
 type NewPush struct {
 }
 
 // NewInstance returns functions creating new push action
 func (n *NewPush) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, Push
+	return group, func(img interface{}) (force.Action, error) {
+		return &PushAction{
+			image: img,
+		}, nil
+	}
 }
 
 // PushAction returns new push actions
 type PushAction struct {
-	image Image
+	image interface{}
 }
 
 // MarshalCode marshals the action into code representation
 func (p *PushAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	return force.NewFnCall(Push, p.image).MarshalCode(ctx)
+	call := &force.FnCall{
+		Package: string(Key),
+		FnName:  KeyPush,
+		Args:    []interface{}{p.image},
+	}
+	return call.MarshalCode(ctx)
 }
 
 // Run pushes image to remote repository
 func (p *PushAction) Run(ctx force.ExecutionContext) error {
-	pluginI, ok := ctx.Process().Group().GetPlugin(Plugin)
+	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
 		return trace.NotFound("initialize Builder plugin in the setup section")
 	}
@@ -50,21 +52,22 @@ func (p *PushAction) Run(ctx force.ExecutionContext) error {
 }
 
 func (b *PushAction) String() string {
-	return fmt.Sprintf("Push(tag=%v)", b.image.Tag)
+	return fmt.Sprintf("Push(image=%v)", b.image)
 }
 
 // Push pushes image to remote registry
-func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
-	if err := img.CheckAndSetDefaults(ectx); err != nil {
+func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) error {
+	var img Image
+	if err := force.EvalInto(ectx, iface, &img); err != nil {
 		return trace.Wrap(err)
 	}
 
-	log := force.Log(ectx)
-	tag, err := img.Tag.Eval(ectx)
-	if err != nil {
+	if err := img.CheckAndSetDefaults(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Pushing image %v.", tag)
+	log := force.Log(ectx)
+
+	log.Infof("Pushing image %v.", img.Tag)
 
 	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
@@ -79,13 +82,13 @@ func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	})
 	eg.Go(func() error {
 		defer sess.Close()
-		return b.push(ctx, tag, b.cfg.insecure)
+		return b.push(ctx, img.Tag, b.cfg.Insecure)
 	})
 
 	if err := eg.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Successfully pushed %v.", tag)
+	log.Infof("Successfully pushed %v.", img.Tag)
 
 	return nil
 }

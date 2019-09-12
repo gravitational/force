@@ -24,4 +24,6 @@ const (
 	KeyID = "id"
 	// KeyForce is a name of the force CI
 	KeyForce = "force"
+	// KeyEvent is an event produced by watchers
+	KeyEvent = "event"
 )

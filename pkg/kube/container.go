@@ -1,57 +1,47 @@
 package kube
 
 import (
-	"github.com/gravitational/force"
-
 	"github.com/gravitational/trace"
 	corev1 "k8s.io/api/core/v1"
 )
 
 // Container is a container to run
 type Container struct {
-	Name            force.StringVar
-	Image           force.StringVar
-	Command         force.StringsVar
-	WorkingDir      force.StringVar
+	Name            string
+	Image           string
+	Command         []string
+	WorkingDir      string
 	Env             []EnvVar
 	VolumeMounts    []VolumeMount
-	ImagePullPolicy force.StringVar
-	TTY             force.BoolVar
-	Stdin           force.BoolVar
+	ImagePullPolicy string
+	TTY             bool
+	Stdin           bool
 	SecurityContext *SecurityContext
 }
 
-func (c *Container) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	image, err := force.EvalString(ctx, c.Image)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if image == "" {
+func (c *Container) CheckAndSetDefaults() error {
+	if c.Image == "" {
 		return trace.BadParameter("specify Container{Image: ``}")
 	}
 
-	name, err := force.EvalString(ctx, c.Name)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if name == "" {
+	if c.Name == "" {
 		return trace.BadParameter("specify Container{Name: ``}")
 	}
-	if c.ImagePullPolicy == nil {
-		c.ImagePullPolicy = force.String(string(corev1.PullAlways))
+	if c.ImagePullPolicy == "" {
+		c.ImagePullPolicy = string(corev1.PullAlways)
 	}
 	if c.SecurityContext != nil {
-		if err := c.SecurityContext.CheckAndSetDefaults(ctx); err != nil {
+		if err := c.SecurityContext.CheckAndSetDefaults(); err != nil {
 			return trace.Wrap(err)
 		}
 	}
 	for _, e := range c.Env {
-		if err := e.CheckAndSetDefaults(ctx); err != nil {
+		if err := e.CheckAndSetDefaults(); err != nil {
 			return trace.Wrap(err)
 		}
 	}
 	for _, v := range c.VolumeMounts {
-		if err := v.CheckAndSetDefaults(ctx); err != nil {
+		if err := v.CheckAndSetDefaults(); err != nil {
 			return trace.Wrap(err)
 		}
 	}
@@ -59,60 +49,32 @@ func (c *Container) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 }
 
 // Spec returns kubernetes spec
-func (c *Container) Spec(ctx force.ExecutionContext) (*corev1.Container, error) {
-	name, err := c.Name.Eval(ctx)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	image, err := c.Image.Eval(ctx)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	command, err := c.Command.Eval(ctx)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	workingDir, err := force.EvalString(ctx, c.WorkingDir)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	pullPolicy, err := force.EvalString(ctx, c.ImagePullPolicy)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	tty, err := force.EvalBool(ctx, c.TTY)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	stdin, err := force.EvalBool(ctx, c.Stdin)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+func (c *Container) Spec() (*corev1.Container, error) {
 	out := &corev1.Container{
-		Name:            name,
-		Image:           image,
-		Command:         command,
-		WorkingDir:      workingDir,
-		ImagePullPolicy: corev1.PullPolicy(pullPolicy),
-		TTY:             tty,
-		Stdin:           stdin,
+		Name:            c.Name,
+		Image:           c.Image,
+		Command:         c.Command,
+		WorkingDir:      c.WorkingDir,
+		ImagePullPolicy: corev1.PullPolicy(c.ImagePullPolicy),
+		TTY:             c.TTY,
+		Stdin:           c.Stdin,
 	}
 	if c.SecurityContext != nil {
-		spec, err := c.SecurityContext.Spec(ctx)
+		spec, err := c.SecurityContext.Spec()
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 		out.SecurityContext = spec
 	}
 	for _, e := range c.Env {
-		spec, err := e.Spec(ctx)
+		spec, err := e.Spec()
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 		out.Env = append(out.Env, *spec)
 	}
 	for _, v := range c.VolumeMounts {
-		spec, err := v.Spec(ctx)
+		spec, err := v.Spec()
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -121,121 +83,86 @@ func (c *Container) Spec(ctx force.ExecutionContext) (*corev1.Container, error) 
 	return out, nil
 }
 
+// SecurityContext
 type SecurityContext struct {
-	Privileged force.BoolVar
+	Privileged bool
 }
 
-func (s *SecurityContext) CheckAndSetDefaults(ctx force.ExecutionContext) error {
+func (s *SecurityContext) CheckAndSetDefaults() error {
 	return nil
 }
 
-func (s *SecurityContext) Spec(ctx force.ExecutionContext) (*corev1.SecurityContext, error) {
-	privileged, err := force.EvalBool(ctx, s.Privileged)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+func (s *SecurityContext) Spec() (*corev1.SecurityContext, error) {
 	return &corev1.SecurityContext{
-		Privileged: &privileged,
+		Privileged: &s.Privileged,
 	}, nil
 }
 
 type EnvVar struct {
-	Name  force.StringVar
-	Value force.StringVar
+	Name  string
+	Value string
 }
 
-func (e *EnvVar) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	name, err := force.EvalString(ctx, e.Name)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if name == "" {
+func (e *EnvVar) CheckAndSetDefaults() error {
+	if e.Name == "" {
 		return trace.BadParameter("specify EnvVar{Name: ``}")
 	}
 	return nil
 }
 
-func (e *EnvVar) Spec(ctx force.ExecutionContext) (*corev1.EnvVar, error) {
-	name, err := force.EvalString(ctx, e.Name)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	val, err := force.EvalString(ctx, e.Value)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+func (e *EnvVar) Spec() (*corev1.EnvVar, error) {
 	return &corev1.EnvVar{
-		Name:  name,
-		Value: val,
+		Name:  e.Name,
+		Value: e.Value,
 	}, nil
 }
 
 // VolumeMount describes a mounting of a Volume within a container.
 type VolumeMount struct {
-	Name      force.StringVar
+	Name      string
 	ReadOnly  bool
-	MountPath force.StringVar
+	MountPath string
 }
 
-func (v *VolumeMount) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	name, err := force.EvalString(ctx, v.Name)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if name == "" {
+func (v *VolumeMount) CheckAndSetDefaults() error {
+	if v.Name == "" {
 		return trace.BadParameter("specify VolumeMount{Name: ``}")
 	}
-	mountPath, err := force.EvalString(ctx, v.MountPath)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if mountPath == "" {
+	if v.MountPath == "" {
 		return trace.BadParameter("specify VolumeMount{MountPath: ``}")
 	}
 	return nil
 }
 
-func (v *VolumeMount) Spec(ctx force.ExecutionContext) (*corev1.VolumeMount, error) {
-	name, err := force.EvalString(ctx, v.Name)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	mountPath, err := force.EvalString(ctx, v.MountPath)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+func (v *VolumeMount) Spec() (*corev1.VolumeMount, error) {
 	return &corev1.VolumeMount{
-		Name:      name,
-		MountPath: mountPath,
+		Name:      v.Name,
+		MountPath: v.MountPath,
 	}, nil
 }
 
 // Volume represents a named volume in a pod that may be accessed by any container in the pod.
 type Volume struct {
-	Name      force.StringVar
-	EmptyDir  *EmptyDirSource
-	Secret    *SecretSource
-	ConfigMap *ConfigMapSource
+	Name      string
+	EmptyDir  *EmptyDir
+	Secret    *Secret
+	ConfigMap *ConfigMap
 }
 
-type EmptyDirSource struct {
-	Medium force.String
+type EmptyDir struct {
+	Medium string
 }
 
-type SecretSource struct {
-	Name force.String
+type Secret struct {
+	Name string
 }
 
-type ConfigMapSource struct {
-	Name force.String
+type ConfigMap struct {
+	Name string
 }
 
-func (v *Volume) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	name, err := force.EvalString(ctx, v.Name)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if name == "" {
+func (v *Volume) CheckAndSetDefaults() error {
+	if v.Name == "" {
 		return trace.BadParameter("specify Volume{Name: ``}")
 	}
 	if v.EmptyDir == nil && v.Secret == nil && v.ConfigMap == nil {
@@ -244,46 +171,30 @@ func (v *Volume) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 	return nil
 }
 
-func (v *Volume) Spec(ctx force.ExecutionContext) (*corev1.Volume, error) {
-	name, err := v.Name.Eval(ctx)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+func (v *Volume) Spec() (*corev1.Volume, error) {
 	volume := &corev1.Volume{
-		Name: name,
+		Name: v.Name,
 	}
 	if v.EmptyDir != nil {
-		medium, err := force.EvalString(ctx, v.EmptyDir.Medium)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
 		volume.VolumeSource.EmptyDir = &corev1.EmptyDirVolumeSource{
-			Medium: corev1.StorageMedium(medium),
+			Medium: corev1.StorageMedium(v.EmptyDir.Medium),
 		}
 	}
 	if v.Secret != nil {
-		name, err := force.EvalString(ctx, v.Secret.Name)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		if name == "" {
+		if v.Secret.Name == "" {
 			return nil, trace.BadParameter("provide &Secret{Name: ``}")
 		}
 		volume.VolumeSource.Secret = &corev1.SecretVolumeSource{
-			SecretName: name,
+			SecretName: v.Secret.Name,
 		}
 	}
 	if v.ConfigMap != nil {
-		name, err := force.EvalString(ctx, v.ConfigMap.Name)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		if name == "" {
+		if v.ConfigMap.Name == "" {
 			return nil, trace.BadParameter("provide &ConfigMap{Name: ``}")
 		}
 		volume.VolumeSource.ConfigMap = &corev1.ConfigMapVolumeSource{
 			LocalObjectReference: corev1.LocalObjectReference{
-				Name: name,
+				Name: v.ConfigMap.Name,
 			},
 		}
 	}

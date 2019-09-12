@@ -1,60 +1,136 @@
 package force
 
 import (
-	"fmt"
+	"reflect"
+
 	"github.com/gravitational/trace"
 )
+
+// EmptyContext returns empty execution context
+func EmptyContext() ExecutionContext {
+	return WithRuntimeScope(nil)
+}
+
+// EvalInto evaluates variable in within the execution context
+// into variable out
+func EvalInto(ctx ExecutionContext, inRaw, out interface{}) error {
+	if inRaw == nil {
+		return nil
+	}
+	in, err := Eval(ctx, inRaw)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if in == nil {
+		return nil
+	}
+	inType := reflect.TypeOf(in)
+	outType := reflect.TypeOf(out)
+	if outType.Kind() != reflect.Ptr {
+		return trace.BadParameter("out should be a pointer, got %T(%v)", out, outType.Kind())
+	}
+	outVal := reflect.ValueOf(out)
+
+	switch inType.Kind() {
+	case reflect.Struct:
+		if outType.Elem().Kind() != reflect.Struct {
+			return trace.BadParameter("in is %v then out should be pointer to struct, got %T", inType, out)
+		}
+		inVal := reflect.ValueOf(in)
+		for i := 0; i < inType.NumField(); i++ {
+			fieldVal := inVal.Field(i)
+			fieldType := inType.Field(i)
+			if fieldVal.Interface() == nil {
+				continue
+			}
+			eval, err := Eval(ctx, fieldVal.Interface())
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			if eval == nil {
+				continue
+			}
+			if fieldType.Name == metadataFieldName || fieldType.Tag.Get(codeTag) == codeSkip {
+				continue
+			}
+			outField := outVal.Elem().FieldByName(fieldType.Name)
+			if !outField.IsValid() {
+				return trace.NotFound("struct %T has no field %v", out, fieldType.Name)
+			}
+			// simple case, can assign two primitive evaluated types
+			if outField.Type().AssignableTo(reflect.TypeOf(eval)) {
+				outField.Set(reflect.ValueOf(eval))
+			} else {
+				evalType := reflect.TypeOf(eval)
+				evalValue := reflect.ValueOf(eval)
+				if evalType.Kind() == reflect.Ptr && !evalValue.Elem().IsValid() {
+					continue
+				}
+				if evalType.Kind() == reflect.Ptr && evalType.Elem().Kind() == reflect.Struct {
+					tempVal := reflect.New(OriginalType(evalType.Elem()))
+					err := EvalInto(ctx, reflect.ValueOf(eval).Elem().Interface(), tempVal.Interface())
+					if err != nil {
+						return trace.Wrap(err)
+					}
+					outField.Set(tempVal)
+				} else {
+					if err := EvalInto(ctx, eval, outField.Addr().Interface()); err != nil {
+						return trace.Wrap(err)
+					}
+				}
+			}
+		}
+		return nil
+	case reflect.Ptr:
+		return trace.BadParameter("can't evaluate %v(%T) into %v(%T)", in, in, out, out)
+	case reflect.Slice:
+		inVal := reflect.ValueOf(in)
+		outSlice := reflect.MakeSlice(outType.Elem(), inVal.Len(), inVal.Len())
+		for i := 0; i < inVal.Len(); i++ {
+			elem := inVal.Index(i).Interface()
+			if err := EvalInto(ctx, elem, outSlice.Index(i).Addr().Interface()); err != nil {
+				return trace.Wrap(err)
+			}
+		}
+		outVal.Elem().Set(outSlice)
+		return nil
+	default:
+		evaluated, err := Eval(ctx, in)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		outElem := outVal.Elem()
+		if !outElem.CanSet() {
+			return trace.BadParameter("can't set value of %v(%T) to %v(%T)", out, out, evaluated, evaluated)
+		}
+		outElem.Set(reflect.ValueOf(evaluated))
+		return nil
+	}
+}
 
 // Eval evaluates variable based on the execution context
 func Eval(ctx ExecutionContext, variable interface{}) (interface{}, error) {
 	switch v := variable.(type) {
+	case []interface{}:
+		outSlice := make([]interface{}, len(v))
+		for i := range v {
+			out, err := Eval(ctx, v[i])
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			outSlice[i] = out
+		}
+		return outSlice, nil
 	case IntVar:
 		return v.Eval(ctx)
 	case BoolVar:
 		return v.Eval(ctx)
 	case StringVar:
 		return v.Eval(ctx)
+	case StringsVar:
+		return v.Eval(ctx)
 	default:
 		return v, nil
-	}
-}
-
-// SprintfAction when called evals
-// arguments and sprintfs them to string
-type SprintfAction struct {
-	format String
-	args   []interface{}
-}
-
-// Eval evaluates actions
-func (a *SprintfAction) Eval(ctx ExecutionContext) (string, error) {
-	eval := make([]interface{}, len(a.args))
-	var err error
-	for i := range a.args {
-		eval[i], err = Eval(ctx, a.args[i])
-		if err != nil {
-			return "", trace.Wrap(err)
-		}
-	}
-	return fmt.Sprintf(string(a.format), eval...), nil
-}
-
-// MarshalCode marshals Sprintf to code representation
-func (a *SprintfAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	call := &FnCall{
-		Fn:   Sprintf,
-		Args: make([]interface{}, 0, len(a.args)+1),
-	}
-	call.Args = append(call.Args, a.format)
-	call.Args = append(call.Args, a.args...)
-	return call.MarshalCode(ctx)
-}
-
-// Sprintf is just like Sprintf
-func Sprintf(format String, args ...interface{}) StringVar {
-	return &SprintfAction{
-		format: format,
-		args:   args,
 	}
 }
 
@@ -99,5 +175,9 @@ func EvalPInt32(ctx ExecutionContext, in IntVar) (*int32, error) {
 }
 
 func PInt32(in int32) *int32 {
+	return &in
+}
+
+func PInt64(in int64) *int64 {
 	return &in
 }

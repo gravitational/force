@@ -1,0 +1,50 @@
+// Process defines a set of actions triggered by a channel
+Process(Spec{
+	// Name is used for reporting and debugging purposes
+	Name: "force-ci",
+	// Watch pull requests
+	Watch: slack.Listen(
+		slack.Command{
+			Name:    "publish teleport",
+			Confirm: false,
+			Help: "Publishes teleport release. Use flags to control the publish process. For example, to build and publish all non-Windows builds:\n`publish teleport with flags build-linux-amd64, build-darwin-amd64, build-linux-arm, publish-s3, publish-image`.\nTo build and publish only macOS binaries:\n`publish teleport with flags build-darwin-amd64,publish-s3.`\n",
+			Fields: []slack.Field{
+				{
+					Name:     "version",
+					Required: true,
+					Value:    &slack.String{},
+					Help:     "`version` sets teleport version to build and publish, use sem ver format without v, for example `with version 2.3.4`",
+				},
+				{
+					Name: "flags",
+					Value: &slack.StringsEnum{
+						DefaultAll: true,
+						Enum: Strings(
+							"build-windows-amd64",
+							"build-linux-amd64",
+							"build-linux-amd64-go1.9.7",
+							"build-linux-386",
+							"build-darwin-amd64",
+							"build-linux-arm",
+							"build-linux-amd64-fips",
+							"publish-s3",
+							"publish-image",
+							"build-pkg",
+							"publish-pkg-s3",
+							"build-rpm",
+							"publish-rpm-s3",
+							"build-deb",
+							"publish-deb-s3",
+						)},
+						Help: "`flags` selects publishing steps, by default builds/publish everything",
+				},
+			},
+		}),
+	Run: slack.PostStatusOf(
+		If(
+			Contains(event.Values.Flags, "build-deb"),
+			Infof("Deploying build-deb"),
+		),
+		Infof("Got deployment request: version %v, flags %v", event.Values.Version, event.Values.Flags),
+	),
+})

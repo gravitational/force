@@ -1,28 +1,29 @@
 Process(Spec{
 	Name: "kube",
 	Watch: Oneshot(),
-	Run: Continue(
+	Run: func(){
+		Defer(Exit())
 		Parallel(
-			Run(Job{
+			kube.Run(kube.Job{
 			Name: Sprintf("hello-second-%v", ID()),
-			Volumes: []Volume{
+			Volumes: []kube.Volume{
 				{
 					Name: "gocache",
-					EmptyDir: &EmptyDir{},
+					EmptyDir: &kube.EmptyDir{},
 				},
 			},			
-			Containers: []Container{
+			Containers: []kube.Container{
 				{
 					Image: "busybox",
 					Name: "busybox",
 					Command: Strings("/bin/sh", "-c", `echo "hello, first $GOCACHE" && sleep 10;`),
-					Env: []EnvVar{
+					Env: []kube.EnvVar{
 						{
 							Name: "GOCACHE",
 							Value: "/mnt/gocache",
 						},
 					},
-					VolumeMounts: []VolumeMount{
+					VolumeMounts: []kube.VolumeMount{
 						{
 							Name: "gocache",
 							MountPath: "/mnt/gocache",
@@ -31,26 +32,26 @@ Process(Spec{
 				},
 			},
 			}),
-			Run(Job{
+			kube.Run(kube.Job{
 				Name: Sprintf("hello-first-%v", ID()),
-				Volumes: []Volume{
+				Volumes: []kube.Volume{
 					{
 						Name: "gocache",
-						EmptyDir: &EmptyDir{},
+						EmptyDir: &kube.EmptyDir{},
 					},
 				},
-				Containers: []Container{
+				Containers: []kube.Container{
 					{
 						Image: "busybox",
 						Name: "busybox",
 						Command: Strings("/bin/sh", "-c", `echo "hello, second $GOCACHE" && sleep 10;`),
-						Env: []EnvVar{
+						Env: []kube.EnvVar{
 							{
 								Name: "GOCACHE",
 								Value: "/mnt/gocache",
 							},
 						},
-						VolumeMounts: []VolumeMount{
+						VolumeMounts: []kube.VolumeMount{
 							{
 								Name: "gocache",
 								MountPath: "/mnt/gocache",
@@ -59,7 +60,6 @@ Process(Spec{
 					},
 				},
 			}),
-		),
-		Exit(),
-	),
+		)
+	},
 })

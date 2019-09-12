@@ -2,7 +2,7 @@
 // all other force files share the configuration defined in this file
 Setup(
 	// Builder configures docker builder
-	Builder(BuilderConfig{
+	builder.Setup(builder.Config{
 		// Logs into quay io server
 		Server: "gcr.io",
 		// Username is a username to login with the registry server

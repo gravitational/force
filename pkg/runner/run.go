@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gravitational/force"
-	"github.com/gravitational/force/pkg/logging"
+	"github.com/gravitational/force/pkg/log"
 
 	"github.com/gravitational/trace"
 )
@@ -44,13 +44,13 @@ func (r *Runner) Logger() force.Logger {
 	// it from the plugin
 	// if the plugin is not set yet, use
 	// temporary default one
-	pluginI, ok := r.plugins[logging.LoggingPlugin]
+	pluginI, ok := r.plugins[log.Key]
 	if !ok {
-		return (&logging.Plugin{}).NewLogger()
+		return (&log.Plugin{}).NewLogger()
 	}
-	plugin, ok := pluginI.(*logging.Plugin)
+	plugin, ok := pluginI.(*log.Plugin)
 	if !ok {
-		temp := (&logging.Plugin{}).NewLogger()
+		temp := (&log.Plugin{}).NewLogger()
 		temp.Warningf("Wrong type: %T.", pluginI)
 		return temp
 	}

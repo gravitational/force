@@ -1,16 +1,14 @@
 Setup(
-	Kube(KubeConfig{
+	kube.Setup(kube.Config{
 		// Path is a path to kubeconfig,
 		// which is optional, if not set,
 		// force assumes that it is running inside kubernetes
 		Path: ExpectEnv("KUBE_CREDENTIALS"),
 	}),
  	// Logging sets up logging to stackdriver
-	// and stdout as well, with the current implementation,
-	// it should go first so other plugins can use it
-	Log(LogConfig{
+	log.Setup(log.Config{
 		Level: "info",
-		Outputs: []Output{
+		Outputs: []log.Output{
 			{
 				Type: "stdout",
 			},

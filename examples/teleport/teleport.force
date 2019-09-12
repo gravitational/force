@@ -1,11 +1,11 @@
 Process(Spec{
 	Name: "teleport-ci",
-	Watch: PullRequests(Source{
+	Watch: github.PullRequests(github.Source{
 		Repo: "gravitational/teleport",
 	}),
-	Run: PostStatusOf(func(){
-		image := Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, commit)
-		BuildAndPublishImage(image, commit)
+	Run: github.PostStatusOf(func(){
+		image := Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, event.Commit)
+		BuildAndPublishImage(image, event.Commit)
 		Parallel(
 			RunTestJob(image,
 				Sprintf("tele-test-%v", ID()),

@@ -3,6 +3,7 @@ package git
 import (
 	"io/ioutil"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -16,73 +17,70 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
-// Key is a wrapper around string to namespace a variable
-type Key string
-
-// GitPlugin is a name of the github plugin variable
-const GitPlugin = Key("Git")
-
-// GitConfig is a configuration
-type GitConfig struct {
-	// Token is an access token
-	Token force.StringVar
-	// TokenFile is a path to access token
-	TokenFile force.StringVar
-	// User force.StringVar
-	User force.StringVar
-	// PrivateKeyFile is a path to SSH private key
-	PrivateKeyFile force.StringVar
-	// KnownHostsFile is a file with known_hosts public keys
-	KnownHostsFile force.StringVar
-}
-
-func (cfg *GitConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
-	ecfg := evaluatedConfig{}
-	var err error
-	if ecfg.token, err = force.EvalString(ctx, cfg.Token); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	tokenFile, err := force.EvalString(ctx, cfg.TokenFile)
+// Scope returns a new scope with all the functions and structs
+// defined, this is the entrypoint into plugin as far as force is concerned
+func Scope() (force.Group, error) {
+	scope := force.WithLexicalScope(nil)
+	err := force.ImportStructsIntoAST(scope,
+		reflect.TypeOf(Config{}),
+		reflect.TypeOf(Repo{}),
+	)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	if tokenFile != "" {
-		data, err := ioutil.ReadFile(tokenFile)
+	scope.AddDefinition(force.FunctionName(Clone), &NewClone{})
+	scope.AddDefinition(KeySetup, &Setup{})
+	return scope, nil
+}
+
+// Namespace is a wrapper around string to namespace a variable
+type Namespace string
+
+const (
+	// Key is a name of the github plugin variable
+	Key      = Namespace("git")
+	KeySetup = "Setup"
+)
+
+// Config holds git configuration
+type Config struct {
+	// Token is an access token
+	Token string
+	// TokenFile is a path to access token
+	TokenFile string
+	// User force.StringVar
+	User string
+	// PrivateKeyFile is a path to SSH private key
+	PrivateKeyFile string
+	// KnownHostsFile is a file with known_hosts public keys
+	KnownHostsFile string
+}
+
+func (cfg *Config) CheckAndSetDefaults() error {
+	if cfg.TokenFile != "" {
+		data, err := ioutil.ReadFile(cfg.TokenFile)
 		if err != nil {
-			return nil, trace.ConvertSystemError(err)
+			return trace.ConvertSystemError(err)
 		}
-		ecfg.token = strings.TrimSpace(string(data))
+		cfg.Token = strings.TrimSpace(string(data))
 	}
-	if ecfg.privateKeyFile, err = force.EvalString(ctx, cfg.PrivateKeyFile); err != nil {
-		return nil, trace.Wrap(err)
+	if cfg.Token == "" && cfg.PrivateKeyFile == "" {
+		return trace.BadParameter("set git.Config{Token:``} or git.Config{PrivateKey: ``} parameters")
 	}
-	if ecfg.knownHostsFile, err = force.EvalString(ctx, cfg.KnownHostsFile); err != nil {
-		return nil, trace.Wrap(err)
+	if cfg.PrivateKeyFile != "" && cfg.User == "" {
+		cfg.User = "git"
 	}
-	if ecfg.token == "" && ecfg.privateKeyFile == "" {
-		return nil, trace.BadParameter("set GitConfig{Token:``} or GitConfig{PrivateKey: ``} parameters")
-	}
-	if ecfg.privateKeyFile != "" && ecfg.user == "" {
-		ecfg.user = "git"
-	}
-	return &ecfg, nil
+	return nil
 }
 
-type evaluatedConfig struct {
-	token          string
-	user           string
-	privateKeyFile string
-	knownHostsFile string
-}
-
-func (e *evaluatedConfig) Auth() (transport.AuthMethod, error) {
-	if e.privateKeyFile != "" {
-		keys, err := ssh.NewPublicKeysFromFile(e.user, e.privateKeyFile, "")
+func (cfg *Config) Auth() (transport.AuthMethod, error) {
+	if cfg.PrivateKeyFile != "" {
+		keys, err := ssh.NewPublicKeysFromFile(cfg.User, cfg.PrivateKeyFile, "")
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		if e.knownHostsFile != "" {
-			helper, err := ssh.NewKnownHostsCallback(e.knownHostsFile)
+		if cfg.KnownHostsFile != "" {
+			helper, err := ssh.NewKnownHostsCallback(cfg.KnownHostsFile)
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
@@ -93,27 +91,27 @@ func (e *evaluatedConfig) Auth() (transport.AuthMethod, error) {
 	return &http.BasicAuth{
 		// this can be anything except an empty string
 		Username: "token",
-		Password: string(e.token),
+		Password: string(cfg.Token),
 	}, nil
 }
 
 // Repo is a repository to clone
 type Repo struct {
-	URL force.String
+	URL string
 	// Into into dir
-	Into force.StringVar
+	Into string
 	// Hash is a commit hash to clone
-	Hash force.StringVar
+	Hash string
 	// Submodules is an optional submodule to init
-	Submodules []force.StringVar
+	Submodules []string
 }
 
 func (r *Repo) CheckAndSetDefaults() error {
 	if r.URL == "" {
-		return trace.BadParameter("set Repo{URL: ``} parameter")
+		return trace.BadParameter("set git.Repo{URL: ``} parameter")
 	}
-	if r.Into == nil {
-		return trace.BadParameter("set Repo{Into: ``} parameter")
+	if r.Into == "" {
+		return trace.BadParameter("set git.Repo{Into: ``} parameter")
 	}
 	return nil
 }
@@ -122,50 +120,52 @@ func (r *Repo) CheckAndSetDefaults() error {
 type Plugin struct {
 	// start is a plugin start time
 	start time.Time
-	cfg   evaluatedConfig
+	cfg   Config
 }
 
-// NewPlugin creates new plugins
-type NewPlugin struct {
-	cfg GitConfig
+// Setup creates new plugins
+type Setup struct {
+	cfg interface{}
 }
 
 // NewInstance returns function creating new client bound to the process group
 // and registers plugin variable
-func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg GitConfig) (force.Action, error) {
-		return &NewPlugin{
+func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(cfg interface{}) (force.Action, error) {
+		return &Setup{
 			cfg: cfg,
 		}, nil
 	}
 }
 
 // Run sets up git plugin for the process group
-func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
-	ecfg, err := n.cfg.CheckAndSetDefaults(ctx)
+func (n *Setup) Run(ctx force.ExecutionContext) error {
+	var cfg Config
+	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
+		return trace.Wrap(err)
+	}
+	err := cfg.CheckAndSetDefaults()
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	plugin := &Plugin{cfg: *ecfg, start: time.Now().UTC()}
-	ctx.Process().Group().SetPlugin(GitPlugin, plugin)
+	plugin := &Plugin{cfg: cfg, start: time.Now().UTC()}
+	ctx.Process().Group().SetPlugin(Key, plugin)
 	return nil
 }
 
 // MarshalCode marshals plugin code to representation
-func (n *NewPlugin) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	call := &force.FnCall{
-		FnName: string(GitPlugin),
-		Args:   []interface{}{n.cfg},
+		Package: string(Key),
+		FnName:  KeySetup,
+		Args:    []interface{}{n.cfg},
 	}
 	return call.MarshalCode(ctx)
 }
 
 // Clone executes inner action and posts result of it's execution
 // to github
-func Clone(repo Repo) (force.Action, error) {
-	if err := repo.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
+func Clone(repo interface{}) (force.Action, error) {
 	return &CloneAction{
 		repo: repo,
 	}, nil
@@ -183,26 +183,26 @@ func (n *NewClone) NewInstance(group force.Group) (force.Group, interface{}) {
 
 // CloneAction clones repository
 type CloneAction struct {
-	repo Repo
+	repo interface{}
 }
 
 func (p *CloneAction) Run(ctx force.ExecutionContext) error {
-	pluginI, ok := ctx.Process().Group().GetPlugin(GitPlugin)
+	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
 		return trace.NotFound("initialize Git plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 
-	log := force.Log(ctx)
-
-	into, err := p.repo.Into.Eval(ctx)
-	if err != nil {
+	var repo Repo
+	if err := force.EvalInto(ctx, p.repo, &repo); err != nil {
 		return trace.Wrap(err)
 	}
-	if into == "" {
+
+	log := force.Log(ctx)
+	if repo.Into == "" {
 		return trace.BadParameter("got empty Into variable")
 	}
-	fi, err := os.Stat(into)
+	fi, err := os.Stat(repo.Into)
 	if err != nil {
 		return trace.ConvertSystemError(err)
 	}
@@ -210,7 +210,7 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		return trace.BadParameter("Into variable is not an existing directory")
 	}
 
-	log.Infof("Cloning repository %v into %v.", p.repo.URL, into)
+	log.Infof("Cloning repository %v into %v.", repo.URL, repo.Into)
 	start := time.Now()
 
 	auth, err := plugin.cfg.Auth()
@@ -218,43 +218,33 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		return trace.Wrap(err)
 	}
 
-	r, err := git.PlainClone(into, false, &git.CloneOptions{
+	r, err := git.PlainClone(repo.Into, false, &git.CloneOptions{
 		Auth: auth,
-		URL:  string(p.repo.URL),
+		URL:  string(repo.URL),
 	})
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	log.Infof("Cloned %v into %v in %v.", p.repo.URL, into, time.Now().Sub(start))
+	log.Infof("Cloned %v into %v in %v.", repo.URL, repo.Into, time.Now().Sub(start))
 
-	if p.repo.Hash != nil {
-		hash, err := p.repo.Hash.Eval(ctx)
+	if repo.Hash != "" {
+		w, err := r.Worktree()
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		if hash != "" {
-			w, err := r.Worktree()
-			if err != nil {
-				return trace.Wrap(err)
-			}
 
-			err = w.Checkout(&git.CheckoutOptions{
-				Hash: plumbing.NewHash(hash),
-			})
-			if err != nil {
-				return trace.Wrap(err)
-			}
-
-			log.Infof("Checked out repository %v commit %v.", p.repo.URL, hash)
+		err = w.Checkout(&git.CheckoutOptions{
+			Hash: plumbing.NewHash(repo.Hash),
+		})
+		if err != nil {
+			return trace.Wrap(err)
 		}
+
+		log.Infof("Checked out repository %v commit %v.", repo.URL, repo.Hash)
 	}
 
-	for i, subVar := range p.repo.Submodules {
-		subName, err := subVar.Eval(ctx)
-		if err != nil {
-			return trace.Wrap(err)
-		}
+	for i, subName := range repo.Submodules {
 		if subName == "" {
 			return trace.BadParameter("got empty submodule name at %v", i)
 		}
@@ -282,8 +272,9 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 // MarshalCode marshals action into code representation
 func (c *CloneAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	call := &force.FnCall{
-		Fn:   Clone,
-		Args: []interface{}{c.repo},
+		Package: string(Key),
+		Fn:      Clone,
+		Args:    []interface{}{c.repo},
 	}
 	return call.MarshalCode(ctx)
 }

@@ -10,11 +10,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Prune creates prune actions
-func Prune() (force.Action, error) {
-	return &PruneAction{}, nil
-}
-
 // NewPrune specifies prune action - cleaning up
 // dangled leftovers from builds - images and tags, layers
 type NewPrune struct {
@@ -22,7 +17,9 @@ type NewPrune struct {
 
 // NewInstance returns function creating new prune actions
 func (n *NewPrune) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, Prune
+	return group, func() (force.Action, error) {
+		return &PruneAction{}, nil
+	}
 }
 
 // PruneAction prunes all leftover
@@ -33,7 +30,7 @@ type PruneAction struct {
 
 // Run runs prune action
 func (p *PruneAction) Run(ctx force.ExecutionContext) error {
-	pluginI, ok := ctx.Process().Group().GetPlugin(Plugin)
+	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
 		return trace.NotFound("initialize Builder plugin in the setup section")
 	}
@@ -46,7 +43,11 @@ func (p *PruneAction) String() string {
 
 // MarshalCode marshals the action into code representation
 func (p *PruneAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	return force.NewFnCall(Prune).MarshalCode(ctx)
+	call := &force.FnCall{
+		Package: string(Key),
+		FnName:  KeyPrune,
+	}
+	return call.MarshalCode(ctx)
 }
 
 // Prune clears build cache

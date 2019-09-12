@@ -20,41 +20,43 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// Run creates new run action
-func Run(job Job) (force.Action, error) {
-	return &RunAction{job: job}, nil
-}
-
 // NewRun specifies new job runners
 type NewRun struct {
 }
 
 // NewRun returns functions creating kubernetes job runner action
 func (n *NewRun) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, Run
+	return group, func(job interface{}) force.Action {
+		return &RunAction{job: job}
+	}
 }
 
 // RunAction runs kubernetes job to it's completion
 type RunAction struct {
-	job Job
+	job interface{}
 }
 
 // Run runs kubernetes job
 func (r *RunAction) Run(ctx force.ExecutionContext) error {
-	pluginI, ok := ctx.Process().Group().GetPlugin(KubePlugin)
+	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
 		return trace.BadParameter("initialize Kube plugin")
 	}
 	plugin := pluginI.(*Plugin)
 
-	if err := r.job.CheckAndSetDefaults(ctx); err != nil {
+	var j Job
+	if err := force.EvalInto(ctx, r.job, &j); err != nil {
 		return trace.Wrap(err)
 	}
-	log := force.Log(ctx)
-	spec, err := r.job.Spec(ctx)
+	if err := j.CheckAndSetDefaults(); err != nil {
+		return trace.Wrap(err)
+	}
+	spec, err := j.Spec()
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	log := force.Log(ctx)
+
 	jobs := plugin.client.BatchV1().Jobs(spec.Namespace)
 	job, err := jobs.Create(spec)
 	if err != nil {
@@ -90,9 +92,38 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	}
 }
 
+// jobCheckAndSetDefaults checks and sets defaults
+func jobCheckAndSetDefaults(j *batchv1.Job) error {
+	if j.Spec.BackoffLimit == nil {
+		i := int32(0)
+		j.Spec.BackoffLimit = &i
+	}
+	if j.Spec.TTLSecondsAfterFinished == nil {
+		i := int32(JobTTLSeconds)
+		// 48 hours to clean up old jobs
+		j.Spec.TTLSecondsAfterFinished = &i
+	}
+	if j.Spec.ActiveDeadlineSeconds == nil {
+		i := int64(ActiveDeadlineSeconds)
+		j.Spec.ActiveDeadlineSeconds = &i
+	}
+	if j.Namespace == "" {
+		j.Namespace = DefaultNamespace
+	}
+	if len(j.Spec.Template.Spec.Containers) == 0 {
+		return trace.BadParameter("the job needs at least one container")
+	}
+	return nil
+}
+
 // MarshalCode marshals the action into code representation
 func (s *RunAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	return force.NewFnCall(Run, s.job).MarshalCode(ctx)
+	call := &force.FnCall{
+		Package: string(Key),
+		FnName:  KeySetup,
+		Args:    []interface{}{s.job},
+	}
+	return call.MarshalCode(ctx)
 }
 
 // streamLogs streams logs until the job is either failed or done, the context

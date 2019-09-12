@@ -16,7 +16,7 @@ type ExecutionContext interface {
 	Event() Event
 	// Process returns a process associated with context
 	Process() Process
-	// SetValue sets a key value pair to the context
+	// SetValue sets a key value pair of the context
 	SetValue(key interface{}, value interface{}) error
 	// ID is an execution unique identifier
 	ID() string

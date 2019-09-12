@@ -3,68 +3,59 @@ Process(Spec{
 	// Name is used for reporting and debugging purposes
 	Name: "force-ci",
 	// Watch pull requests
-//	Watch: Duplicate(PullRequests(), 4),
-	Watch: PullRequests(Source{
+	Watch: github.PullRequests(github.Source{
 		// Repo is a repository to watch
 		Repo: "gravitational/force",
 		// Default branch is master
 		Branch: "master",
 	}),
-	// No namespaces is a problem - how to define modules?
-	// can I just do github.PostStatusOf?
-	// also, should be more strict with variables, reference of an undefined
-	// variable or shadowing of an existing one should be a problem
-	Run: PostStatusOf(
-		Sequence(
+	Run: github.PostStatusOf(
+		func(){
 			// Create temporary directory "repo"
-			Define("repo", TempDir()),
-			Defer(
-				RemoveDir(Var("repo")),
-			),
+			repo := TempDir("", "")
+			Defer(RemoveAll(repo))
 			// Clone clones git repository into temp dir
-			Clone(Repo{
-				URL: "https://github.com/gravitational/force.git",
-				Into: Var("repo"),
+			git.Clone(git.Repo{
+				URL: "git@github.com:gravitational/force.git",
+				Into: repo,
 				// Commit is a commit variable defined by pull request watch,
 				// the problem is that there is no namespacing here
-				Hash: Var("commit"),
-				// May be just to Event().Commit? define a global variable,
-				// but what is the type then?
-			}),
+				Hash: event.Commit,
+			})
 			// Image is an image name to build
-			Define("image", Sprintf(`gcr.io/kubeadm-167321/example:%v`, Var("commit"))),
+			image := Sprintf(`gcr.io/kubeadm-167321/example:%v`, event.Commit)
 			// Runtime is a go runtime to build
-			Define("go_runtime", "go1.12.1"),
+			goRuntime := "go1.12.1"
 			// Build builds dockerfile and tags it in the local storage
-			Build(Image{
+			builder.Build(builder.Image{
 				// Set build context to the cloned repository
-				Context: Var("repo"),
+				Context: repo,
 				// Dockerfile is a dockerfile to build (from current dir),
 				Dockerfile: "./Dockerfile",
 				// Tag is the tag to build - here, as you see, we need to reimplement
 				// Sprintf and every other method that works with our vars
-				Tag: Var("image"),
+				Tag: image,
 				// Secrets are build secrets exposed to docker
 				// container during the run
-				Secrets: []Secret{
+				Secrets: []builder.Secret{
 					{
 						ID: "logging-creds",
 						File: ExpectEnv("LOGGING_CREDENTIALS"),
 					},
 				},
 				// Args are build arguments
-				Args: []Arg{
+				Args: []builder.Arg{
 					{
 						// FORCE_ID is a force run ID
 						Key: "GO_RUNTIME",
 						Val: ID(),
 					},
 				},
-			}),
+			})
 			// Push the built image
-			Push(Image{Tag: Var("image")}),
+			builder.Push(builder.Image{Tag: image})
 			// Prune the build cache
-			Prune(),			
-		),
+			builder.Prune()
+		},
 	),
 })

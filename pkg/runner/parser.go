@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gravitational/force"
@@ -15,10 +19,19 @@ import (
 	"github.com/gravitational/force/pkg/git"
 	"github.com/gravitational/force/pkg/github"
 	"github.com/gravitational/force/pkg/kube"
-	"github.com/gravitational/force/pkg/logging"
+	"github.com/gravitational/force/pkg/log"
+	"github.com/gravitational/force/pkg/slack"
 
 	"github.com/gravitational/trace"
 )
+
+// Script is a force code script
+type Script struct {
+	// Filename is a file name of the script
+	Filename string
+	// Content is a script content
+	Content string
+}
 
 // Input is an input to parser
 type Input struct {
@@ -26,11 +39,11 @@ type Input struct {
 	ID string
 	// Setup is an optional setup script to parse
 	// it sets up a group of processes
-	Setup string
+	Setup Script
 	// Script is a script to parse
-	Script string
+	Script Script
 	// IncludeScripts is a set of scripts to include
-	IncludeScripts []string
+	IncludeScripts []Script
 	// Context is a global context
 	Context context.Context
 	// Debug turns on global debug mode
@@ -45,7 +58,7 @@ func (i *Input) CheckAndSetDefaults() error {
 	if i.ID == "" {
 		i.ID = ShortID()
 	}
-	if len(i.Script) == 0 {
+	if len(i.Script.Content) == 0 {
 		return trace.BadParameter("missing parameter Script")
 	}
 	return nil
@@ -104,6 +117,7 @@ func Parse(i Input) (*Runner, error) {
 		"Continue": &force.NewContinue{},
 		"Parallel": &force.NewParallel{},
 		"Defer":    &force.NopScope{Func: force.Defer},
+		"If":       &force.NewIf{},
 
 		// Builtin event generator channels
 		"Oneshot":   &force.NopScope{Func: force.Oneshot},
@@ -116,52 +130,23 @@ func Parse(i Input) (*Runner, error) {
 		// Var references a variable in a lexcial scope
 		"Var": &force.NewVarRef{},
 
-		// Environment functions
-		"ExpectEnv": &force.NopScope{Func: force.ExpectEnv},
-		"Env":       &force.NopScope{Func: force.Env},
-
 		// Flow control function
 		"Exit": &force.NopScope{Func: force.Exit},
 
 		// Log functions
-		"Log":   &logging.NewPlugin{},
-		"Infof": &force.NopScope{Func: logging.Infof},
+		"Infof": &force.NopScope{Func: log.Infof},
 
 		// Helper functions
-		"Shell":     &force.NopScope{Func: force.Shell},
-		"Command":   &force.NopScope{Func: force.Command},
-		"ID":        &force.NopScope{Func: force.ID},
-		"Sprintf":   &force.NopScope{Func: force.Sprintf},
-		"Strings":   &force.NopScope{Func: force.Strings},
-		"TrimSpace": &force.NopScope{Func: force.TrimSpace},
-		"Marshal":   &force.NopScope{Func: force.Marshal},
-		"Unquote":   &force.NopScope{Func: force.Unquote},
-
-		// Temp dir operators
-		"TempDir":    &force.NopScope{Func: force.TempDir},
-		"CurrentDir": &force.NopScope{Func: force.CurrentDir},
-		"RemoveDir":  &force.NopScope{Func: force.RemoveDir},
-
-		// Github functions
-		"Github":       &github.NewPlugin{},
-		"PullRequests": &github.NewWatch{},
-		"PostStatus":   &github.NewPostStatus{},
-		"PostStatusOf": &github.NewPostStatusOf{},
-
-		// Git functions
-		"Git":   &git.NewPlugin{},
-		"Clone": &git.NewClone{},
-
-		// Container Builder functions
-		"Builder": &builder.NewPlugin{},
-		"Build":   &builder.NewBuild{},
-		"Push":    &builder.NewPush{},
-		"Prune":   &builder.NewPrune{},
-
-		// Kubernetes functions
-		"Kube": &kube.NewPlugin{},
-		"Run":  &kube.NewRun{},
+		"Shell":    &force.NopScope{Func: force.Shell},
+		"Command":  &force.NopScope{Func: force.Command},
+		"ID":       &force.NopScope{Func: force.ID},
+		"Strings":  &force.NopScope{Func: force.Strings},
+		"Marshal":  &force.NopScope{Func: force.Marshal},
+		"Unquote":  &force.NopScope{Func: force.Unquote},
+		"Contains": &force.NopScope{Func: force.Contains},
 	}
+
+	var builtinStructs = []interface{}{force.Spec{}, force.Test{}}
 
 	globalContext := force.NewContext(force.ContextConfig{
 		Parent:  &force.WrapContext{Context: runner.ctx},
@@ -170,82 +155,62 @@ func Parse(i Input) (*Runner, error) {
 		Event:   &force.OneshotEvent{Time: time.Now().UTC()},
 	})
 	g := &gParser{
-		runner: runner,
-		scope:  force.WithRuntimeScope(globalContext),
-		getStruct: func(name string) (interface{}, error) {
-			switch name {
-			// Standard library structs
-			case "Test":
-				return force.Test{}, nil
-			case "Script":
-				return force.Script{}, nil
-			case "Spec":
-				return force.Spec{}, nil
-				// Github structs
-			case "GithubConfig":
-				return github.GithubConfig{}, nil
-			case "Source":
-				return github.Source{}, nil
-				// Git structs
-			case "GitConfig":
-				return git.GitConfig{}, nil
-			case "Repo":
-				return git.Repo{}, nil
-				// Container builder structs
-			case "BuilderConfig":
-				return builder.BuilderConfig{}, nil
-			case "Image":
-				return builder.Image{}, nil
-			case "Secret":
-				return builder.Secret{}, nil
-			case "Arg":
-				return builder.Arg{}, nil
-				// Log structs
-			case "LogConfig":
-				return logging.LogConfig{}, nil
-			case "Output":
-				return logging.Output{}, nil
-				// Kube structs
-			case "KubeConfig":
-				return kube.KubeConfig{}, nil
-			case "Job":
-				return kube.Job{}, nil
-			case "Container":
-				return kube.Container{}, nil
-			case "PodSecurityContext":
-				return kube.PodSecurityContext{}, nil
-			case "SecurityContext":
-				return kube.SecurityContext{}, nil
-			case "EnvVar":
-				return kube.EnvVar{}, nil
-			case "Volume":
-				return kube.Volume{}, nil
-			case "VolumeMount":
-				return kube.VolumeMount{}, nil
-			case "EmptyDirSource":
-				return kube.EmptyDirSource{}, nil
-			case "SecretSource":
-				return kube.SecretSource{}, nil
-			case "ConfigMapSource":
-				return kube.ConfigMapSource{}, nil
-			default:
-				return nil, trace.BadParameter("unsupported struct: %v", name)
-			}
-		},
+		runner:  runner,
+		scope:   force.WithRuntimeScope(globalContext),
+		plugins: map[string]force.Group{},
 	}
+	plugins := map[string]func() (force.Group, error){
+		string(log.Key):     log.Scope,
+		string(github.Key):  github.Scope,
+		string(git.Key):     git.Scope,
+		string(builder.Key): builder.Scope,
+		string(kube.Key):    kube.Scope,
+		string(slack.Key):   slack.Scope,
+	}
+	for key, plugin := range plugins {
+		scope, err := plugin()
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		g.plugins[key] = scope
+	}
+
 	runner.parser = g
 	for name, fn := range builtinFunctions {
 		g.scope.SetValue(force.ContextKey(name), fn)
 	}
-	// Setup the runner
-	if i.Setup != "" {
-		expr, err := parser.ParseExpr(i.Setup)
+
+	importedFunctions := []interface{}{
+		fmt.Sprintf,
+		strings.TrimSpace,
+		os.Getenv,
+		os.Getwd,
+		force.ExpectEnv,
+		ioutil.TempDir,
+		os.RemoveAll,
+	}
+	for _, fn := range importedFunctions {
+		outFn, err := force.ConvertFunctionToAST(fn)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		procI, err := g.parseExpr(runner, expr)
+		g.scope.SetValue(force.ContextKey(force.FunctionName(fn)), outFn)
+	}
+
+	for _, st := range builtinStructs {
+		g.runner.AddDefinition(force.StructName(reflect.TypeOf(st)), reflect.TypeOf(st))
+	}
+
+	// Setup the runner
+	if i.Setup.Content != "" {
+		f := token.NewFileSet()
+		expr, err := parser.ParseExprFrom(f, "", []byte(i.Setup.Content), 0)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, trace.Wrap(convertScanError(err, i.Setup))
+		}
+		procI, err := g.parseExpr(f, runner, expr)
+		if err != nil {
+			return nil, trace.Wrap(convertScanError(err, i.Setup))
 		}
 		proc, ok := procI.(force.Process)
 		if !ok {
@@ -263,13 +228,14 @@ func Parse(i Input) (*Runner, error) {
 		}
 	}
 	for _, script := range i.IncludeScripts {
-		expr, err := parser.ParseExpr(script)
+		f := token.NewFileSet()
+		expr, err := parser.ParseExprFrom(f, "", []byte(script.Content), 0)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, trace.Wrap(convertScanError(err, script))
 		}
-		actionI, err := g.parseExpr(runner, expr)
+		actionI, err := g.parseExpr(f, runner, expr)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, trace.Wrap(convertScanError(err, script))
 		}
 		action, ok := actionI.(force.ScopeAction)
 		if !ok {
@@ -280,13 +246,14 @@ func Parse(i Input) (*Runner, error) {
 			return nil, trace.Wrap(err)
 		}
 	}
-	expr, err := parser.ParseExpr(i.Script)
+	f := token.NewFileSet()
+	expr, err := parser.ParseExprFrom(f, "", []byte(i.Script.Content), 0)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, trace.Wrap(convertScanError(err, i.Script))
 	}
-	procI, err := g.parseExpr(runner, expr)
+	procI, err := g.parseExpr(f, runner, expr)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, trace.Wrap(convertScanError(err, i.Script))
 	}
 
 	proc, ok := procI.(force.Process)
@@ -296,9 +263,9 @@ func Parse(i Input) (*Runner, error) {
 
 	// if after parsing, logging plugin is not set up
 	// set it up with default plugin instance
-	_, ok = runner.GetPlugin(logging.LoggingPlugin)
+	_, ok = runner.GetPlugin(log.Key)
 	if !ok {
-		runner.SetPlugin(logging.LoggingPlugin, &logging.Plugin{})
+		runner.SetPlugin(log.Key, &log.Plugin{})
 	}
 
 	runner.AddProcess(proc)
@@ -308,30 +275,50 @@ func Parse(i Input) (*Runner, error) {
 	return runner, nil
 }
 
-// gParser is a parser that parses G files
-type gParser struct {
-	runner    *Runner
-	scope     *force.RuntimeScope
-	structs   map[string]interface{}
-	getStruct func(name string) (interface{}, error)
+// convertScanError converts scan error to code error
+func convertScanError(e error, script Script) error {
+	switch err := trace.Unwrap(e).(type) {
+	case *force.CodeError:
+		err.Snippet.Pos.Filename = script.Filename
+		err.Snippet = force.CaptureSnippet(err.Snippet.Pos, script.Content)
+		return e
+	case scanner.ErrorList:
+		var errors []error
+		for _, sub := range err {
+			sub.Pos.Filename = script.Filename
+			snippet := force.CaptureSnippet(sub.Pos, script.Content)
+			errors = append(errors,
+				&force.CodeError{Err: trace.BadParameter(sub.Msg), Snippet: snippet})
+		}
+		return trace.NewAggregate(errors...)
+	default:
+		return e
+	}
 }
 
-func (g *gParser) parseArguments(scope force.Group, nodes []ast.Node) ([]interface{}, error) {
+// gParser is a parser that parses G files
+type gParser struct {
+	runner  *Runner
+	scope   *force.RuntimeScope
+	plugins map[string]force.Group
+}
+
+func (g *gParser) parseArguments(f *token.FileSet, scope force.Group, nodes []ast.Node) ([]interface{}, error) {
 	out := make([]interface{}, len(nodes))
 	for i, n := range nodes {
-		val, err := g.parseExpr(scope, n)
+		val, err := g.parseExpr(f, scope, n)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, wrap(f, n, trace.Wrap(err))
 		}
 		out[i] = val
 	}
 	return out, nil
 }
 
-func (g *gParser) parseStatements(scope force.Group, nodes []ast.Node) ([]force.Action, error) {
+func (g *gParser) parseStatements(f *token.FileSet, scope force.Group, nodes []ast.Node) ([]force.Action, error) {
 	out := make([]force.Action, len(nodes))
 	for i, n := range nodes {
-		val, err := g.parseExpr(scope, n)
+		val, err := g.parseExpr(f, scope, n)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -344,7 +331,7 @@ func (g *gParser) parseStatements(scope force.Group, nodes []ast.Node) ([]force.
 	return out, nil
 }
 
-func (g *gParser) parseStructFields(scope force.Group, nodes []ast.Expr) (map[string]interface{}, error) {
+func (g *gParser) parseStructFields(f *token.FileSet, scope force.Group, nodes []ast.Expr) (map[string]interface{}, error) {
 	out := make(map[string]interface{}, len(nodes))
 	for _, n := range nodes {
 		kv, ok := n.(*ast.KeyValueExpr)
@@ -355,7 +342,7 @@ func (g *gParser) parseStructFields(scope force.Group, nodes []ast.Expr) (map[st
 		if !ok {
 			return nil, trace.BadParameter("expected value identifier, got %#v", n)
 		}
-		val, err := g.parseExpr(scope, kv.Value)
+		val, err := g.parseExpr(f, scope, kv.Value)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -367,60 +354,102 @@ func (g *gParser) parseStructFields(scope force.Group, nodes []ast.Expr) (map[st
 	return out, nil
 }
 
-func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) {
+func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (interface{}, error) {
 	switch l := n.(type) {
 	case *ast.ParenExpr:
-		return g.parseExpr(scope, l.X)
+		return g.parseExpr(f, scope, l.X)
 	case *ast.CompositeLit:
 		switch literal := l.Type.(type) {
-		case *ast.Ident:
-			structProto, err := g.getStruct(literal.Name)
-			if err != nil {
-				return nil, trace.Wrap(err)
+		case *ast.SelectorExpr:
+			module, ok := literal.X.(*ast.Ident)
+			if !ok {
+				return nil, wrap(f, n, trace.BadParameter("expected identifier, got %T", literal.X))
 			}
-			fields, err := g.parseStructFields(scope, l.Elts)
+			plugin, ok := g.plugins[module.Name]
+			if !ok {
+				return nil, trace.BadParameter("plugin %v is not found", module.Name)
+			}
+			structProto, err := plugin.GetDefinition(literal.Sel.Name)
 			if err != nil {
-				return nil, trace.Wrap(err)
+				return nil, wrap(f, n, trace.Wrap(err))
+			}
+			fields, err := g.parseStructFields(f, scope, l.Elts)
+			if err != nil {
+				return nil, wrap(f, n, trace.Wrap(err))
 			}
 			st, err := createStruct(structProto, fields)
 			if err != nil {
-				return nil, trace.Wrap(err)
+				return nil, wrap(f, n, trace.Wrap(err))
+			}
+			return st, nil
+		case *ast.Ident:
+			structProto, err := g.runner.GetDefinition(literal.Name)
+			if err != nil {
+				return nil, wrap(f, n, trace.Wrap(err))
+			}
+			fields, err := g.parseStructFields(f, scope, l.Elts)
+			if err != nil {
+				return nil, wrap(f, n, trace.Wrap(err))
+			}
+			st, err := createStruct(structProto, fields)
+			if err != nil {
+				return nil, wrap(f, n, trace.Wrap(err))
 			}
 			return st, nil
 		case *ast.ArrayType:
-			arrayType, ok := literal.Elt.(*ast.Ident)
+			var structProto interface{}
+			var err error
+			switch arrayType := literal.Elt.(type) {
+			case *ast.Ident:
+				structProto, err = g.runner.GetDefinition(arrayType.Name)
+				if err != nil {
+					return nil, wrap(f, n, trace.Wrap(err))
+				}
+			case *ast.SelectorExpr:
+				module, ok := arrayType.X.(*ast.Ident)
+				if !ok {
+					return nil, wrap(f, n, trace.BadParameter("expected identifier, got %T", arrayType.X))
+				}
+				plugin, ok := g.plugins[module.Name]
+				if !ok {
+					return nil, wrap(f, n, trace.BadParameter("plugin %v is not found", module.Name))
+				}
+				structProto, err = plugin.GetDefinition(arrayType.Sel.Name)
+				if err != nil {
+					return nil, wrap(f, n, trace.Wrap(err))
+				}
+			default:
+				return nil, wrap(f, n, trace.BadParameter("unsupported composite literal: %v %T", literal.Elt, literal.Elt))
+			}
+			structType, ok := structProto.(reflect.Type)
 			if !ok {
-				return nil, trace.BadParameter("unsupported composite literal: %v %T", literal.Elt, literal.Elt)
+				return nil, wrap(f, n, trace.BadParameter("expected type, got %T", structProto))
 			}
-			structProto, err := g.getStruct(arrayType.Name)
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			slice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(structProto)), len(l.Elts), len(l.Elts))
+			slice := reflect.MakeSlice(reflect.SliceOf(structType), len(l.Elts), len(l.Elts))
 			for i, el := range l.Elts {
 				member, ok := el.(*ast.CompositeLit)
 				if !ok {
-					return nil, trace.BadParameter("unsupported composite literal type: %T", l.Type)
+					return nil, wrap(f, n, trace.BadParameter("unsupported composite literal type: %T", l.Type))
 				}
-				fields, err := g.parseStructFields(scope, member.Elts)
+				fields, err := g.parseStructFields(f, scope, member.Elts)
 				if err != nil {
-					return nil, trace.Wrap(err)
+					return nil, wrap(f, n, trace.Wrap(err))
 				}
 				st, err := createStruct(structProto, fields)
 				if err != nil {
-					return nil, trace.Wrap(err)
+					return nil, wrap(f, n, trace.Wrap(err))
 				}
 				v := slice.Index(i)
 				v.Set(reflect.ValueOf(st))
 			}
 			return slice.Interface(), nil
 		default:
-			return nil, trace.BadParameter("unsupported composite literal: %v %T", l.Type, l.Type)
+			return nil, wrap(f, n, trace.BadParameter("unsupported composite literal: %v %T", l.Type, l.Type))
 		}
 	case *ast.BasicLit:
 		val, err := literalToValue(l)
 		if err != nil {
-			return nil, err
+			return nil, wrap(f, n, err)
 		}
 		return val, nil
 	case *ast.Ident:
@@ -429,7 +458,7 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 		} else if l.Name == "false" {
 			return force.Bool(false), nil
 		}
-		val, err := getIdentifier(l)
+		val, err := getIdentifier(f, l)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -450,34 +479,52 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 			// returned with NewInstance call
 			newScope, fn = newFn.NewInstance(scope)
 		case *ast.FuncLit:
-			expr, err := g.parseExpr(scope, l.Fun)
+			expr, err := g.parseExpr(f, scope, l.Fun)
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
 			var ok bool
 			newFn, ok = expr.(force.Function)
 			if !ok {
-				return nil, trace.BadParameter("expected lambda function, got %v instead", expr)
+				return nil, wrap(f, n, trace.BadParameter("expected lambda function, got %v instead", expr))
+			}
+			newScope, fn = newFn.NewInstance(scope)
+		case *ast.SelectorExpr:
+			module, ok := call.X.(*ast.Ident)
+			if !ok {
+				return nil, wrap(f, n, trace.BadParameter("expected identifier, got %T", call.X))
+			}
+			plugin, ok := g.plugins[module.Name]
+			if !ok {
+				return nil, wrap(f, n, trace.BadParameter("plugin %v is not found", module.Name))
+			}
+			fnI, err := plugin.GetDefinition(call.Sel.Name)
+			if err != nil {
+				return nil, wrap(f, n, trace.Wrap(err))
+			}
+			newFn, ok := fnI.(force.Function)
+			if !ok {
+				return nil, wrap(f, n, trace.BadParameter("expected function, got %T for call %v.%v", fnI, call.X, call.Sel.Name))
 			}
 			newScope, fn = newFn.NewInstance(scope)
 		default:
-			return nil, trace.BadParameter("unsupported function %T", l.Fun)
+			return nil, wrap(f, n, trace.BadParameter("unsupported function %T", l.Fun))
 		}
 		// evaluate arguments within a new lexical scope
 		nodes := make([]ast.Node, len(l.Args))
 		for i := range l.Args {
 			nodes[i] = l.Args[i]
 		}
-		arguments, err := g.parseArguments(newScope, nodes)
+		arguments, err := g.parseArguments(f, newScope, nodes)
 		if err != nil {
-			return nil, err
+			return nil, wrap(f, n, err)
 		}
 		lambda, ok := newFn.(*force.LambdaFunction)
 		if !ok {
 			return callFunction(fn, arguments)
 		}
 		if len(arguments) != len(lambda.Params) {
-			return nil, trace.BadParameter("expected %v params, found %v", len(lambda.Params), len(arguments))
+			return nil, wrap(f, n, trace.BadParameter("expected %v params, found %v", len(lambda.Params), len(arguments)))
 		}
 		callScope := force.WithLexicalScope(lambda.Scope)
 		// in case of lambda function, passed arguments
@@ -486,7 +533,7 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 		for i, param := range lambda.Params {
 			def, err := force.Define(callScope)(force.String(param.Name), arguments[i])
 			if err != nil {
-				return nil, trace.Wrap(err)
+				return nil, wrap(f, n, trace.Wrap(err))
 			}
 			callArgs[i] = def
 		}
@@ -496,34 +543,34 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 		}, nil
 	case *ast.AssignStmt:
 		if len(l.Lhs) != 1 || len(l.Rhs) != 1 {
-			return nil, trace.BadParameter("multiple assignment expressions are not supported")
+			return nil, wrap(f, n, trace.BadParameter("multiple assignment expressions are not supported"))
 		}
 		id, ok := l.Lhs[0].(*ast.Ident)
 		if !ok {
-			return nil, trace.BadParameter("expected identifier, got %T", l.Lhs[0])
+			return nil, wrap(f, n, trace.BadParameter("expected identifier, got %T", l.Lhs[0]))
 		}
-		value, err := g.parseExpr(scope, l.Rhs[0])
+		value, err := g.parseExpr(f, scope, l.Rhs[0])
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, wrap(f, n, trace.Wrap(err))
 		}
 		return force.Define(scope)(force.String(id.Name), value)
 	case *ast.UnaryExpr:
 		if l.Op != token.AND {
-			return nil, trace.BadParameter("operator %v is not supported", l.Op)
+			return nil, wrap(f, n, trace.BadParameter("operator %v is not supported", l.Op))
 		}
-		expr, err := g.parseExpr(scope, l.X)
+		expr, err := g.parseExpr(f, scope, l.X)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 		if reflect.TypeOf(expr).Kind() != reflect.Struct {
-			return nil, trace.BadParameter("don't know how to take address of %v", reflect.TypeOf(expr).Kind())
+			return nil, wrap(f, n, trace.BadParameter("don't know how to take address of %v", reflect.TypeOf(expr).Kind()))
 		}
 		ptr := reflect.New(reflect.TypeOf(expr))
 		ptr.Elem().Set(reflect.ValueOf(expr))
 		return ptr.Interface(), nil
 	case *ast.FuncLit:
 		if l.Type.Results != nil && len(l.Type.Results.List) != 0 {
-			return nil, trace.BadParameter("functions with return values are not supported")
+			return nil, wrap(f, n, trace.BadParameter("functions with return values are not supported"))
 		}
 		lambda := &force.LambdaFunction{
 			Scope: force.WithLexicalScope(scope),
@@ -531,16 +578,16 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 		if l.Type.Params != nil && len(l.Type.Params.List) != 0 {
 			for i, p := range l.Type.Params.List {
 				if len(p.Names) != 1 {
-					return nil, trace.BadParameter("lambda function parameter %v name is not supported", i)
+					return nil, wrap(f, n, trace.BadParameter("lambda function parameter %v name is not supported", i))
 				}
-				arg, err := g.evalFunctionArg(p.Type)
+				arg, err := g.evalFunctionArg(f, p.Type)
 				if err != nil {
-					return nil, trace.Wrap(err)
+					return nil, wrap(f, n, trace.Wrap(err))
 				}
 				param := force.LambdaParam{Name: p.Names[0].Name, Prototype: arg}
 				lambda.Params = append(lambda.Params, param)
 				if err := lambda.Scope.AddDefinition(param.Name, arg); err != nil {
-					return nil, trace.Wrap(err)
+					return nil, wrap(f, n, trace.Wrap(err))
 				}
 			}
 		}
@@ -550,34 +597,47 @@ func (g *gParser) parseExpr(scope force.Group, n ast.Node) (interface{}, error) 
 			nodes[i] = l.Body.List[i]
 		}
 		var err error
-		lambda.Statements, err = g.parseStatements(lambda.Scope, nodes)
+		lambda.Statements, err = g.parseStatements(f, lambda.Scope, nodes)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, wrap(f, n, trace.Wrap(err))
 		}
 		return lambda, nil
 	case *ast.ExprStmt:
-		return g.parseExpr(scope, l.X)
+		return g.parseExpr(f, scope, l.X)
+	case *ast.SelectorExpr:
+		fields := []force.String{force.String(l.Sel.Name)}
+	accumulate:
+		switch selector := l.X.(type) {
+		case *ast.Ident:
+			return force.Var(scope)(force.String(selector.Name), fields...)
+		case *ast.SelectorExpr:
+			l = selector
+			fields = append([]force.String{force.String(selector.Sel.Name)}, fields...)
+			goto accumulate
+		default:
+			return nil, wrap(f, n, trace.BadParameter("expected identifier, got %T for %v", l.X, l.X))
+		}
 	default:
-		return nil, trace.BadParameter("%T is not supported", n)
+		return nil, wrap(f, n, trace.BadParameter("%T is not supported", n))
 	}
 }
 
-func (g *gParser) evalFunctionArg(n ast.Node) (interface{}, error) {
+func (g *gParser) evalFunctionArg(f *token.FileSet, n ast.Node) (interface{}, error) {
 	switch l := n.(type) {
 	case *ast.Ident:
 		return literalZeroValue(l.Name)
 	case *ast.ArrayType:
 		arrayType, ok := l.Elt.(*ast.Ident)
 		if !ok {
-			return nil, trace.BadParameter("unsupported composite literal: %v %T", l.Elt, l.Elt)
+			return nil, wrap(f, n, trace.BadParameter("unsupported composite literal: %v %T", l.Elt, l.Elt))
 		}
 		switch arrayType.Name {
 		case "string":
 			return []force.String{}, nil
 		}
-		return nil, trace.BadParameter("%T is not supported", n)
+		return nil, wrap(f, n, trace.BadParameter("%T is not supported", n))
 	default:
-		return nil, trace.BadParameter("%T is not supported", n)
+		return nil, wrap(f, n, trace.BadParameter("%T is not supported", n))
 	}
 }
 
@@ -601,18 +661,18 @@ func (g *gParser) getFunction(scope force.Group, name string) (force.Function, e
 	return fn, nil
 }
 
-func getIdentifier(node ast.Node) (string, error) {
+func getIdentifier(f *token.FileSet, node ast.Node) (string, error) {
 	sexpr, ok := node.(*ast.SelectorExpr)
 	if ok {
 		id, ok := sexpr.X.(*ast.Ident)
 		if !ok {
-			return "", trace.BadParameter("expected selector identifier, got: %T in %#v", sexpr.X, sexpr.X)
+			return "", wrap(f, node, trace.BadParameter("expected selector identifier, got: %T in %#v", sexpr.X, sexpr.X))
 		}
 		return fmt.Sprintf("%s.%s", id.Name, sexpr.Sel.Name), nil
 	}
 	id, ok := node.(*ast.Ident)
 	if !ok {
-		return "", trace.BadParameter("expected identifier, got: %T", node)
+		return "", wrap(f, node, trace.BadParameter("expected identifier, got: %T", node))
 	}
 	return id.Name, nil
 }
@@ -679,15 +739,18 @@ func callFunction(f interface{}, args []interface{}) (v interface{}, err error) 
 func createStruct(val interface{}, args map[string]interface{}) (v interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = trace.BadParameter("struct %v: %v", reflect.TypeOf(val).Name(), r)
+			err = trace.BadParameter("struct %v: %v %v %v", force.StructName(reflect.TypeOf(val)), r, val, args)
 		}
 	}()
-	structType := reflect.TypeOf(val)
+	structType, ok := val.(reflect.Type)
+	if !ok {
+		return nil, trace.BadParameter("expected type, got %T", val)
+	}
 	st := reflect.New(structType)
 	for key, val := range args {
 		field := st.Elem().FieldByName(key)
 		if !field.IsValid() {
-			return nil, trace.BadParameter("field %q is not found in %v", key, structType.Name())
+			return nil, trace.BadParameter("field %q is not found in %v", key, force.StructName(reflect.TypeOf(structType)))
 		}
 		if !field.CanSet() {
 			return nil, trace.BadParameter("can't set value of %v", field)
@@ -695,4 +758,17 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 		field.Set(reflect.ValueOf(val))
 	}
 	return st.Elem().Interface(), nil
+}
+
+// wrap wraps parse error
+func wrap(f *token.FileSet, n ast.Node, err error) error {
+	if _, ok := trace.Unwrap(err).(*force.CodeError); ok {
+		return err
+	}
+	return &force.CodeError{
+		Snippet: force.Snippet{
+			Pos: f.Position(n.Pos()),
+		},
+		Err: err,
+	}
 }

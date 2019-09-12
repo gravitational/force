@@ -57,127 +57,82 @@ const (
 	FrontendDockerfile = "dockerfile.v0"
 )
 
-// BuilderConfig specifies builder config
-type BuilderConfig struct {
+// Config specifies builder config
+type Config struct {
 	// Context is an execution context for the plugin setup
 	Context force.ExecutionContext `code:"-"`
 	// Group is a process group that this plugin sets up for
 	Group force.Group `code:"-"`
 	// GlobalContext is a base directory path for overlayfs other types
 	// of snapshotting
-	GlobalContext force.StringVar
+	GlobalContext string
 	// Backend specifies build backend
-	Backend force.StringVar
+	Backend string
 	// SessionName is a default build session name
-	SessionName force.StringVar
+	SessionName string
 	// Server is an optional registry server to login into
-	Server force.StringVar
+	Server string
 	// Username is the registry username
-	Username force.StringVar
+	Username string
 	// Secret is a registry secret
-	Secret force.StringVar
+	Secret string
 	// SecretFile is a path to registry secret file
-	SecretFile force.StringVar
+	SecretFile string
 	// Insecure turns off security for image pull/push
-	Insecure force.BoolVar
-}
-
-// evaluatedConfig contains evaluated configuration parameters
-type evaluatedConfig struct {
-	group         force.Group
-	context       force.ExecutionContext
-	server        string
-	username      string
-	secret        string
-	globalContext string
-	backend       string
-	sessionName   string
-	insecure      bool
+	Insecure bool
 }
 
 // CheckAndSetDefaults checks and sets default values
-func (i *BuilderConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
-	if i.Context == nil {
-		return nil, trace.BadParameter("missing parameter Context")
+func (cfg *Config) CheckAndSetDefaults() error {
+	if cfg.Context == nil {
+		return trace.BadParameter("missing parameter Context")
 	}
-	if i.Group == nil {
-		return nil, trace.BadParameter("missing parameter Group")
+	if cfg.Group == nil {
+		return trace.BadParameter("missing parameter Group")
 	}
-	cfg := evaluatedConfig{
-		group:   i.Group,
-		context: i.Context,
-	}
-	var err error
-	cfg.globalContext, err = force.EvalString(ctx, i.GlobalContext)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if cfg.globalContext == "" {
+	if cfg.GlobalContext == "" {
 		baseDir := os.Getenv("HOME")
 		if baseDir == "" {
 			baseDir = os.TempDir()
 		}
-		cfg.globalContext = filepath.Join(baseDir, ".local", "share", "img")
+		cfg.GlobalContext = filepath.Join(baseDir, ".local", "share", "img")
 	}
-	cfg.backend, err = force.EvalString(ctx, i.GlobalContext)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if cfg.backend == "" {
-		err := overlay.Supported(cfg.globalContext)
+	if cfg.Backend == "" {
+		err := overlay.Supported(cfg.GlobalContext)
 		if err == nil {
-			cfg.backend = OverlayFSBackend
+			cfg.Backend = OverlayFSBackend
 		} else {
-			cfg.backend = NativeBackend
+			cfg.Backend = NativeBackend
 			force.Debugf("Picking native backend, overlayfs is not supported: %v.", err)
 		}
 	}
-	if cfg.sessionName, err = force.EvalString(ctx, i.SessionName); err != nil {
-		return nil, trace.Wrap(err)
+	if cfg.SessionName == "" {
+		cfg.SessionName = SessionName
 	}
-	if cfg.sessionName == "" {
-		i.SessionName = force.String(SessionName)
-	}
-	if cfg.username, err = force.EvalString(ctx, i.Username); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	secretFile, err := force.EvalString(ctx, i.SecretFile)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if secretFile != "" {
-		data, err := ioutil.ReadFile(secretFile)
+	if cfg.SecretFile != "" {
+		data, err := ioutil.ReadFile(cfg.SecretFile)
 		if err != nil {
-			return nil, trace.ConvertSystemError(err)
+			return trace.ConvertSystemError(err)
 		}
-		i.Secret = force.String(data)
+		cfg.Secret = string(data)
 	}
-	if cfg.secret, err = force.EvalString(ctx, i.Secret); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if cfg.server, err = force.EvalString(ctx, i.Server); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if cfg.insecure, err = force.EvalBool(ctx, i.Insecure); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &cfg, nil
+	return nil
 }
 
 // Image specifies docker image to build
 type Image struct {
 	// Context is a path or URL to the bulid context
-	Context force.StringVar
+	Context string
 	// Dockerfile is a path or the URL to the dockerfile
-	Dockerfile force.StringVar
+	Dockerfile string
 	// Tag is a tag in the spec of image:tag (optional tag part)
-	Tag force.StringVar
+	Tag string
 	// NoCache turns off caching
-	NoCache force.BoolVar
+	NoCache bool
 	// Platforms is a list of target platforms
-	Platforms []force.StringVar
+	Platforms []string
 	// Target is the target build stage to build
-	Target force.StringVar
+	Target string
 	// Secrets is a list of secrets
 	// mounted in the build container
 	Secrets []Secret
@@ -188,16 +143,16 @@ type Image struct {
 // Secret is a secret passed to docker builds
 type Secret struct {
 	// ID is a secret ID
-	ID force.StringVar
+	ID string
 	// File is a path to a secret
-	File force.StringVar
+	File string
 }
 
 func (s *Secret) CheckAndSetDefaults() error {
-	if s.ID == nil {
+	if s.ID == "" {
 		return trace.BadParameter("missing ID value of the secret")
 	}
-	if s.File == nil {
+	if s.File == "" {
 		return trace.BadParameter("missing File of the secret %q", s.ID)
 	}
 	return nil
@@ -205,16 +160,16 @@ func (s *Secret) CheckAndSetDefaults() error {
 
 type Arg struct {
 	// Key is a build argument key
-	Key force.StringVar
+	Key string
 	// Val is a build argument value
-	Val force.StringVar
+	Val string
 }
 
 func (a *Arg) CheckAndSetDefaults() error {
-	if a.Key == nil {
+	if a.Key == "" {
 		return trace.BadParameter("missing Key value of the build argument")
 	}
-	if a.Val == nil {
+	if a.Val == "" {
 		return trace.BadParameter("missing Val value of the build argument %q", a.Key)
 	}
 	return nil
@@ -228,42 +183,26 @@ const (
 )
 
 // CheckAndSetDefaults checks and sets default values
-func (i *Image) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	tagName, err := force.EvalString(ctx, i.Tag)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if tagName == "" {
+func (i *Image) CheckAndSetDefaults() error {
+	if i.Tag == "" {
 		return trace.BadParameter("specify image tag, e.g. 'example'")
 	}
-	_, err = reference.ParseNormalizedNamed(tagName)
+	_, err := reference.ParseNormalizedNamed(i.Tag)
 	if err != nil {
-		return trace.BadParameter("parsing image name %q failed: %v", tagName, err)
+		return trace.BadParameter("parsing image name %q failed: %v", i.Tag, err)
 	}
-	if i.Context == nil {
-		i.Context = force.String(CurrentDir)
+	if i.Context == "" {
+		i.Context = CurrentDir
 	}
-	contextPath, err := i.Context.Eval(ctx)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if contextPath == "" {
-		i.Context = force.String(CurrentDir)
-	}
-	dockerfilePath, err := force.EvalString(ctx, i.Dockerfile)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if dockerfilePath == "" {
-		dockerfilePath, err := securejoin.SecureJoin(contextPath, Dockerfile)
+	if i.Dockerfile == "" {
+		i.Dockerfile, err = securejoin.SecureJoin(i.Context, Dockerfile)
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		i.Dockerfile = force.String(dockerfilePath)
 	}
 
 	if len(i.Platforms) == 0 {
-		i.Platforms = []force.StringVar{force.String(platforms.DefaultString())}
+		i.Platforms = []string{platforms.DefaultString()}
 	}
 	for _, s := range i.Secrets {
 		if err := s.CheckAndSetDefaults(); err != nil {
@@ -283,8 +222,8 @@ func (i Image) String() string {
 }
 
 // New returns a new builder
-func New(cfg BuilderConfig) (*Builder, error) {
-	evalCfg, err := cfg.CheckAndSetDefaults(nil)
+func New(cfg Config) (*Builder, error) {
+	err := cfg.CheckAndSetDefaults()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -293,7 +232,7 @@ func New(cfg BuilderConfig) (*Builder, error) {
 	}
 
 	// Create the directory used for build snapshots
-	root := filepath.Join(string(evalCfg.globalContext), RuncExecutor, string(evalCfg.backend))
+	root := filepath.Join(cfg.GlobalContext, RuncExecutor, string(cfg.Backend))
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -304,12 +243,12 @@ func New(cfg BuilderConfig) (*Builder, error) {
 	}
 
 	b := &Builder{
-		cfg:         *evalCfg,
+		cfg:         cfg,
 		sessManager: sessManager,
 		root:        root,
 	}
 	// Create the worker opts.
-	opt, err := b.createWorkerOpt(b.cfg.context, true)
+	opt, err := b.createWorkerOpt(b.cfg.Context, true)
 	if err != nil {
 		return nil, trace.Wrap(err, "creating worker opt failed")
 	}
@@ -326,7 +265,7 @@ func New(cfg BuilderConfig) (*Builder, error) {
 // Builder is a new container image builder
 type Builder struct {
 	// cfg is evaluated config
-	cfg         evaluatedConfig
+	cfg         Config
 	logger      force.Logger
 	sessManager *session.Manager
 	root        string

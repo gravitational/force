@@ -45,6 +45,11 @@ github:
 	$(MAKE) all
 	cd examples/github && force -d ci.force
 
+.PHONY: slack
+slack:
+	$(MAKE) all
+	cd examples/slack && force -d ci.force --setup=../github/setup.force
+
 .PHONY: buildbox
 buildbox:
 	$(MAKE) all
@@ -53,7 +58,7 @@ buildbox:
 .PHONY: teleport
 teleport:
 	$(MAKE) all
-	cd examples/teleport && force teleport.force --setup=../github/setup.force  -i build.force
+	cd examples/teleport && force -d teleport.force --setup=../github/setup.force  -i build.force
 
 .PHONY: kube
 kube:

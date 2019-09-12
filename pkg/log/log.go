@@ -1,26 +1,44 @@
-package logging
+package log
 
 import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
 	"os"
+	"reflect"
 
 	"github.com/gravitational/force"
-	"github.com/gravitational/force/pkg/logging/stack"
+	"github.com/gravitational/force/pkg/log/stack"
 
 	"github.com/gravitational/trace"
 	log "github.com/sirupsen/logrus"
 )
 
-// LoggingKey is a wrapper around string
-// to namespace a variable
-type LoggingKey string
+// Scope returns a new scope with all the functions and structs
+// defined, this is the entrypoint into plugin as far as force is concerned
+func Scope() (force.Group, error) {
+	scope := force.WithLexicalScope(nil)
+	err := force.ImportStructsIntoAST(scope,
+		reflect.TypeOf(Config{}),
+		reflect.TypeOf(Output{}),
+	)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	scope.AddDefinition(force.FunctionName(Infof), &force.NopScope{Func: Infof})
+	scope.AddDefinition(force.StructName(reflect.TypeOf(Setup{})), &Setup{})
+	return scope, nil
+}
 
-// LoggingPlugin is a name of the github plugin variable
-const LoggingPlugin = LoggingKey("logging")
+//Namespace is a wrapper around string to namespace a variable in the context
+type Namespace string
+
+// Key is a name of the plugin variable
+const Key = Namespace("log")
 
 const (
+	KeySetup        = "Setup"
+	KeyConfig       = "Config"
 	TypeStackdriver = "stackdriver"
 	TypeStdout      = "stdout"
 )
@@ -29,92 +47,62 @@ const (
 type Output struct {
 	// Type is a logging type, currently supported
 	// is stackdriver and stdout
-	Type force.StringVar
+	Type string
 	// CredentialsFile is a path to credentials file,
 	// used in case of stackdriver plugin
-	CredentialsFile force.StringVar
+	CredentialsFile string
 	// Credentials is a string with creds
-	Credentials force.StringVar
+	Credentials string
 }
 
-type evaluatedOutput struct {
-	otype       string
-	credentials string
-}
-
-// LogConfig is a log configuration
-type LogConfig struct {
+// Config is a log configuration
+type Config struct {
 	// Level is a debugging level
-	Level force.StringVar
+	Level string
 	// Outputs is a list of logging outputs
 	Outputs []Output
 }
 
-type evaluatedConfig struct {
-	level   string
-	outputs []evaluatedOutput
-}
-
 // CheckAndSetDefaults checks and sets default values
-func (cfg *LogConfig) CheckAndSetDefaults(ctx force.ExecutionContext) (*evaluatedConfig, error) {
-	ecfg := evaluatedConfig{}
-	var err error
-	if ecfg.level, err = force.EvalString(ctx, cfg.Level); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if ecfg.level == "" {
-		ecfg.level = log.InfoLevel.String()
+func (cfg *Config) CheckAndSetDefaults() error {
+	if cfg.Level == "" {
+		cfg.Level = log.InfoLevel.String()
 	} else {
-		_, err := log.ParseLevel(ecfg.level)
+		_, err := log.ParseLevel(cfg.Level)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 	}
-
-	for _, o := range cfg.Outputs {
-		var out evaluatedOutput
-		out.otype, err = force.EvalString(ctx, o.Type)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		switch out.otype {
+	for i, o := range cfg.Outputs {
+		switch o.Type {
 		case TypeStackdriver:
-			credentials, err := force.EvalString(ctx, o.Credentials)
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			credentialsFile, err := force.EvalString(ctx, o.CredentialsFile)
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			if credentials == "" && credentialsFile == "" {
-				return nil, trace.BadParameter(
+			if o.Credentials == "" && o.CredentialsFile == "" {
+				return trace.BadParameter(
 					"provide Credentials or CredentialsFile in LoggingConfig when using %q logging,"+
 						" read https://cloud.google.com/logging/docs/agent/authorization for more details.", o.Type)
 			}
-			if credentials != "" && credentialsFile != "" {
-				return nil, trace.BadParameter("provide either Credentials or CredentialsFile, not both for %q logger", o.Type)
+			if o.Credentials != "" && o.CredentialsFile != "" {
+				return trace.BadParameter("provide either Credentials or CredentialsFile, not both for %q logger", o.Type)
 			}
-			if credentialsFile != "" {
-				data, err := ioutil.ReadFile(string(credentialsFile))
+			if o.CredentialsFile != "" {
+				data, err := ioutil.ReadFile(o.CredentialsFile)
 				if err != nil {
-					return nil, trace.Wrap(trace.ConvertSystemError(err), "could not read credentials file")
+					return trace.Wrap(trace.ConvertSystemError(err), "could not read credentials file")
 				}
-				credentials = string(data)
+				o.Credentials = string(data)
 			}
-			out.credentials = credentials
 		case TypeStdout:
 		default:
-			return nil, trace.BadParameter("unsupported %q, supported are: %q, %q", o.Type, TypeStackdriver, TypeStdout)
+			return trace.BadParameter("unsupported %q, supported are: %q, %q", o.Type, TypeStackdriver, TypeStdout)
 		}
-		ecfg.outputs = append(ecfg.outputs, out)
+		cfg.Outputs[i] = o
 	}
-	return &ecfg, nil
+	return nil
 }
 
 // Plugin is a new logging plugin
 type Plugin struct {
-	cfg evaluatedConfig
+	cfg Config
 }
 
 // NewLogger generates a new logger for a process
@@ -136,8 +124,8 @@ func (l *Logger) WithError(err error) force.Logger {
 }
 
 func (l *Logger) URL(ctx force.ExecutionContext) string {
-	for _, o := range l.plugin.cfg.outputs {
-		if o.otype == TypeStackdriver {
+	for _, o := range l.plugin.cfg.Outputs {
+		if o.Type == TypeStackdriver {
 			u, err := url.Parse("https://console.cloud.google.com/logs/viewer")
 			if err != nil {
 				log.Errorf("Failed to parse %v", err)
@@ -163,34 +151,42 @@ func (l *Logger) AddFields(fields map[string]interface{}) force.Logger {
 }
 
 // Log returns action that sets up log plugin
-func Log(cfg LogConfig) (force.Action, error) {
-	return &NewPlugin{
+func Log(cfg interface{}) (force.Action, error) {
+	return &Setup{
 		cfg: cfg,
 	}, nil
 }
 
-// NewPlugin creates new instances of plugins
-type NewPlugin struct {
-	cfg LogConfig
+// Setup creates new instances of plugins
+type Setup struct {
+	cfg interface{}
 }
 
 // NewInstance returns a new instance of a plugin bound to group
-func (n *NewPlugin) NewInstance(group force.Group) (force.Group, interface{}) {
+func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
 	return group, Log
 }
 
 // MarshalCode marshals plugin setup to code
-func (n *NewPlugin) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	return force.NewFnCall(Log, n.cfg).MarshalCode(ctx)
+func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
+	call := force.FnCall{
+		Package: string(Key),
+		FnName:  KeySetup,
+		Args:    []interface{}{n.cfg},
+	}
+	return call.MarshalCode(ctx)
 }
 
 // Run sets up logging plugin for the instance group
-func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
-	cfg, err := n.cfg.CheckAndSetDefaults(ctx)
-	if err != nil {
+func (n *Setup) Run(ctx force.ExecutionContext) error {
+	var cfg Config
+	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
 		return trace.Wrap(err)
 	}
-	level, err := log.ParseLevel(cfg.level)
+	if err := cfg.CheckAndSetDefaults(); err != nil {
+		return trace.Wrap(err)
+	}
+	level, err := log.ParseLevel(cfg.Level)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -203,12 +199,12 @@ func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
 	}
 	log.SetLevel(level)
 	var hasTerminal bool
-	for _, o := range cfg.outputs {
-		switch o.otype {
+	for _, o := range cfg.Outputs {
+		switch o.Type {
 		case TypeStackdriver:
 			h, err := stack.NewHook(stack.Config{
 				Context: group.Context(),
-				Creds:   []byte(o.credentials),
+				Creds:   []byte(o.Credentials),
 			})
 			if err != nil {
 				return trace.Wrap(err)
@@ -218,7 +214,7 @@ func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
 			hasTerminal = trace.IsTerminal(os.Stdout)
 			log.SetOutput(os.Stdout)
 		default:
-			return trace.BadParameter("unsupported %q, supported are: %q, %q", o.otype, TypeStackdriver, TypeStdout)
+			return trace.BadParameter("unsupported %q, supported are: %q, %q", o.Type, TypeStackdriver, TypeStdout)
 		}
 	}
 	// disable line and file info in case if it's not debug
@@ -232,13 +228,13 @@ func (n *NewPlugin) Run(ctx force.ExecutionContext) error {
 		FormatCaller:     formatCaller,
 	})
 	p := &Plugin{
-		cfg: *cfg,
+		cfg: cfg,
 	}
-	group.SetPlugin(LoggingPlugin, p)
+	group.SetPlugin(Key, p)
 	return nil
 }
 
-// Infof returns an action that logs in infor
+// Infof returns an action that logs in info
 func Infof(format force.StringVar, args ...interface{}) force.Action {
 	return &InfofAction{
 		format: format,
@@ -272,8 +268,9 @@ func (s *InfofAction) Run(ctx force.ExecutionContext) error {
 // MarshalCode marshals the action into code representation
 func (s *InfofAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	call := &force.FnCall{
-		Fn:   Infof,
-		Args: []interface{}{s.format},
+		Package: string(Key),
+		Fn:      Infof,
+		Args:    []interface{}{s.format},
 	}
 	call.Args = append(call.Args, s.args...)
 	return call.MarshalCode(ctx)

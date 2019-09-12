@@ -3,17 +3,29 @@ Process(Spec{
 	Watch: Oneshot(),
 	Run: func(){
 		v := "hello"
-		infof(v)
-		infof2(Strings(v, "whoa"))		
-		/*
+		infof(Sprintf("hola: %v %v", v, "bueno"))
+		infof2(Strings(v, "whoa"))
 		infof(Marshal(func(){
-			Infof(Unquote(v))
+			Infof(Sprintf("var: %v", Unquote(v)))
+			Infof(Sprintf("var: %v", Strings("a", "b")))			
 		}()))
-		dir := TempDir()
+		infof(Marshal(log.Setup(log.Config{
+		Level: "info",
+		Outputs: []log.Output{
+			{
+				Type: "stdout",
+			},
+			{
+				Type: "stackdriver",
+				CredentialsFile: ExpectEnv("LOGGING_CREDENTIALS"),
+			},
+		},
+		})))		
+		dir := TempDir("", "")
 		Infof("My dir is %v", dir)
 		Exit()
 		Defer(
-			RemoveDir(dir),
+			RemoveAll(dir),
 		)
 		intVar := 1
 		boolVar := true
@@ -27,6 +39,5 @@ Process(Spec{
 			Infof("Inner scope i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
 		}()
 		Infof("Outer scope after inner i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
-*/
 	},
 })

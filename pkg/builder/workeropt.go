@@ -70,7 +70,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 
 	// Create the snapshotter.
 	var snapshotter ctdsnapshot.Snapshotter
-	switch b.cfg.backend {
+	switch b.cfg.Backend {
 	case NativeBackend:
 		snapshotter, err = native.NewSnapshotter(snapshotRoot)
 	case OverlayFSBackend:
@@ -78,10 +78,10 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 		snapshotter, err = overlay.NewSnapshotter(snapshotRoot)
 	default:
 		// "auto" backend needs to be already resolved on Client instantiation
-		return opt, trace.BadParameter("%s is not a valid snapshots backend", b.cfg.backend)
+		return opt, trace.BadParameter("%s is not a valid snapshots backend", b.cfg.Backend)
 	}
 	if err != nil {
-		return opt, trace.BadParameter("creating %s snapshotter failed: %v", b.cfg.backend, err)
+		return opt, trace.BadParameter("creating %s snapshotter failed: %v", b.cfg.Backend, err)
 	}
 
 	var exe executor.Executor
@@ -116,7 +116,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 
 	// Create the new database for metadata.
 	mdb := ctdmetadata.NewDB(db, contentStore, map[string]ctdsnapshot.Snapshotter{
-		string(b.cfg.backend): snapshotter,
+		string(b.cfg.Backend): snapshotter,
 	})
 	if err := mdb.Init(ctx); err != nil {
 		return opt, trace.Wrap(err)
@@ -144,7 +144,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 		return opt, err
 	}
 
-	xlabels := base.Labels("oci", string(b.cfg.backend))
+	xlabels := base.Labels("oci", string(b.cfg.Backend))
 
 	var supportedPlatforms []specs.Platform
 	for _, p := range binfmt_misc.SupportedPlatforms() {
@@ -162,7 +162,7 @@ func (b *Builder) createWorkerOpt(ctx context.Context, withExecutor bool) (opt b
 		MetadataStore: md,
 		Executor:      exe,
 		Snapshotter: containerdsnapshot.NewSnapshotter(
-			string(b.cfg.backend), mdb.Snapshotter(string(b.cfg.backend)), contentStore, md, "buildkit", gc, nil),
+			string(b.cfg.Backend), mdb.Snapshotter(string(b.cfg.Backend)), contentStore, md, "buildkit", gc, nil),
 		ContentStore:       contentStore,
 		Applier:            apply.NewFileSystemApplier(contentStore),
 		Differ:             walking.NewWalkingDiff(contentStore),

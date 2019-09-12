@@ -48,7 +48,7 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
 	repo := event.Source.Repo
 
 	log := force.Log(ctx)
-	commitRef := event.PR.LastCommit.OID
+	commitRef := event.PullRequest.LastCommit.OID
 
 	_, _, err := p.plugin.client.V3.Repositories.CreateStatus(
 		ctx,

@@ -24,57 +24,34 @@ import (
 )
 
 // Run starts build
-func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
-	if err := img.CheckAndSetDefaults(ectx); err != nil {
+func (b *Builder) Run(ectx force.ExecutionContext, iface interface{}) error {
+	var img Image
+	if err := force.EvalInto(ectx, iface, &img); err != nil {
+		return trace.Wrap(err)
+	}
+
+	if err := img.CheckAndSetDefaults(); err != nil {
 		return trace.Wrap(err)
 	}
 
 	log := force.Log(ectx)
-	tag, err := img.Tag.Eval(ectx)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	dockerfilePath, err := img.Dockerfile.Eval(ectx)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	log.Infof("Building image %v, dockerfile %v.", tag, dockerfilePath)
+	log.Infof("Building image %v, dockerfile %v.", img.Tag, img.Dockerfile)
 
 	// create and execute a build session
-	platforms, err := force.EvalStringVars(ectx, img.Platforms)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	target, err := force.EvalString(ectx, img.Target)
-	if err != nil {
-		return trace.Wrap(err)
-	}
 	frontendAttrs := map[string]string{
 		// We use the base for filename here because we already set up the
 		// local dirs which sets the path in createController.
-		"filename": filepath.Base(dockerfilePath),
-		"target":   target,
-		"platform": strings.Join(platforms, ","),
+		"filename": filepath.Base(img.Dockerfile),
+		"target":   img.Target,
+		"platform": strings.Join(img.Platforms, ","),
 	}
-	noCache, err := force.EvalBool(ectx, img.NoCache)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if noCache {
+	if img.NoCache {
 		frontendAttrs["no-cache"] = ""
 	}
 
 	// Get the build args and add them to frontend attrs.
 	for _, a := range img.Args {
-		key, err := a.Key.Eval(ectx)
-		if err != nil {
-			return trace.Wrap(err)
-		}
-		val, err := a.Val.Eval(ectx)
-		if err != nil {
-			return trace.Wrap(err)
-		}
-		frontendAttrs["build-arg:"+key] = val
+		frontendAttrs["build-arg:"+a.Key] = a.Val
 	}
 
 	sess, sessDialer, err := b.Session(ectx, img)
@@ -100,7 +77,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 			Exporter: "image",
 			ExporterAttrs: map[string]string{
 				// in the future will be multiple tags
-				"name": strings.Join([]string{tag}, ","),
+				"name": strings.Join([]string{img.Tag}, ","),
 			},
 			Frontend:      FrontendDockerfile,
 			FrontendAttrs: frontendAttrs,
@@ -114,7 +91,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 	if err := eg.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
-	log.Infof("Successfully built %v.", tag)
+	log.Infof("Successfully built %v.", img.Tag)
 
 	return nil
 }
@@ -122,23 +99,15 @@ func (b *Builder) Run(ectx force.ExecutionContext, img Image) error {
 // Session creates the session manager and returns the session and it's
 // dialer.
 func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Session, session.Dialer, error) {
-	sess, err := session.NewSession(ctx, string(b.cfg.sessionName), "")
+	sess, err := session.NewSession(ctx, string(b.cfg.SessionName), "")
 	if err != nil {
 		return nil, nil, trace.Wrap(err, "failed to create session")
 	}
 
-	contextPath, err := img.Context.Eval(ctx)
-	if err != nil {
-		return nil, nil, trace.Wrap(err)
-	}
-	dockerfilePath, err := img.Dockerfile.Eval(ctx)
-	if err != nil {
-		return nil, nil, trace.Wrap(err)
-	}
 	var syncedDirs []filesync.SyncedDir
 	for name, d := range map[string]string{
-		"context":    contextPath,
-		"dockerfile": filepath.Dir(dockerfilePath),
+		"context":    img.Context,
+		"dockerfile": filepath.Dir(img.Dockerfile),
 	} {
 		syncedDirs = append(syncedDirs, filesync.SyncedDir{Name: name, Dir: d})
 	}
@@ -152,15 +121,7 @@ func (b *Builder) Session(ctx force.ExecutionContext, img Image) (*session.Sessi
 	if len(img.Secrets) > 0 {
 		files := make([]secretsprovider.FileSource, len(img.Secrets))
 		for i, s := range img.Secrets {
-			id, err := s.ID.Eval(ctx)
-			if err != nil {
-				return nil, nil, trace.Wrap(err)
-			}
-			file, err := s.File.Eval(ctx)
-			if err != nil {
-				return nil, nil, trace.Wrap(err)
-			}
-			files[i] = secretsprovider.FileSource{ID: id, FilePath: file}
+			files[i] = secretsprovider.FileSource{ID: s.ID, FilePath: s.File}
 		}
 		secretStore, err := secretsprovider.NewFileStore(files)
 		if err != nil {

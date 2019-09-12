@@ -25,6 +25,7 @@ require (
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/mitchellh/hashstructure v1.0.0 // indirect
 	github.com/moby/buildkit v0.6.0
+	github.com/nlopes/slack v0.6.0
 	github.com/opencontainers/image-spec v1.0.1
 	github.com/opencontainers/runc v1.0.1-0.20190307181833-2b18fe1d885e
 	github.com/opencontainers/runtime-spec v1.0.1 // indirect

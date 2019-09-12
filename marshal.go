@@ -136,33 +136,61 @@ func MarshalCode(ctx ExecutionContext, iface interface{}) ([]byte, error) {
 	t := reflect.TypeOf(iface)
 	switch t.Kind() {
 	case reflect.Slice:
-		buf := &bytes.Buffer{}
-		io.WriteString(buf, "[]")
-		io.WriteString(buf, t.Elem().Name())
-		io.WriteString(buf, "{")
 		slice := reflect.ValueOf(iface)
-		for i := 0; i < slice.Len(); i++ {
-			if i != 0 {
-				io.WriteString(buf, ",")
+		switch t.Elem().Kind() {
+		case reflect.Struct:
+			buf := &bytes.Buffer{}
+			io.WriteString(buf, "[]")
+			packageName := StructPackageName(t.Elem())
+			if packageName != "" {
+				io.WriteString(buf, packageName+".")
 			}
-			data, err := MarshalCode(ctx, slice.Index(i).Interface())
-			if err != nil {
-				return nil, trace.Wrap(err)
+			io.WriteString(buf, StructName(t.Elem()))
+			io.WriteString(buf, "{")
+			for i := 0; i < slice.Len(); i++ {
+				if i != 0 {
+					io.WriteString(buf, ",")
+				}
+				data, err := MarshalCode(ctx, slice.Index(i).Interface())
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				buf.Write(data)
 			}
-			buf.Write(data)
+			io.WriteString(buf, "}")
+			return buf.Bytes(), nil
+		case reflect.Interface:
+			ifacePtr := reflect.New(t.Elem()).Interface()
+			switch ifacePtr.(type) {
+			case *StringVar:
+				call := &FnCall{
+					Fn:   Strings,
+					Args: make([]interface{}, slice.Len()),
+				}
+				for i := 0; i < slice.Len(); i++ {
+					call.Args[i] = slice.Index(i).Interface()
+				}
+				return call.MarshalCode(ctx)
+			default:
+				return nil, trace.NotImplemented("not implemented yet")
+			}
+		default:
+			return nil, trace.NotImplemented("not implemented")
 		}
-		io.WriteString(buf, "}")
-		return buf.Bytes(), nil
 	case reflect.Struct:
 		buf := &bytes.Buffer{}
-		io.WriteString(buf, t.Name())
+		packageName := StructPackageName(t)
+		if packageName != "" {
+			io.WriteString(buf, packageName+".")
+		}
+		io.WriteString(buf, StructName(t))
 		io.WriteString(buf, "{")
 		v := reflect.ValueOf(iface)
 		fieldCount := 0
 		for i := 0; i < v.NumField(); i++ {
 			fieldVal := v.Field(i).Interface()
 			fieldType := t.Field(i)
-			if fieldVal == nil || fieldType.Tag.Get("code") == "-" {
+			if fieldVal == nil || fieldType.Tag.Get("code") == "-" || fieldType.Name == metadataFieldName {
 				continue
 			}
 			fieldCount++
@@ -181,6 +209,47 @@ func MarshalCode(ctx ExecutionContext, iface interface{}) ([]byte, error) {
 		return buf.Bytes(), nil
 	}
 	return nil, trace.BadParameter("don't know how to marshal %T", iface)
+}
+
+// SetStruct sets struct from the value
+func SetStruct(ctx ExecutionContext, v interface{}) {
+	ctx.SetValue(ContextKey(StructName(reflect.TypeOf(v))), v)
+}
+
+// StructName returns struct name
+func StructName(t reflect.Type) string {
+	name := ""
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+		name = t.Name()
+	}
+	name = t.Name()
+	if name != "" {
+		return name
+	}
+	field, ok := t.FieldByName(metadataFieldName)
+	if !ok {
+		return ""
+	}
+	return field.Type.Name()
+}
+
+// OriginalType is original struct type
+func OriginalType(t reflect.Type) reflect.Type {
+	field, ok := t.FieldByName(metadataFieldName)
+	if !ok {
+		return t
+	}
+	return field.Type
+}
+
+// StructPackageName returns originating package name of this struct
+func StructPackageName(t reflect.Type) string {
+	field, ok := t.FieldByName(metadataFieldName)
+	if !ok {
+		return ""
+	}
+	return filepath.Base(field.Type.PkgPath())
 }
 
 // FunctionName returns function name
@@ -206,6 +275,8 @@ func NewFnCall(fn interface{}, args ...interface{}) *FnCall {
 
 // FnCall is a struct used by marshaler
 type FnCall struct {
+	// Package is a package name
+	Package string
 	// Fn is a function, the name will
 	// be extracted from it
 	Fn interface{}
@@ -219,6 +290,9 @@ type FnCall struct {
 // MarshalCode marshals object to code
 func (f *FnCall) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 	buf := &bytes.Buffer{}
+	if f.Package != "" && f.Package != "." {
+		io.WriteString(buf, f.Package+".")
+	}
 	if f.FnName == "" {
 		io.WriteString(buf, FunctionName(f.Fn))
 	} else {

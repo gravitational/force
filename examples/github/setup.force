@@ -4,20 +4,25 @@ Setup(
 	// Github is a setup of the github plugin valid in the
 	// context of this group, all calls to github methods will be using
 	// this syntax
-	Github(GithubConfig{
+	github.Setup(github.Config{
 		// Token is a github access token
 		// passed to all callers in the group
 		TokenFile: ExpectEnv("GITHUB_ACCESS_TOKEN_FILE"),
 	}),
 
 	// Git sets up git client for cloning repositories
-	Git(GitConfig{
+	git.Setup(git.Config{
 		PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
 		KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
 	}),
 
+	// Slack sets up slack token
+	slack.Setup(slack.Config{
+		Token: ExpectEnv("SLACK_TOKEN"),
+	}),	
+
 	// Builder configures docker builder
-	Builder(BuilderConfig{
+	builder.Setup(builder.Config{
 		// Logs into quay io server
 		Server: "gcr.io",
 		// Username is a username to login with the registry server
@@ -30,9 +35,9 @@ Setup(
  	// Logging sets up logging to stackdriver
 	// and stdout as well, with the current implementation,
 	// it should go first so other plugins can use it
-	Log(LogConfig{
+	log.Setup(log.Config{
 		Level: "info",
-		Outputs: []Output{
+		Outputs: []log.Output{
 			{
 				Type: "stdout",
 			},
@@ -44,7 +49,7 @@ Setup(
 	}),
 
 	// Kube sets up kubernetes
-	Kube(KubeConfig{
+	kube.Setup(kube.Config{
 		// Path is a path to kubeconfig,
 		// which is optional, if not set,
 		// force assumes that it is running inside kubernetes

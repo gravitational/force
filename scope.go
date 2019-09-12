@@ -2,6 +2,7 @@ package force
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/gravitational/trace"
@@ -41,6 +42,58 @@ type LexScope struct {
 	defs map[string]interface{}
 }
 
+// ImportStructsIntoAST converts structs to AST compatible
+// types and registers definitions in the
+func ImportStructsIntoAST(l *LexScope, structs ...reflect.Type) error {
+	for i := range structs {
+		t := structs[i]
+		if t.Kind() != reflect.Struct {
+			return trace.BadParameter("expected %v to be struct, got %v", t, t.Kind())
+		}
+		out, err := ConvertTypeToAST(t)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		structName := StructName(out)
+		if structName == "" {
+			return trace.BadParameter("failed to get struct name from %T", out)
+		}
+		_, err = l.GetDefinition(structName)
+		if trace.IsNotFound(err) {
+			if err := l.AddDefinition(structName, out); err != nil {
+				return trace.Wrap(err)
+			}
+		} else if err != nil {
+			return trace.Wrap(err)
+		}
+		for j := 0; j < out.NumField(); j++ {
+			field := out.Field(j)
+			if field.Tag.Get(codeTag) == codeSkip {
+				continue
+			}
+			switch field.Type.Kind() {
+			case reflect.Ptr:
+				if field.Type.Elem().Kind() == reflect.Struct {
+					if err := ImportStructsIntoAST(l, field.Type.Elem()); err != nil {
+						return trace.Wrap(err)
+					}
+				}
+			case reflect.Struct:
+				if err := ImportStructsIntoAST(l, field.Type); err != nil {
+					return trace.Wrap(err)
+				}
+			case reflect.Slice:
+				if field.Type.Elem().Kind() == reflect.Struct {
+					if err := ImportStructsIntoAST(l, field.Type.Elem()); err != nil {
+						return trace.Wrap(err)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // AddDefinition defines variable to track its type
 // the variable is set on the execution context
 func (l *LexScope) AddDefinition(name string, v interface{}) error {
@@ -54,10 +107,6 @@ func (l *LexScope) AddDefinition(name string, v interface{}) error {
 	}
 	if _, ok := l.defs[name]; ok {
 		return trace.BadParameter("variable %v is already defined", name)
-	}
-	err := checkDefinedType(v)
-	if err != nil {
-		return trace.Wrap(err)
 	}
 	l.defs[name] = v
 	return nil
@@ -78,9 +127,9 @@ func (l *LexScope) GetDefinition(name string) (interface{}, error) {
 	}
 	if l.Group == nil {
 		if trace.IsDebug() {
-			return nil, trace.NotFound("variable %v is not defined, defined are %v", name, l.Variables())
+			return nil, trace.NotFound("%v is not defined, defined are %v", name, l.Variables())
 		}
-		return nil, trace.NotFound("variable %v is not defined", name)
+		return nil, trace.NotFound("%v is not defined", name)
 	}
 	return l.Group.GetDefinition(name)
 }
@@ -102,30 +151,4 @@ func (l *LexScope) Variables() []string {
 		out = append(out, fmt.Sprintf("p(%v)", p))
 	}
 	return out
-}
-
-func checkDefinedType(v interface{}) error {
-	switch v.(type) {
-	case StringVar:
-		return nil
-	case String:
-		return nil
-	case IntVar:
-		return nil
-	case Int:
-		return nil
-	case BoolVar:
-		return nil
-	case Bool:
-		return nil
-	case Action:
-		return nil
-	case []String:
-		return nil
-	case []StringVar:
-		return nil
-	case StringsVar:
-		return nil
-	}
-	return trace.BadParameter("%T is not a supported variable type, supported are int, bool and string", v)
 }

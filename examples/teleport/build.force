@@ -6,9 +6,9 @@ func(){
 			// Logging sets up logging to stackdriver
 			// and stdout as well, with the current implementation,
 			// it should go first so other plugins can use it
-			Log(LogConfig{
+			log.Setup(log.Config{
 				Level: "info",
-				Outputs: []Output{
+				Outputs: []log.Output{
 					{
 						Type: "stdout",
 					},
@@ -19,12 +19,12 @@ func(){
 				},
 			}),
 			// Git sets up git client for cloning repositories
-			Git(GitConfig{
+			git.Setup(git.Config{
 				PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
 				KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
 			}),
 			// Builder configures docker builder
-			Builder(BuilderConfig{
+			builder.Setup(builder.Config{
 				// Logs into quay io server
 				Server: "gcr.io",
 				// Username is a username to login with the registry server
@@ -36,24 +36,24 @@ func(){
 		),
 	)
 
-	forceImage := "gcr.io/kubeadm-167321/force:0.0.2-1"
+	forceImage := "gcr.io/kubeadm-167321/force:0.0.1-14"
 	
 	RunBuildJob := func(image string, script string){
-		Run(Job{
+		kube.Run(kube.Job{
 			Name: Sprintf("tele-build-%v", ID()),
-			Volumes: []Volume{
-				{Name: "creds", Secret: &SecretSource{Name: "creds"}},
-				{Name: "gitkey", Secret: &SecretSource{Name: "gitkey"}},						
-				{Name: "scripts", ConfigMap: &ConfigMapSource{Name: "scripts"}},
-				{Name: "cache", EmptyDir: &EmptyDirSource{}},
-				{Name: "tmp", EmptyDir: &EmptyDirSource{}},
+			Volumes: []kube.Volume{
+				{Name: "creds", Secret: &kube.Secret{Name: "creds"}},
+				{Name: "gitkey", Secret: &kube.Secret{Name: "gitkey"}},						
+				{Name: "scripts", ConfigMap: &kube.ConfigMap{Name: "scripts"}},
+				{Name: "cache", EmptyDir: &kube.EmptyDir{}},
+				{Name: "tmp", EmptyDir: &kube.EmptyDir{}},
 			},
-			Containers: []Container{
+			Containers: []kube.Container{
 				{
 					Name: "kbuild",
 					Image: forceImage,
 					Command: Strings("force", "-d"),					
-					Env: []EnvVar{
+					Env: []kube.EnvVar{
 						// ID is passed so the job spawned in k8s
 						// will have the same job id, having the same logs
 						{Name: "FORCE_ID",Value: ID()},
@@ -73,7 +73,7 @@ func(){
 						{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
 						{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},
 					},
-					VolumeMounts: []VolumeMount{
+					VolumeMounts: []kube.VolumeMount{
 						// tmp is for temporary directory, just in case
 						{Name: "tmp", MountPath: "/tmp"},
 						// cache is for container build cache
@@ -85,7 +85,7 @@ func(){
 						// scripts is a script with a dockerfile
 						{Name: "scripts", MountPath: "/mnt/scripts"},								
 					},
-					SecurityContext: &SecurityContext{Privileged: true},
+					SecurityContext: &kube.SecurityContext{Privileged: true},
 				},
 			},
 		})
@@ -108,11 +108,11 @@ func(){
 				Run: func(){
 					Defer(Exit())
 					// Create temporary directory
-					tempDir := TempDir()
+					tempDir := TempDir("", "")
 					// Remove it at the end of this sequence
-					Defer(RemoveDir(tempDir))
+					Defer(RemoveAll(tempDir))
 					// Clone clones git repository into temp dir
-					Clone(Repo{
+					git.Clone(git.Repo{
 						URL: "git@github.com:gravitational/teleport.git",
 						Into: tempDir,
 						// Commit is a commit variable defined by pull request watch,
@@ -122,7 +122,7 @@ func(){
 						Submodules: Strings("e"),
 					})
 					// Build builds dockerfile and tags it in the local storage
-					Build(Image{
+					builder.Build(builder.Image{
 						// Set build context to the cloned repository
 						Context: tempDir,
 						// Dockerfile is a dockerfile to build (from current dir),
@@ -131,14 +131,14 @@ func(){
 						// Sprintf and every other method that works with our vars
 						Tag: Unquote(image),
 						// Args are build arguments
-						Args: []Arg{
+						Args: []builder.Arg{
 							{Key: "BUILDBOX", Val: Unquote(buildbox)},
 							{Key: "UID", Val: Sprintf("%v", Unquote(uid))},
 							{Key: "GID", Val: Sprintf("%v", Unquote(gid))},
 							{Key: "ETCD_VER", Val: Unquote(etcdVer)},
 						},
 					})
-					Push(Image{Tag: Unquote(image)})
+					builder.Push(builder.Image{Tag: Unquote(image)})
 				},
 			}),
 		)
@@ -147,21 +147,21 @@ func(){
 
 	// RunTestJob runs test job
 	RunTestJob := func(image string, name string, command []string) {
-		Run(Job{
+		kube.Run(kube.Job{
 			Name: name,
-			SecurityContext: &PodSecurityContext{RunAsUser: uid, RunAsGroup: gid},
-			Volumes: []Volume{
-				{Name: "gocache", EmptyDir: &EmptyDirSource{}},
-				{Name: "etcd", EmptyDir: &EmptyDirSource{}},
+			SecurityContext: &kube.PodSecurityContext{RunAsUser: uid, RunAsGroup: gid},
+			Volumes: []kube.Volume{
+				{Name: "gocache", EmptyDir: &kube.EmptyDir{}},
+				{Name: "etcd", EmptyDir: &kube.EmptyDir{}},
 			},
-			Containers: []Container{
+			Containers: []kube.Container{
 				{
 					Image: image,
 					Name: "test",
 					Command: command,
 					WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
-					Env: []EnvVar{{Name: "GOCACHE", Value: "/mnt/gocache"}},
-					VolumeMounts: []VolumeMount{
+					Env: []kube.EnvVar{{Name: "GOCACHE", Value: "/mnt/gocache"}},
+					VolumeMounts: []kube.VolumeMount{
 						{Name: "gocache", MountPath: "/mnt/gocache"},
 						{Name: "etcd", MountPath: "/gopath/src/github.com/gravitational/teleport/examples/etcd/data"},
 					},

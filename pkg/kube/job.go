@@ -31,79 +31,64 @@ const (
 type Job struct {
 	// Completions specifies job completions,
 	// Force's default is not set
-	Completions           force.IntVar
-	ActiveDeadlineSeconds force.IntVar
-	BackoffLimit          force.IntVar
+	Completions           int
+	ActiveDeadlineSeconds int
+	BackoffLimit          int
 	// TTLSeconds provides auto cleanup of the job
-	TTLSeconds      force.IntVar
-	Name            force.StringVar
-	Namespace       force.StringVar
+	TTLSeconds      int
+	Name            string
+	Namespace       string
 	Containers      []Container
 	SecurityContext *PodSecurityContext
 	Volumes         []Volume
 }
 
 type PodSecurityContext struct {
-	RunAsUser  force.IntVar
-	RunAsGroup force.IntVar
+	RunAsUser  int
+	RunAsGroup int
 }
 
-func (s *PodSecurityContext) CheckAndSetDefaults(ctx force.ExecutionContext) error {
+func (s *PodSecurityContext) CheckAndSetDefaults() error {
 	return nil
 }
 
-func (s *PodSecurityContext) Spec(ctx force.ExecutionContext) (*corev1.PodSecurityContext, error) {
-	runAsUser, err := force.EvalPInt64(ctx, s.RunAsUser)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	runAsGroup, err := force.EvalPInt64(ctx, s.RunAsGroup)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+func (s *PodSecurityContext) Spec() (*corev1.PodSecurityContext, error) {
 	return &corev1.PodSecurityContext{
-		RunAsUser:  runAsUser,
-		RunAsGroup: runAsGroup,
+		RunAsUser:  force.PInt64(int64(s.RunAsUser)),
+		RunAsGroup: force.PInt64(int64(s.RunAsGroup)),
 	}, nil
 }
 
 // CheckAndSetDefaults checks and sets defaults
-func (j *Job) CheckAndSetDefaults(ctx force.ExecutionContext) error {
-	name, err := force.EvalString(ctx, j.Name)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if name == "" {
+func (j *Job) CheckAndSetDefaults() error {
+	if j.Name == "" {
 		return trace.BadParameter("specify a job name")
 	}
-	if j.BackoffLimit == nil {
-		j.BackoffLimit = force.Int(0)
-	}
-	if j.TTLSeconds == nil {
+	if j.TTLSeconds == 0 {
 		// 48 hours to clean up old jobs
-		j.TTLSeconds = force.Int(JobTTLSeconds)
+		j.TTLSeconds = JobTTLSeconds
 	}
-	if j.ActiveDeadlineSeconds == nil {
-		j.ActiveDeadlineSeconds = force.Int(ActiveDeadlineSeconds)
+	if j.ActiveDeadlineSeconds == 0 {
+		j.ActiveDeadlineSeconds = ActiveDeadlineSeconds
 	}
-	if j.Namespace == nil {
-		j.Namespace = force.String(DefaultNamespace)
+	if j.Namespace == "" {
+		j.Namespace = DefaultNamespace
 	}
 	if len(j.Containers) == 0 {
 		return trace.BadParameter("the job needs at least one container")
 	}
 	if j.SecurityContext != nil {
-		if err := j.SecurityContext.CheckAndSetDefaults(ctx); err != nil {
+		if err := j.SecurityContext.CheckAndSetDefaults(); err != nil {
 			return trace.Wrap(err)
 		}
 	}
 	for i := range j.Containers {
-		if err := j.Containers[i].CheckAndSetDefaults(ctx); err != nil {
+		if err := j.Containers[i].CheckAndSetDefaults(); err != nil {
 			return trace.Wrap(err)
 		}
 	}
 	for i := range j.Volumes {
-		if err := j.Volumes[i].CheckAndSetDefaults(ctx); err != nil {
+		if err := j.Volumes[i].CheckAndSetDefaults(); err != nil {
 			return trace.Wrap(err)
 		}
 	}
@@ -111,31 +96,13 @@ func (j *Job) CheckAndSetDefaults(ctx force.ExecutionContext) error {
 }
 
 // Spec returns kubernetes version of the job spec
-func (j *Job) Spec(ctx force.ExecutionContext) (*batchv1.Job, error) {
-	name, err := force.EvalString(ctx, j.Name)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	namespace, err := force.EvalString(ctx, j.Namespace)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	backoffLimit, err := force.EvalPInt32(ctx, j.BackoffLimit)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	completions, err := force.EvalPInt32(ctx, j.Completions)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+func (j *Job) Spec() (*batchv1.Job, error) {
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      j.Name,
+			Namespace: j.Namespace,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: backoffLimit,
-			Completions:  completions,
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
@@ -143,22 +110,28 @@ func (j *Job) Spec(ctx force.ExecutionContext) (*batchv1.Job, error) {
 			},
 		},
 	}
+	if j.BackoffLimit != 0 {
+		job.Spec.BackoffLimit = force.PInt32(int32(j.BackoffLimit))
+	}
+	if j.Completions != 0 {
+		job.Spec.Completions = force.PInt32(int32(j.Completions))
+	}
 	if j.SecurityContext != nil {
-		spec, err := j.SecurityContext.Spec(ctx)
+		spec, err := j.SecurityContext.Spec()
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 		job.Spec.Template.Spec.SecurityContext = spec
 	}
 	for _, c := range j.Containers {
-		spec, err := c.Spec(ctx)
+		spec, err := c.Spec()
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 		job.Spec.Template.Spec.Containers = append(job.Spec.Template.Spec.Containers, *spec)
 	}
 	for _, v := range j.Volumes {
-		spec, err := v.Spec(ctx)
+		spec, err := v.Spec()
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -234,11 +207,11 @@ func formatMeta(meta metav1.ObjectMeta) string {
 	if meta.Namespace == "" {
 		return meta.Name
 	}
-	return fmt.Sprintf("%v/%v", Namespace(meta.Namespace), meta.Name)
+	return fmt.Sprintf("%v/%v", namespace(meta.Namespace), meta.Name)
 }
 
-// Namespace returns a default namespace if the specified namespace is empty
-func Namespace(namespace string) string {
+// namespace returns a default namespace if the specified namespace is empty
+func namespace(namespace string) string {
 	if namespace == "" {
 		return DefaultNamespace
 	}

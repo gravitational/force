@@ -3,34 +3,11 @@ package force
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/gravitational/trace"
 )
-
-// TrimSpace trims space and newlines
-func TrimSpace(s StringVar) *TrimSpaceAction {
-	return &TrimSpaceAction{
-		s: s,
-	}
-}
-
-// TrimSpaceAction trims space
-type TrimSpaceAction struct {
-	s StringVar
-}
-
-// Eval trims space
-func (n *TrimSpaceAction) Eval(ctx ExecutionContext) (string, error) {
-	v, err := n.s.Eval(ctx)
-	if err != nil {
-		return "", trace.Wrap(err)
-	}
-	return strings.TrimSpace(v), nil
-}
 
 // EvalStringVars evaluates string vars and returns a slice of strings
 func EvalStringVars(ctx ExecutionContext, in []StringVar) ([]string, error) {
@@ -52,54 +29,14 @@ func EvalStringVars(ctx ExecutionContext, in []StringVar) ([]string, error) {
 	return out, nil
 }
 
-// Env returns action fetching environment variable
-func Env(key String) *EnvAction {
-	return &EnvAction{
-		key: key,
-	}
-}
-
-// EnvAction fetches environment variable
-type EnvAction struct {
-	key String
-}
-
-// Eval fetches environment variable
-func (e *EnvAction) Eval(ctx ExecutionContext) (string, error) {
-	return os.Getenv(string(e.key)), nil
-}
-
-// MarshalCode marshals code
-func (e *EnvAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(Env, e.key).MarshalCode(ctx)
-}
-
 // ExpectEnv returns environment var by key or
 // error if variable not defined
-func ExpectEnv(key String) *ExpectEnvAction {
-	return &ExpectEnvAction{
-		key: key,
-	}
-}
-
-// ExpectEnvAction fetches environment variable
-// and verifies it's not empty
-type ExpectEnvAction struct {
-	key String
-}
-
-// Eval fetches environment variable and verifies it's not empty
-func (e *ExpectEnvAction) Eval(ctx ExecutionContext) (string, error) {
-	val := os.Getenv(string(e.key))
+func ExpectEnv(key string) (string, error) {
+	val := os.Getenv(key)
 	if val == "" {
-		return "", trace.NotFound("define environment variable %q", e.key)
+		return "", trace.NotFound("define environment variable %q", key)
 	}
 	return val, nil
-}
-
-// MarshalCode marshals code
-func (e *ExpectEnvAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(ExpectEnv, e.key).MarshalCode(ctx)
 }
 
 // StringVarSlice is a wrapper around
@@ -112,6 +49,11 @@ func (s StringVarSlice) Eval(ctx ExecutionContext) ([]string, error) {
 	return EvalStringVars(ctx, s)
 }
 
+// Vars returns string vars
+func (s StringVarSlice) Vars() []StringVar {
+	return []StringVar(s)
+}
+
 // Strings returns a list of strings evaluated from the arguments
 func Strings(args ...interface{}) (StringsVar, error) {
 	out := make([]StringVar, len(args))
@@ -119,98 +61,15 @@ func Strings(args ...interface{}) (StringsVar, error) {
 		switch v := args[i].(type) {
 		case StringVar:
 			out[i] = v
+		case String:
+			out[i] = v
 		case string:
 			out[i] = String(v)
 		default:
-			return nil, trace.BadParameter("argument %q is not a string", args[i])
+			return nil, trace.BadParameter("argument %q is not a string, but is %T", v, v)
 		}
 	}
 	return StringVarSlice(out), nil
-}
-
-// TempDir returns new temp dir
-func TempDir() Action {
-	return &TempDirAction{}
-}
-
-// TempDirAction creates temporary directory
-type TempDirAction struct {
-}
-
-func (c *TempDirAction) Run(ctx ExecutionContext) error {
-	_, err := c.Eval(ctx)
-	return trace.Wrap(err)
-}
-
-func (c *TempDirAction) Eval(ctx ExecutionContext) (string, error) {
-	log := Log(ctx)
-	dir, err := ioutil.TempDir("", "")
-	if err != nil {
-		return "", trace.ConvertSystemError(err)
-	}
-	log.Infof("Created temporary directory %v.", dir)
-	return dir, nil
-}
-
-func (c *TempDirAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(TempDir).MarshalCode(ctx)
-}
-
-// CurrentDir returns current dir
-func CurrentDir() Action {
-	return &CurrentDirAction{}
-}
-
-// CurrentDirAction returns current dir
-type CurrentDirAction struct {
-}
-
-func (c *CurrentDirAction) Run(ctx ExecutionContext) error {
-	_, err := c.Eval(ctx)
-	return trace.Wrap(err)
-}
-
-func (c *CurrentDirAction) Eval(ctx ExecutionContext) (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", trace.ConvertSystemError(err)
-	}
-	return dir, nil
-}
-
-func (c *CurrentDirAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(CurrentDir).MarshalCode(ctx)
-}
-
-// RemoveDir returns rm dir action
-func RemoveDir(dir StringVar) Action {
-	return &RemoveDirAction{dir: dir}
-}
-
-// RemoveDirAction removes directory
-type RemoveDirAction struct {
-	dir StringVar
-}
-
-func (c *RemoveDirAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(RemoveDir, c.dir).MarshalCode(ctx)
-}
-
-func (c *RemoveDirAction) Run(ctx ExecutionContext) error {
-	dir, err := c.dir.Eval(ctx)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if dir == "" {
-		return trace.BadParameter("empty dir to remove")
-	}
-	log := Log(ctx)
-	err = os.RemoveAll(dir)
-	if err != nil {
-		return trace.ConvertSystemError(err)
-	}
-	log.Infof("Removed directory path %v.", dir)
-	return nil
 }
 
 // Script is a shell script

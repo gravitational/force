@@ -29,13 +29,13 @@ func main() {
 
 	app := kingpin.New("force", "Force is simple CI/CD tool")
 	app.Flag("debug", "Turn on debugging level").Short('d').BoolVar(&cfg.debug)
-	app.Flag("setup", "Path to setup file").Short('s').StringVar(&cfg.setupFile)
+	app.Flag("setup", "Path to setup file").Short('s').StringVar(&cfg.setup.Filename)
 	app.Flag("include", "Force library file to include").Short('i').StringsVar(&cfg.includeFiles)
-	app.Arg("file", "Force file to run").StringVar(&cfg.forceFile)
+	app.Arg("file", "Force file to run").StringVar(&cfg.force.Filename)
 
 	app.Flag("id", "Optional run ID").Envar("FORCE_ID").StringVar(&cfg.id)
-	app.Flag("setup-script", "Setup script contents").Envar("FORCE_SETUP").StringVar(&cfg.setupScript)
-	app.Arg("file-script", "Force script contents").Envar("FORCE_SCRIPT").StringVar(&cfg.forceScript)
+	app.Flag("setup-script", "Setup script contents").Envar("FORCE_SETUP").StringVar(&cfg.setup.Content)
+	app.Arg("file-script", "Force script contents").Envar("FORCE_SCRIPT").StringVar(&cfg.force.Content)
 
 	_, err := app.Parse(os.Args[1:])
 	if err != nil {
@@ -55,7 +55,11 @@ func main() {
 
 	run, err := generateAndStart(ctx, cfg)
 	if err != nil {
-		log.WithError(err).Errorf("Force exited.")
+		if trace.IsDebug() {
+			fmt.Fprintln(os.Stderr, trace.DebugReport(err))
+		} else {
+			fmt.Fprintln(os.Stderr, err.Error())
+		}
 		os.Exit(1)
 	}
 	select {
@@ -76,10 +80,10 @@ func generateAndStart(ctx context.Context, cfg config) (*runner.Runner, error) {
 	run, err := runner.Parse(runner.Input{
 		Context:        ctx,
 		ID:             cfg.id,
-		Setup:          cfg.setupScript,
-		Script:         cfg.forceScript,
+		Setup:          cfg.setup,
+		Script:         cfg.force,
 		Debug:          cfg.debug,
-		IncludeScripts: cfg.includeScripts,
+		IncludeScripts: cfg.include,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -108,6 +112,7 @@ func setupSignalHandlers() context.Context {
 
 func initLogger(debug bool) error {
 	if debug {
+		trace.SetDebug(true)
 		log.SetLevel(log.DebugLevel)
 	} else {
 		log.SetLevel(log.InfoLevel)
@@ -130,50 +135,48 @@ const (
 
 // config contains force cli parameters
 type config struct {
-	id             string
-	setupFile      string
-	forceFile      string
-	includeFiles   []string
-	includeScripts []string
-	setupScript    string
-	forceScript    string
-	debug          bool
+	id           string
+	setup        runner.Script
+	force        runner.Script
+	includeFiles []string
+	include      []runner.Script
+	debug        bool
 }
 
 func (c *config) CheckAndSetDefaults() error {
-	if c.setupFile != "" && c.setupScript != "" {
+	if c.setup.Content != "" && c.setup.Filename != "" {
 		return trace.BadParameter("supply either setup-script or setup file, not both")
 	}
-	if c.setupFile == "" && c.setupScript == "" {
+	if c.setup.Filename == "" && c.setup.Content == "" {
 		fi, _ := os.Stat(SetupForce)
 		if fi != nil {
 			log.Debugf("Found setup file %v.", SetupForce)
-			c.setupFile = SetupForce
+			c.setup.Filename = SetupForce
 		}
 	}
-	if c.forceFile != "" && c.forceScript != "" {
+	if c.force.Filename != "" && c.force.Content != "" {
 		return trace.BadParameter("supply either script or file, not both")
 	}
-	if c.forceFile == "" && c.forceScript == "" {
+	if c.force.Filename == "" && c.force.Content == "" {
 		fi, _ := os.Stat(GFile)
 		if fi != nil {
 			log.Debugf("Found default script %v.", GFile)
 		}
-		c.forceFile = GFile
+		c.force.Filename = GFile
 	}
-	if c.setupFile != "" {
-		setupScript, err := ioutil.ReadFile(c.setupFile)
+	if c.setup.Filename != "" {
+		setupScript, err := ioutil.ReadFile(c.setup.Filename)
 		if err != nil {
 			return trace.ConvertSystemError(err)
 		}
-		c.setupScript = string(setupScript)
+		c.setup.Content = string(setupScript)
 	}
-	if c.forceFile != "" {
-		forceScript, err := ioutil.ReadFile(c.forceFile)
+	if c.force.Filename != "" {
+		forceScript, err := ioutil.ReadFile(c.force.Filename)
 		if err != nil {
 			return trace.ConvertSystemError(err)
 		}
-		c.forceScript = string(forceScript)
+		c.force.Content = string(forceScript)
 	}
 	if len(c.includeFiles) != 0 {
 		for _, path := range c.includeFiles {
@@ -181,7 +184,7 @@ func (c *config) CheckAndSetDefaults() error {
 			if err != nil {
 				return trace.ConvertSystemError(err)
 			}
-			c.includeScripts = append(c.includeScripts, string(forceScript))
+			c.include = append(c.include, runner.Script{Filename: path, Content: string(forceScript)})
 		}
 	}
 	return nil

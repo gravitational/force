@@ -1,0 +1,16 @@
+Process(Spec{
+	Name: "log",
+	Watch: Oneshot(),
+	Run: func(){
+		ssh.Session(Strings("jenkins.gravitational.io:22"),
+			ssh.Command("ls -l /tmp"),
+			ssh.Copy(ssh.Remote("/home/centos/prize/got"), ssh.Local("/tmp/bla")),
+		)
+		ssh.Command("Xcloud@xcloud.gravitational.io:22", "ps uax")
+		ssh.Command("jenkins.gravitational.io:22", "ls -l /tmp")
+		ssh.Copy("jenkins.gravitational.io:22", ssh.Remote("/home/centos/prize/got"), ssh.Local("/tmp/bla"))
+		ssh.Session(Strings("jenkins.gravitational.io:22", "Xcloud@xcloud.gravitational.io:22"),
+			ssh.Command("hostname"),
+		)
+	},
+})

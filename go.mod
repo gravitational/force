@@ -35,12 +35,15 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
 	github.com/sirupsen/logrus v1.4.1
 	go.etcd.io/bbolt v1.3.2
+	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
 	golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
 	golang.org/x/sync v0.0.0-20190423024810-112230192c58
+	golang.org/x/sys v0.0.0-20190813064441-fde4db37ae7a // indirect
 	google.golang.org/api v0.5.0
 	google.golang.org/genproto v0.0.0-20190508193815-b515fa19cec8
 	google.golang.org/grpc v1.20.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
+	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
 	gopkg.in/src-d/go-git.v4 v4.13.1
 	k8s.io/api v0.0.0-20190620084959-7cf5895f2711
 	k8s.io/apimachinery v0.0.0-20190612205821-1799e75a0719

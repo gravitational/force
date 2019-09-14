@@ -39,6 +39,10 @@ tidy:
 	force examples/demo/4-docker/G --setup=./examples/github/setup.force
 ##
 
+.PHONY: ssh
+ssh: 
+	$(MAKE) all
+	cd examples/ssh && force -d ssh.force
 
 .PHONY: github
 github:

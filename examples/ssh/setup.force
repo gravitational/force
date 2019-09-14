@@ -1,0 +1,24 @@
+Setup(
+	log.Setup(log.Config{
+		Level: "info",
+		Outputs: []log.Output{
+			{
+				Type: "stdout",
+			},
+			{
+				Type: "stackdriver",
+				CredentialsFile: ExpectEnv("LOGGING_CREDENTIALS"),
+			},
+		},
+	}),
+
+	ssh.Setup(ssh.Config{
+		KeyPairs: []ssh.KeyPair{
+			{
+				PrivateKeyFile: ExpectEnv("FORCE_SSH_PRIVATE_KEY_FILE"),
+			},
+		},
+		KnownHostsFile: ExpectEnv("FORCE_SSH_KNOWN_HOSTS_FILE"),
+		User: ExpectEnv("FORCE_SSH_USER"),
+	}),	
+)

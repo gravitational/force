@@ -21,6 +21,7 @@ import (
 	"github.com/gravitational/force/pkg/kube"
 	"github.com/gravitational/force/pkg/log"
 	"github.com/gravitational/force/pkg/slack"
+	"github.com/gravitational/force/pkg/ssh"
 
 	"github.com/gravitational/trace"
 )
@@ -166,6 +167,7 @@ func Parse(i Input) (*Runner, error) {
 		string(builder.Key): builder.Scope,
 		string(kube.Key):    kube.Scope,
 		string(slack.Key):   slack.Scope,
+		string(ssh.Key):     ssh.Scope,
 	}
 	for key, plugin := range plugins {
 		scope, err := plugin()

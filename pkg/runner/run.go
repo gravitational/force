@@ -158,7 +158,7 @@ func (r *Runner) BroadcastEvents() chan<- force.Event {
 func (r *Runner) fanInEvents(channel force.Channel) {
 	log := r.Logger()
 	log.Debugf("Fan in events: %v", channel)
-	if err := channel.Start(r.ctx); err != nil {
+	if err := channel.Start(context.WithValue(r.ctx, force.KeyLog, log)); err != nil {
 		log.Errorf("%v has failed to start: %v", channel, err)
 	}
 

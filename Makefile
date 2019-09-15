@@ -44,6 +44,11 @@ ssh:
 	$(MAKE) all
 	cd examples/ssh && force -d ssh.force
 
+.PHONY: flows
+flows:
+	$(MAKE) all
+	cd examples/flows && force -d ci.force
+
 .PHONY: github
 github:
 	$(MAKE) all

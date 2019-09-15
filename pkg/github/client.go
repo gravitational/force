@@ -55,8 +55,93 @@ func newGithubClient(ctx context.Context, cfg Config) (*GithubClient, error) {
 	}, nil
 }
 
+// GetTeamMembers returns all team members for a given org
+func (m *GithubClient) GetTeamMembers(ctx context.Context, org, slug string) ([]UserObject, error) {
+	var query struct {
+		Organization struct {
+			Team struct {
+				Members struct {
+					Nodes []struct {
+						UserObject
+					}
+					PageInfo struct {
+						EndCursor   githubv4.String
+						HasNextPage bool
+					}
+				} `graphql:"members(first:$memberFirst,after:$memberCursor)"`
+			} `graphql:"team(slug:$teamSlug)"`
+		} `graphql:"organization(login:$orgName)"`
+	}
+
+	vars := map[string]interface{}{
+		"orgName":      githubv4.String(org),
+		"teamSlug":     githubv4.String(slug),
+		"memberFirst":  githubv4.Int(100),
+		"memberCursor": (*githubv4.String)(nil),
+	}
+
+	var users []UserObject
+	for {
+		if err := m.V4.Query(ctx, &query, vars); err != nil {
+			return nil, trace.Wrap(err)
+		}
+		for _, member := range query.Organization.Team.Members.Nodes {
+			users = append(users, member.UserObject)
+		}
+		if !query.Organization.Team.Members.PageInfo.HasNextPage {
+			break
+		}
+		vars["prCursor"] = query.Organization.Team.Members.PageInfo.EndCursor
+	}
+	return users, nil
+}
+
+// GetPullRequestComments returns PR comments
+func (m *GithubClient) GetPullRequestComments(ctx context.Context, repo Repository, prNumber int) ([]CommentObject, error) {
+	var query struct {
+		Repository struct {
+			PullRequest struct {
+				Comments struct {
+					Edges []struct {
+						Node struct {
+							CommentObject
+						}
+					}
+					PageInfo struct {
+						EndCursor   githubv4.String
+						HasNextPage bool
+					}
+				} `graphql:"comments(first:$commentsFirst, after: $commentsCursor)"`
+			} `graphql:"pullRequest(number: $prNumber)"`
+		} `graphql:"repository(owner:$repositoryOwner,name:$repositoryName)"`
+	}
+
+	vars := map[string]interface{}{
+		"repositoryOwner": githubv4.String(repo.Owner),
+		"repositoryName":  githubv4.String(repo.Name),
+		"prNumber":        githubv4.Int(prNumber),
+		"commentsFirst":   githubv4.Int(100),
+		"commentsCursor":  (*githubv4.String)(nil),
+	}
+
+	var comments []CommentObject
+	for {
+		if err := m.V4.Query(ctx, &query, vars); err != nil {
+			return nil, err
+		}
+		for _, comment := range query.Repository.PullRequest.Comments.Edges {
+			comments = append(comments, comment.Node.CommentObject)
+		}
+		if !query.Repository.PullRequest.Comments.PageInfo.HasNextPage {
+			break
+		}
+		vars["commentsCursor"] = query.Repository.PullRequest.Comments.PageInfo.EndCursor
+	}
+	return comments, nil
+}
+
 // GetOpenPullRequests gets the last commit on all open pull requests.
-func (m *GithubClient) GetOpenPullRequests(repo Repository) ([]PullRequest, error) {
+func (m *GithubClient) GetOpenPullRequests(ctx context.Context, repo Repository) ([]PullRequest, error) {
 	var query struct {
 		Repository struct {
 			PullRequests struct {
@@ -99,7 +184,7 @@ func (m *GithubClient) GetOpenPullRequests(repo Repository) ([]PullRequest, erro
 
 	var pullRequests []PullRequest
 	for {
-		if err := m.V4.Query(context.TODO(), &query, vars); err != nil {
+		if err := m.V4.Query(ctx, &query, vars); err != nil {
 			return nil, err
 		}
 		for _, pr := range query.Repository.PullRequests.Edges {

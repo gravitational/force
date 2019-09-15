@@ -8,8 +8,16 @@ Process(Spec{
 		Repo: "gravitational/force",
 		// Default branch is master
 		Branch: "master",
+		// Approval configures an approval flow
+		Approval: github.Approval{
+			// Requies sets the approval as required
+			Required: true,
+			// Teams is a list of github teams who can approve PR test
+			// or auto trigger pull request if they submit it.
+			Teams: Strings("gravitational/devc", "gravitational/admins"),
+		},
 	}),
-	Run: github.PostStatusOf(
+	Run:github.PostStatusOf(
 		func(){
 			// Create temporary directory "repo"
 			repo := TempDir("", "")

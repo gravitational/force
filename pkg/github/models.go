@@ -35,8 +35,14 @@ const (
 	MasterBranch = "master"
 )
 
+type pullRequestUpdate struct {
+	PullRequest
+	newCommit  bool
+	newComment bool
+}
+
 // PullRequests is a list of pull request
-type PullRequests []PullRequest
+type PullRequests []pullRequestUpdate
 
 func (p PullRequests) Len() int {
 	return len(p)
@@ -82,6 +88,11 @@ type PullRequestObject struct {
 		URL string
 	}
 	IsCrossRepository bool
+}
+
+// UserObject is graphql user node
+type UserObject struct {
+	Login string
 }
 
 // CommitObject represents the GraphQL commit node.

@@ -1,4 +1,4 @@
-# Force-Shmorce
+# Force
 
 `Force` is an event processing and infrastructure automation framework.
 

@@ -78,6 +78,8 @@
         
             <li><a class="toctree-l3" href="#variables">Variables</a></li>
         
+            <li><a class="toctree-l3" href="#conditionals">Conditionals</a></li>
+        
             <li><a class="toctree-l3" href="#deferred-actions">Deferred actions</a></li>
         
             <li><a class="toctree-l3" href="#lambda-functions-and-includes">Lambda functions and includes</a></li>
@@ -86,7 +88,7 @@
         
             <li><a class="toctree-l3" href="#marshaling-code">Marshaling code</a></li>
         
-            <li><a class="toctree-l3" href="#plugins">Plugins</a></li>
+            <li><a class="toctree-l3" href="#plugins-and-setup">Plugins and Setup</a></li>
         
         </ul>
     
@@ -206,6 +208,24 @@ can't be changed).</p>
 </code></pre>
 
 <p>At the moment, only <code>string</code>, <code>bool</code> and <code>int</code> variables are supported.</p>
+<h2 id="conditionals">Conditionals</h2>
+<p><code>If</code> action runs another action, if the first predicate matches:</p>
+<pre><code class="go">Source file: ./examples/conditionals/G
+
+
+0: Process(Spec{
+1:  Run: func(){
+2:      myChoices := Strings(&quot;banana&quot;, &quot;orange&quot;, &quot;apple&quot;)
+3:      If(
+4:          Contains(myChoices, &quot;banana&quot;),
+5:          func() {
+6:              Infof(&quot;You have selected a banana!&quot;)
+7:          },
+8:      )
+9:  },
+10: })
+</code></pre>
+
 <h2 id="deferred-actions">Deferred actions</h2>
 <p>In the previous examples, temporary directory was created but not removed.
 To execute actions at the end of the sequence (regardless of whether
@@ -343,7 +363,7 @@ execution:</p>
 15: })
 </code></pre>
 
-<h2 id="plugins">Plugins</h2>
+<h2 id="plugins-and-setup">Plugins and Setup</h2>
 <p>Force language is extended using plugins system. Special <code>setup.force</code> file
 could be placed alongside <code>G</code> file to setup a plugin:</p>
 <pre><code class="go">Source file: ./examples/plugins/setup.force
@@ -361,6 +381,15 @@ could be placed alongside <code>G</code> file to setup a plugin:</p>
 9:      },
 10:     }),
 11: )
+</code></pre>
+
+<p><code>force</code> will auto detect the <code>setup.force</code> and apply configuration:</p>
+<pre><code class="bash">$ force
+Detected setup.force
+</code></pre>
+
+<p>Use <code>--setup</code> flag to specify custom setup file location:</p>
+<pre><code class="bash">$ force --setup=../plugins/setup.force
 </code></pre>
               
             </div>

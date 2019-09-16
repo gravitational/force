@@ -1,0 +1,11 @@
+Process(Spec{
+	Run: func(){
+		myChoices := Strings("banana", "orange", "apple")
+		If(
+			Contains(myChoices, "banana"),
+			func() {
+				Infof("You have selected a banana!")
+			},
+		)
+	},
+})

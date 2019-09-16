@@ -47,6 +47,12 @@ can't be changed).
 
 At the moment, only `string`, `bool` and `int` variables are supported.
 
+## Conditionals
+
+`If` action runs another action, if the first predicate matches:
+
+{go * ./examples/conditionals/G}
+
 ## Deferred actions
 
 In the previous examples, temporary directory was created but not removed.
@@ -120,9 +126,22 @@ execution:
 
 {go * ./examples/marshal/rpc.force}
 
-## Plugins
+## Plugins and Setup
 
 Force language is extended using plugins system. Special `setup.force` file
 could be placed alongside `G` file to setup a plugin:
 
 {go * ./examples/plugins/setup.force}
+
+`force` will auto detect the `setup.force` and apply configuration:
+
+```bash
+$ force
+Detected setup.force
+```
+
+Use `--setup` flag to specify custom setup file location:
+
+```bash
+$ force --setup=../plugins/setup.force
+```

@@ -1,0 +1,12 @@
+// This example demonstrates how to marshal
+// parts of force script to string using quoting
+Process(Spec{
+	Name: "unquote",
+	Run: func(){
+		localUser := ExpectEnv("USER")
+		code := Marshal(func(){
+			Infof("Caller: %v", Unquote(localUser))
+		})
+		Infof("Code: %v", code)
+	},
+})

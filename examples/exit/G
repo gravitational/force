@@ -1,0 +1,7 @@
+Process(Spec{
+    Run: func(){
+       Defer(Exit())
+       Infof("HOME: %v", ExpectEnv("HOME"))
+    },
+})
+

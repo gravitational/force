@@ -1,0 +1,11 @@
+Process(Spec{
+    Name: "demo-functions",
+    Watch: Oneshot(),
+    Run: func(){
+        Parallel(
+           Infof("Hello, world"),
+           Command(`echo "hello, world!"`),
+        )
+    },
+})
+

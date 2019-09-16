@@ -1,0 +1,10 @@
+Process(Spec{
+    Name: "demo-functions",
+    Watch: Oneshot(),
+    Run: func(){
+        // Logs message to log with info severity
+        Infof("Hello, world")
+        Command(`echo "hello, world!"`)
+    },
+})
+

@@ -1,0 +1,12 @@
+// Setup configures force plugins
+Setup(
+	// Logging sets up logging plugin
+	log.Setup(log.Config{
+		Level: "debug",
+		Outputs: []log.Output{
+			{
+				Type: "stdout",
+			},
+		},
+	}),
+)

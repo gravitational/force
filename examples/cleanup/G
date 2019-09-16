@@ -1,0 +1,7 @@
+Process(Spec{
+    Run: func(){
+       dir := TempDir("", "force")
+       Infof("Created temp dir %v, who is going to clean it up?", dir)
+    },
+})
+

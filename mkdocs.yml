@@ -1,0 +1,15 @@
+site_name: Force
+nav:
+    - Home: index.md
+    - Quickstart: quickstart.md
+    - Language: language.md
+theme:
+    name: readthedocs
+    highlightjs: true
+    hljs_languages:
+        - yaml
+        - go
+        - bash
+
+markdown_extensions:
+    - markdown_include_lines.main

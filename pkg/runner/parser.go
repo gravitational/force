@@ -147,7 +147,7 @@ func Parse(i Input) (*Runner, error) {
 		"Contains": &force.NopScope{Func: force.Contains},
 	}
 
-	var builtinStructs = []interface{}{force.Spec{}, force.Test{}}
+	var builtinStructs = []interface{}{force.Spec{}, force.Test{}, force.Script{}}
 
 	globalContext := force.NewContext(force.ContextConfig{
 		Parent:  &force.WrapContext{Context: runner.ctx},

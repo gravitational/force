@@ -82,6 +82,8 @@ type Script struct {
 	Args []StringVar
 	// WorkingDir is a working directory
 	WorkingDir StringVar
+	// Env is a list of key value environment variables
+	Env []StringVar
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -160,6 +162,10 @@ func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	env, err := EvalStringVars(ctx, s.script.Env)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	command, err := EvalString(ctx, s.script.Command)
 	if err != nil {
 		return trace.Wrap(err)
@@ -174,6 +180,7 @@ func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout = w
 	cmd.Stderr = w
+	cmd.Env = env
 	cmd.Dir = workingDir
 	return trace.Wrap(cmd.Run())
 }

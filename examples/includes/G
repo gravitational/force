@@ -1,0 +1,5 @@
+Process(Spec{
+    Run: func(){
+		GlobalLog("log this line")
+    },
+})

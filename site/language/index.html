@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  
+  <link rel="shortcut icon" href="../img/favicon.ico">
+  <title>Language - Force</title>
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700|Roboto+Slab:400,700|Inconsolata:400,700' rel='stylesheet' type='text/css'>
+
+  <link rel="stylesheet" href="../css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../css/theme_extra.css" type="text/css" />
+  <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/github.min.css">
+  
+  <script>
+    // Current page data
+    var mkdocs_page_name = "Language";
+    var mkdocs_page_input_path = "language.md";
+    var mkdocs_page_url = null;
+  </script>
+  
+  <script src="../js/jquery-2.1.1.min.js" defer></script>
+  <script src="../js/modernizr-2.8.3.min.js" defer></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/yaml.min.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/go.min.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/languages/bash.min.js"></script>
+  <script>hljs.initHighlightingOnLoad();</script> 
+  
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+      <div class="wy-side-nav-search">
+        <a href=".." class="icon icon-home"> Force</a>
+        <div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+	<ul class="current">
+	  
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="..">Home</a>
+	    </li>
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="../quickstart/">Quickstart</a>
+	    </li>
+          
+            <li class="toctree-l1 current">
+		
+    <a class="current" href="./">Language</a>
+    <ul class="subnav">
+            
+    <li class="toctree-l2"><a href="#processes-channels-and-actions">Processes, Channels and Actions</a></li>
+    
+        <ul>
+        
+            <li><a class="toctree-l3" href="#syntax">Syntax</a></li>
+        
+            <li><a class="toctree-l3" href="#sequences">Sequences</a></li>
+        
+            <li><a class="toctree-l3" href="#parallel-actions">Parallel Actions</a></li>
+        
+            <li><a class="toctree-l3" href="#variables">Variables</a></li>
+        
+            <li><a class="toctree-l3" href="#deferred-actions">Deferred actions</a></li>
+        
+            <li><a class="toctree-l3" href="#lambda-functions-and-includes">Lambda functions and includes</a></li>
+        
+            <li><a class="toctree-l3" href="#exiting-and-environment">Exiting and Environment</a></li>
+        
+            <li><a class="toctree-l3" href="#marshaling-code">Marshaling code</a></li>
+        
+            <li><a class="toctree-l3" href="#plugins">Plugins</a></li>
+        
+        </ul>
+    
+
+    </ul>
+	    </li>
+          
+        </ul>
+      </div>
+      &nbsp;
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="..">Force</a>
+      </nav>
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="..">Docs</a> &raquo;</li>
+    
+      
+    
+    <li>Language</li>
+    <li class="wy-breadcrumbs-aside">
+      
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main">
+            <div class="section">
+              
+                <h1 id="processes-channels-and-actions">Processes, Channels and Actions</h1>
+<p><code>force</code> is a command line tool that processes <code>G</code> files.</p>
+<p>Every <code>G</code> file starts with a <code>Process(Spec{})</code> section that specifies one or several <code>Run</code>
+actions triggered by events received by channel specified in the <code>Watch</code> section.</p>
+<p>Here is the process <code>watch-and-build</code>:</p>
+<pre><code class="go">Source file: ./examples/watch/G
+
+
+0: Process(Spec{
+1:     // Process name is used in the logs
+2:     Name: &quot;watch-and-build&quot;,
+3:     // Watch specifies channel generating events
+4:     Watch: Files(&quot;*.go&quot;),
+5:     // Run specifies a sequence of actions
+6:     Run: Command(&quot;go install -mod=vendor -v github.com/gravitational/force/tool/force&quot;),
+7: })
+</code></pre>
+
+<p><code>Watch: Files("*.go")</code> specifies the channel that continuosly watches file
+changes matching the glob <code>*.go</code> and generates events.</p>
+<p>Every time the event is generated, the <code>Command</code> action runs the shell
+command <code>go install -mod=vendor -v github.com/gravitational/force/tool/force</code>.</p>
+<h2 id="syntax">Syntax</h2>
+<p>Force users <a href="https://golang.org">Go language</a> language <a href="https://golang.org/ref/spec">grammar</a>,
+however it does not fully implement golang language specification, however
+functions and function calls, variables and assignments use the same notation.</p>
+<h2 id="sequences">Sequences</h2>
+<p>Force can execute sequences of actions triggered by single event using <code>func</code>
+construct:</p>
+<pre><code class="go">Source file: ./examples/func/G
+
+
+0: Process(Spec{
+1:     Name: &quot;demo-functions&quot;,
+2:     Watch: Oneshot(),
+3:     Run: func(){
+4:         // Logs message to log with info severity
+5:         Infof(&quot;Hello, world&quot;)
+6:         Command(`echo &quot;hello, world!&quot;`)
+7:     },
+8: })
+9: 
+</code></pre>
+
+<h2 id="parallel-actions">Parallel Actions</h2>
+<p>Force can run actions in parallel using <code>Parallel</code> functon:</p>
+<pre><code class="go">Source file: ./examples/parallel/G
+
+
+0: Process(Spec{
+1:     Name: &quot;demo-functions&quot;,
+2:     Watch: Oneshot(),
+3:     Run: func(){
+4:         Parallel(
+5:            Infof(&quot;Hello, world&quot;),
+6:            Command(`echo &quot;hello, world!&quot;`),
+7:         )
+8:     },
+9: })
+10: 
+</code></pre>
+
+<p><code>Parallel</code> launches all actions in parallel, collects the results. It succeeds
+when all actions succeed or fails if any of the actions fail.</p>
+<h2 id="variables">Variables</h2>
+<p><code>G</code> scripts support immutable variables (the ones that after declared,
+can't be changed).</p>
+<pre><code class="go">Source file: ./examples/cleanup/G
+
+
+0: Process(Spec{
+1:     Run: func(){
+2:        dir := TempDir(&quot;&quot;, &quot;force&quot;)
+3:        Infof(&quot;Created temp dir %v, who is going to clean it up?&quot;, dir)
+4:     },
+5: })
+6: 
+</code></pre>
+
+<p>At the moment, only <code>string</code>, <code>bool</code> and <code>int</code> variables are supported.</p>
+<h2 id="deferred-actions">Deferred actions</h2>
+<p>In the previous examples, temporary directory was created but not removed.
+To execute actions at the end of the sequence (regardless of whether
+it was successfull or not) use the <code>Defer</code> action:</p>
+<pre><code class="go">Source file: ./examples/cleanup/cleanup.force
+
+
+0: Process(Spec{
+1:     Run: func(){
+2:        dir := TempDir(&quot;&quot;, &quot;force&quot;)
+3:        Defer(RemoveAll(dir))
+4:        Infof(&quot;Created temp dir %v, who is going to clean it up?&quot;, dir)
+5:     },
+6: })
+</code></pre>
+
+<h2 id="lambda-functions-and-includes">Lambda functions and includes</h2>
+<p>Force supports simple lambda functions. Lambda function definition
+looks like a variable declaration.</p>
+<pre><code class="go">GlobalLog := func(message string) {
+    Infof(&quot;this is a message: %v&quot;, message)
+}
+</code></pre>
+
+<p>To define this or other global functions visible to the main force script,
+in file <code>lib.force</code>, write:</p>
+<pre><code class="go">Source file: ./examples/includes/lib.force
+
+
+0: func() {
+1:     GlobalLog := func(message string) {
+2:         Infof(&quot;this is a message: %v&quot;, message)
+3:     }
+4: }
+</code></pre>
+
+<p>Reference the function in the <code>G</code> file:</p>
+<pre><code class="go">Source file: ./examples/includes/G
+
+
+0: Process(Spec{
+1:     Run: func(){
+2:      GlobalLog(&quot;log this line&quot;)
+3:     },
+4: })
+</code></pre>
+
+<p>Run the force using the <code>--include</code> directive:</p>
+<pre><code class="bash">$ force --include=lib.force
+</code></pre>
+
+<h2 id="exiting-and-environment">Exiting and Environment</h2>
+<p>Most of the time force scripts are running continuosly, however
+sometimes it is helpful to exit, use <code>Exit</code> action. This action
+will cause force progam to exit with the success or error depending
+on whether the previous last action has failed or succeeded.</p>
+<pre><code class="go">Source file: ./examples/exit/G
+
+
+0: Process(Spec{
+1:     Run: func(){
+2:        Defer(Exit())
+3:        Infof(&quot;HOME: %v&quot;, ExpectEnv(&quot;HOME&quot;))
+4:     },
+5: })
+6: 
+</code></pre>
+
+<h2 id="marshaling-code">Marshaling code</h2>
+<p>Sometimes you need to run a part of the force script remotely - inside a kubernetes job,
+or using SSH call on the cloud server.</p>
+<p><code>Marshal</code> action helps to marshal (and verify) the code to a string variable:</p>
+<pre><code class="go">Source file: ./examples/marshal/G
+
+
+0: // This example demonstrates how to marshal
+1: // parts of force script to string
+2: Process(Spec{
+3:  Name: &quot;marshal&quot;,
+4:  Run: func(){
+5:      code := Marshal(func(){
+6:          Infof(&quot;Hello, world!&quot;)
+7:      })
+8:      Infof(&quot;Code: %v&quot;, code)
+9:  },
+10: })
+</code></pre>
+
+<p>The code inside <code>Marhsal</code> function is not evaluated by default, however it is possible
+to pass variables to the remote call using <code>Unquote</code>:</p>
+<pre><code class="go">Source file: ./examples/marshal/unquote.force
+
+
+0: // This example demonstrates how to marshal
+1: // parts of force script to string using quoting
+2: Process(Spec{
+3:  Name: &quot;unquote&quot;,
+4:  Run: func(){
+5:      localUser := ExpectEnv(&quot;USER&quot;)
+6:      code := Marshal(func(){
+7:          Infof(&quot;Caller: %v&quot;, Unquote(localUser))
+8:      })
+9:      Infof(&quot;Code: %v&quot;, code)
+10:     },
+11: })
+</code></pre>
+
+<p>The resulting code will evaluate the variable <code>localUser</code> and substitute
+it in the code:</p>
+<pre><code class="go">func(){
+    log.Infof(&quot;Caller: %v&quot;, &quot;bob&quot;)
+}
+</code></pre>
+
+<p>Here is a full example of sending code to another force process for
+execution:</p>
+<pre><code class="go">Source file: ./examples/marshal/rpc.force
+
+
+0: Process(Spec{
+1:  Name: &quot;rpc&quot;,
+2:  Run: func(){
+3:      localUser := ExpectEnv(&quot;USER&quot;)
+4:      code := Marshal(Process(Spec{
+5:          Run: Infof(&quot;Caller: %v&quot;, Unquote(localUser)),
+6:      }))
+7:      Shell(Script{
+8:          Env: Strings(
+9:              Sprintf(&quot;FORCE_SCRIPT=%v&quot;, code),
+10:                 Sprintf(&quot;PATH=%v&quot;, ExpectEnv(&quot;PATH&quot;)),
+11:             ),
+12:             Command: &quot;force&quot;,
+13:         })
+14:     },
+15: })
+</code></pre>
+
+<h2 id="plugins">Plugins</h2>
+<p>Force language is extended using plugins system. Special <code>setup.force</code> file
+could be placed alongside <code>G</code> file to setup a plugin:</p>
+<pre><code class="go">Source file: ./examples/plugins/setup.force
+
+
+0: // Setup configures force plugins
+1: Setup(
+2:  // Logging sets up logging plugin
+3:  log.Setup(log.Config{
+4:      Level: &quot;debug&quot;,
+5:      Outputs: []log.Output{
+6:          {
+7:              Type: &quot;stdout&quot;,
+8:          },
+9:      },
+10:     }),
+11: )
+</code></pre>
+              
+            </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+      
+        <a href="../quickstart/" class="btn btn-neutral" title="Quickstart"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+    
+  </div>
+
+  Built with <a href="http://www.mkdocs.org">MkDocs</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+      
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" style="cursor: pointer">
+    <span class="rst-current-version" data-toggle="rst-current-version">
+      
+      
+        <span><a href="../quickstart/" style="color: #fcfcfc;">&laquo; Previous</a></span>
+      
+      
+    </span>
+</div>
+    <script>var base_url = '..';</script>
+    <script src="../js/theme.js" defer></script>
+      <script src="../search/main.js" defer></script>
+
+</body>
+</html>

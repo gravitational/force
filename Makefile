@@ -15,6 +15,14 @@ vendor:
 tidy:
 	go mod tidy
 
+.PHONY: install-docs
+install-docs:
+	pip install mkdocs==1.0.4
+	pip install git+https://github.com/simonrenger/markdown-include-lines.git
+
+.PHONY: serve-docs
+serve-docs:
+	mkdocs serve
 
 ##
 

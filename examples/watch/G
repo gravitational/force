@@ -1,0 +1,8 @@
+Process(Spec{
+    // Process name is used in the logs
+    Name: "watch-and-build",
+    // Watch specifies channel generating events
+    Watch: Files("*.go"),
+    // Run specifies a sequence of actions
+    Run: Command("go install -mod=vendor -v github.com/gravitational/force/tool/force"),
+})

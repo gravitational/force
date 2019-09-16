@@ -57,12 +57,6 @@ Soon force will include out of the box plugins for:
 
 For everything else, folks can create plugins using GRPC plugins system.
 
-## Examples
+## Documentation
 
-```go
-Process(Spec{
-    Name: "all",
-    Watch: Files("*.go"),
-    Run: Command(`go install github.com/gravitational/force`),
-})
-```
+Read the docs at [docs](docs/index.md)

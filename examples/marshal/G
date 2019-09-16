@@ -1,0 +1,11 @@
+// This example demonstrates how to marshal
+// parts of force script to string
+Process(Spec{
+	Name: "marshal",
+	Run: func(){
+		code := Marshal(func(){
+			Infof("Hello, world!")
+		})
+		Infof("Code: %v", code)
+	},
+})

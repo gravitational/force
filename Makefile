@@ -62,6 +62,11 @@ github:
 	$(MAKE) all
 	cd examples/github && force -d ci.force
 
+.PHONY: github-branches
+github-branches:
+	$(MAKE) all
+	cd examples/github-branches && force -d ci.force --setup=../github/setup.force
+
 .PHONY: slack
 slack:
 	$(MAKE) all
@@ -93,6 +98,11 @@ vars:
 inception:
 	$(MAKE) all
 	cd inception && force -d inception.force --setup=./setup.force
+
+.PHONY: mkdocs
+mkdocs:
+	$(MAKE) all
+	cd mkdocs && force -d mkdocs.force --setup=../examples/github/setup.force
 
 
 .PHONY: kbuild

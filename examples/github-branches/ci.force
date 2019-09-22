@@ -1,0 +1,15 @@
+// Process defines a set of actions triggered by a channel
+Process(Spec{
+	// Name is used for reporting and debugging purposes
+	Name: "force-ci",
+	Watch: github.Branches(github.Source{
+		// Repo is a repository to watch
+		Repo: "gravitational/force",
+		Path: "docs/",
+	}),
+	Run:github.PostStatusOf(
+		func(){
+			Infof("Hello, world, got event, branch: %v, commit: %v.", event.Branch, event.Commit)
+		},
+	),
+})

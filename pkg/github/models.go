@@ -41,21 +41,6 @@ type pullRequestUpdate struct {
 	newComment bool
 }
 
-// PullRequests is a list of pull request
-type PullRequests []pullRequestUpdate
-
-func (p PullRequests) Len() int {
-	return len(p)
-}
-
-func (p PullRequests) Less(i, j int) bool {
-	return p[j].LastUpdated().After(p[i].LastUpdated())
-}
-
-func (p PullRequests) Swap(i, j int) {
-	p[i], p[j] = p[j], p[i]
-}
-
 // PullRequest represents a pull request and includes the last commit
 // and the last comment
 type PullRequest struct {
@@ -93,6 +78,20 @@ type PullRequestObject struct {
 // UserObject is graphql user node
 type UserObject struct {
 	Login string
+}
+
+// Branch represents a branch that was updated
+type Branch struct {
+	RefObject
+	CommitObject
+}
+
+// RefObject represents the GraphQL ref node
+// https://developer.github.com/v4/object/ref/
+type RefObject struct {
+	ID     string
+	Name   string
+	Prefix string
 }
 
 // CommitObject represents the GraphQL commit node.

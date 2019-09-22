@@ -10,24 +10,47 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// PostStatus updates pull request status
-func (p *Plugin) PostStatus(status Status) (force.Action, error) {
-	if err := status.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &PostStatusAction{
-		status: status,
-		plugin: p,
-	}, nil
+// NewPostStatusOf returns a function that wraps underlying action
+// and tracks the result, posting the result back
+type NewPostStatusOf struct {
 }
 
-// PostStatusOf executes inner action and posts result of it's execution
-// to github
-func (p *Plugin) PostStatusOf(actions ...force.Action) (force.Action, error) {
-	return &PostStatusOfAction{
-		actions: actions,
-		plugin:  p,
-	}, nil
+// NewInstance returns a function creating new post status actions
+func (n *NewPostStatusOf) NewInstance(group force.Group) (force.Group, interface{}) {
+	// PostStatusOf creates a sequence, that's why it has to create a new lexical
+	// scope (as sequence expects one to be created)
+	scope := force.WithLexicalScope(group)
+	return scope, func(inner ...force.Action) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(Key)
+		if !ok {
+			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
+		}
+		return &PostStatusOfAction{
+			actions: inner,
+			plugin:  pluginI.(*Plugin),
+		}, nil
+	}
+}
+
+// NewPostStatus creates actions that posts new status
+type NewPostStatus struct {
+}
+
+// NewInstance returns a function that creates new post status actions
+func (n *NewPostStatus) NewInstance(group force.Group) (force.Group, interface{}) {
+	return group, func(status Status) (force.Action, error) {
+		pluginI, ok := group.GetPlugin(Key)
+		if !ok {
+			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
+		}
+		if err := status.CheckAndSetDefaults(); err != nil {
+			return nil, trace.Wrap(err)
+		}
+		return &PostStatusAction{
+			status: status,
+			plugin: pluginI.(*Plugin),
+		}, nil
+	}
 }
 
 // PostStatusAction posts github status
@@ -39,18 +62,26 @@ type PostStatusAction struct {
 
 // Run posts github status
 func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
-	event, ok := ctx.Event().(*RepoEvent)
+	event, ok := ctx.Event().(CommitGetter)
 	if !ok {
 		// it should be possible to execute post status
 		// in the standalone mode given all the parameters
-		return trace.BadParameter("PostStatus can only be executed with Watch")
+		return trace.BadParameter(
+			"PostStatus can only be executed with github watch setup either with github.PullRequests or github.Commits")
 	}
-	repo := event.Source.Repo
+	repo, err := event.GetSource().Repository()
+	if err != nil {
+		return trace.Wrap(err)
+	}
 
 	log := force.Log(ctx)
-	commitRef := event.PullRequest.LastCommit.OID
+	commitRef := event.GetCommit()
 
-	_, _, err := p.plugin.client.V3.Repositories.CreateStatus(
+	if p.status.Context == "" {
+		p.status.Context = ctx.Process().Name()
+	}
+
+	_, _, err = p.plugin.client.V3.Repositories.CreateStatus(
 		ctx,
 		repo.Owner,
 		repo.Name,
@@ -70,7 +101,12 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
 
 // MarshalCode marshals the action into code representation
 func (p *PostStatusAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	return force.NewFnCall(p.plugin.PostStatus, p.status).MarshalCode(ctx)
+	call := force.FnCall{
+		Package: string(Key),
+		FnName:  KeyPostStatus,
+		Args:    []interface{}{p.status},
+	}
+	return call.MarshalCode(ctx)
 }
 
 // PostStatusOfAction executes an action and posts its status
@@ -117,7 +153,7 @@ func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) error {
 // MarshalCode marshals the action into code representation
 func (p *PostStatusOfAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	call := &force.FnCall{
-		Fn: p.plugin.PostStatusOf,
+		FnName: KeyPostStatusOf,
 	}
 	for i := range p.actions {
 		call.Args = append(call.Args, p.actions[i])
@@ -150,9 +186,6 @@ func (s *Status) CheckAndSetDefaults() error {
 			found = true
 			break
 		}
-	}
-	if s.Context == "" {
-		s.Context = DefaultContext
 	}
 	if !found {
 		return trace.BadParameter("%q is not a valid states, use one of %v", s.State, strings.Join(allowedStates, ","))

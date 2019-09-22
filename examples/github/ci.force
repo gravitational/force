@@ -2,7 +2,6 @@
 Process(Spec{
 	// Name is used for reporting and debugging purposes
 	Name: "force-ci",
-	// Watch pull requests
 	Watch: github.PullRequests(github.Source{
 		// Repo is a repository to watch
 		Repo: "gravitational/force",

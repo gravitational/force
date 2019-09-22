@@ -1,0 +1,46 @@
+// Process defines a set of actions triggered by a channel
+Process(Spec{
+	Watch: github.Branches(github.Source{
+		// Repo is a repository to watch
+		Repo: "gravitational/force",
+		Path: "docs/",
+	}),
+	Run: func(){
+		Defer(Exit())
+		// Create temporary directory "repo"
+		repo := TempDir("", "")
+		Defer(RemoveAll(repo))
+		// Clone clones git repository into temp dir
+		git.Clone(git.Repo{
+			URL: "git@github.com:gravitational/force.git",
+			Into: repo,
+			// Commit is a commit variable defined by pull request watch,
+			// the problem is that there is no namespacing here
+			Hash: event.Commit,
+		})		
+		// Image is an image name to build
+		image := Sprintf(`gcr.io/kubeadm-167321/force-docs:%v`, event.Branch)
+		// pyVer is a python image version
+		pyVer := "3.7.4"
+		// nginxVer is nginx version
+		nginxVer := "1.17.3"
+		// mkdocs ver is mkdocs version
+		mkdocsVer := "1.0.4"
+		// Build builds dockerfile and tags it in the local storage
+		builder.Build(builder.Image{
+			Dockerfile: "./Dockerfile",
+			// Set build context to the cloned repository
+			Context: repo,
+			Tag: image,
+			Args: []builder.Arg{
+				{Key: "PY_VER", Val: pyVer},
+				{Key: "NGINX_VER", Val: nginxVer},
+				{Key: "MKDOCS_VER", Val: mkdocsVer},
+			},
+		})
+		// Push the built image
+		builder.Push(builder.Image{Tag: image})
+		// Prune the build cache
+		builder.Prune()
+	},
+})

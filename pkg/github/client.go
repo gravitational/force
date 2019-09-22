@@ -207,6 +207,72 @@ func (m *GithubClient) GetOpenPullRequests(ctx context.Context, repo Repository)
 	return pullRequests, nil
 }
 
+// GetBranches gets the last commit on branches with changes matching the path
+func (m *GithubClient) GetBranches(ctx context.Context, repo Repository, path string) ([]Branch, error) {
+	var query struct {
+		Repository struct {
+			Refs struct {
+				Nodes []struct {
+					RefObject
+					Target struct {
+						OnCommit struct {
+							CommitObject
+							History struct {
+								Edges []struct {
+									Node struct {
+										CommitObject
+									}
+								}
+							} `graphql:"history(first:1,path:$path)"`
+						} `graphql:"... on Commit"`
+					} `graphql:"target"`
+				}
+				PageInfo struct {
+					EndCursor   githubv4.String
+					HasNextPage bool
+				}
+			} `graphql:"refs(first:$refFirst,after:$refCursor,refPrefix:$refPrefix)"`
+		} `graphql:"repository(owner:$repositoryOwner,name:$repositoryName)"`
+	}
+
+	vars := map[string]interface{}{
+		"repositoryOwner": githubv4.String(repo.Owner),
+		"repositoryName":  githubv4.String(repo.Name),
+		"refFirst":        githubv4.Int(100),
+		"refPrefix":       githubv4.String("refs/heads/"),
+		"refCursor":       (*githubv4.String)(nil),
+		"path":            (*githubv4.String)(nil),
+	}
+
+	if path != "" {
+		vars["path"] = githubv4.String(path)
+	}
+
+	var branches []Branch
+	for {
+		if err := m.V4.Query(ctx, &query, vars); err != nil {
+			return nil, err
+		}
+		for _, ref := range query.Repository.Refs.Nodes {
+			lastCommit := ref.Target.OnCommit.CommitObject
+			// no commits matching the path, or the last commit != last commit matching the path (no updates to the path)
+			if len(ref.Target.OnCommit.History.Edges) == 0 || ref.Target.OnCommit.History.Edges[0].Node.OID != lastCommit.OID {
+				continue
+			}
+			branch := Branch{
+				RefObject:    ref.RefObject,
+				CommitObject: ref.Target.OnCommit.History.Edges[0].Node.CommitObject,
+			}
+			branches = append(branches, branch)
+		}
+		if !query.Repository.Refs.PageInfo.HasNextPage {
+			break
+		}
+		vars["refCursor"] = query.Repository.Refs.PageInfo.EndCursor
+	}
+	return branches, nil
+}
+
 // ListModifiedFiles in a pull request (not supported by V4 API).
 func (m *GithubClient) ListModifiedFiles(repo Repository, prNumber int) ([]string, error) {
 	var files []string

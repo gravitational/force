@@ -102,6 +102,8 @@ type Repo struct {
 	Into string
 	// Hash is a commit hash to clone
 	Hash string
+	// Tag is a git tag to clone
+	Tag string
 	// Submodules is an optional submodule to init
 	Submodules []string
 }
@@ -242,6 +244,22 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		}
 
 		log.Infof("Checked out repository %v commit %v.", repo.URL, repo.Hash)
+	}
+
+	if repo.Tag != "" {
+		w, err := r.Worktree()
+		if err != nil {
+			return trace.Wrap(err)
+		}
+
+		err = w.Checkout(&git.CheckoutOptions{
+			Branch: plumbing.NewTagReferenceName(repo.Tag),
+		})
+		if err != nil {
+			return trace.Wrap(err)
+		}
+
+		log.Infof("Checked out repository %v tag %v.", repo.URL, repo.Tag)
 	}
 
 	for i, subName := range repo.Submodules {

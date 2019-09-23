@@ -1,0 +1,121 @@
+# this is a static nginx-based doc-router,
+# that assumes that url https://force.gravitational.co/branch-name/index.html
+# will be served by the service https://branch-name.docs.svc.cluster.local./index.html
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: doc-router
+  name: doc-router
+  namespace: docs
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 443
+  selector:
+    run: doc-router
+  type: LoadBalancer
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    run: doc-router
+  name: doc-router
+  namespace: docs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: doc-router
+  template:
+    metadata:
+      labels:
+        run: doc-router
+    spec:
+      containers:
+      - image: nginx
+        imagePullPolicy: Always
+        name: doc-router
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources: {}
+        volumeMounts:
+        - mountPath: /etc/nginx/conf.d
+          name: config-volume
+        - mountPath: /mnt/certs
+          name: certs
+      volumes:
+      - configMap:
+          name: doc-router
+        name: config-volume
+      - name: certs
+        secret:
+          secretName: tls-web
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doc-router
+  namespace: docs
+data:
+  default.conf: |
+    # generated 2019-09-23, https://ssl-config.mozilla.org/#server=nginx&server-version=1.17.0&config=modern
+    # with gravitational tweaks
+    server {
+        server_name  force.gravitational.co;
+
+        listen 80 default_server;
+        listen [::]:80 default_server;
+
+        # redirect all HTTP requests to HTTPS with a 301 Moved Permanently response.
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        server_name  force.gravitational.co;
+
+        listen 443 ssl http2;
+        listen [::]:443 ssl http2;
+
+        # certs sent to the client in SERVER HELLO are concatenated in ssl_certificate
+        ssl_certificate /mnt/certs/crt;
+        ssl_certificate_key /mnt/certs/key;
+        ssl_session_timeout 1d;
+        ssl_session_cache shared:MozSSL:10m;  # about 40000 sessions
+        ssl_session_tickets off;
+
+        # modern configuration
+        ssl_protocols TLSv1.3;
+        ssl_prefer_server_ciphers off;
+
+        # HSTS (ngx_http_headers_module is required) (63072000 seconds)
+        add_header Strict-Transport-Security "max-age=63072000" always;
+
+        # OCSP stapling
+        ssl_stapling on;
+        ssl_stapling_verify on;
+
+        #  URLs /master/docs sent to k8s service http://master.docs.svc.cluster.local./docs
+        location ~ ^/([^/]+)/(.*)$ {
+            resolver kube-dns.kube-system.svc.cluster.local valid=5s;
+            set $target http://$1.docs.svc.cluster.local./$2;
+            proxy_pass        $target;
+        }
+
+        # URLs like /index.html will be sent to default master
+        location ~ ^/([^/]*)$ {
+            return 301 http://$host/master$request_uri;
+        }
+
+        location / {
+            return 404 'force doc is not found';
+        }
+    }

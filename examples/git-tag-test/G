@@ -1,0 +1,13 @@
+Process(Spec{
+	Watch: Oneshot(),
+	Run: func() {
+		repoDir := TempDir("", "")
+		git.Clone(git.Repo{
+			URL:  "git@github.com:gravitational/teleport.git",
+			Into: repoDir,
+			Tag:  "4.1.0-rc.1",
+			//Hash: "c04a655438ab81bc435eb47487bba5a3b86fbb35",
+		})
+		Command(Sprintf("cd %v && ls -lR", repoDir))
+	},
+})

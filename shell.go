@@ -110,7 +110,7 @@ func (s *Script) CheckAndSetDefaults(ctx ExecutionContext) error {
 }
 
 // Command is a shortcut for shell action
-func Command(cmd String) (Action, error) {
+func Command(cmd StringVar) (Action, error) {
 	return &ShellAction{
 		script: Script{
 			Command: cmd,

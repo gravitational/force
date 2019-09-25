@@ -74,6 +74,8 @@ func Strings(args ...interface{}) (StringsVar, error) {
 
 // Script is a shell script
 type Script struct {
+	// ExportEnv exports all variables from host environment
+	ExportEnv BoolVar
 	// Command is an inline script, shortcut for
 	// /bin/sh -c args...
 	Command StringVar
@@ -114,6 +116,9 @@ func Command(cmd StringVar) (Action, error) {
 	return &ShellAction{
 		script: Script{
 			Command: cmd,
+			// TODO(klizhentas) consider other routes as this is a potential
+			// security risk
+			ExportEnv: Bool(true),
 		},
 	}, nil
 }
@@ -158,6 +163,10 @@ func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
 	if err := s.script.CheckAndSetDefaults(ctx); err != nil {
 		return trace.Wrap(err)
 	}
+	exportEnv, err := EvalBool(ctx, s.script.ExportEnv)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	args, err := EvalStringVars(ctx, s.script.Args)
 	if err != nil {
 		return trace.Wrap(err)
@@ -182,6 +191,9 @@ func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
 	cmd.Stderr = w
 	cmd.Env = env
 	cmd.Dir = workingDir
+	if exportEnv {
+		cmd.Env = append(cmd.Env, os.Environ()...)
+	}
 	return trace.Wrap(cmd.Run())
 }
 

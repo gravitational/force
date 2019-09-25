@@ -21,12 +21,12 @@ INFO [PLANET-1]  hello, world! id:48c69283 proc:planet-1
 INFO [PLANET-1]  Process planet-1 completed successfully in 1.086956ms. id:48c69283 proc:planet-1
 ```
 
-To exit `force` type `Ctrl-C`.
+To exit `force`, type `Ctrl-C`.
 
-Every `G` file starts with a `Process(Spec{})` section that specifies one or several `Run`
-actions triggered by events received by channels.
+Every `G` file starts with a `Process(Spec{})` section that specifies one, or several `Run`
+actions. Each `Run` action is triggered by events received over various channels.
 
-Our example did not specify any event, so force used a default `Oneshot()` channel.
+Our example did not specify any event, so force used the default `Oneshot()` channel.
 
 The example above is equivalent to:
 

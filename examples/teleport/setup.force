@@ -1,24 +1,6 @@
-// Setup configures force plugins, configurations
-// all other force files share the configuration defined in this file
+// this sets up the local force runner - it is separate to the marshal'd Setup() block
+// inside release-lib.force (which is used to set up force jobs inside the Kubernetes cluster)
 Setup(
-	// Github is a setup of the github plugin valid in the
-	// context of this group, all calls to github methods will be using
-	// this syntax
-	github.Setup(github.Config{
-		// Token is a github access token
-		// passed to all callers in the group
-		TokenFile: ExpectEnv("GITHUB_ACCESS_TOKEN_FILE"),
-	}),
-
-	// Git sets up git client for cloning repositories
-	git.Setup(git.Config{
-		PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
-		KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
-	}),
-
- 	// Logging sets up logging to stackdriver
-	// and stdout as well, with the current implementation,
-	// it should go first so other plugins can use it
 	log.Setup(log.Config{
 		Level: "info",
 		Outputs: []log.Output{
@@ -26,14 +8,49 @@ Setup(
 				Type: "stdout",
 			},
 			{
-				Type: "stackdriver",
+				Type:            "stackdriver",
 				CredentialsFile: ExpectEnv("GOOGLE_CREDENTIALS"),
 			},
 		},
 	}),
-
+	// Git sets up git client for cloning repositories
+	git.Setup(git.Config{
+		PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
+		KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
+	}),
+	// Builder configures docker builder
+	// don't think this is needed as we always build within k8s
+	/* builder.Setup(builder.Config{
+		// Logs into quay io server
+		Server: "gcr.io",
+		// Username is a username to login with the registry server
+		// TODO: think how to best check for defined values?
+		Username: "_json_key",
+		// SecretFile is a registry password
+		SecretFile: ExpectEnv("GOOGLE_CREDENTIALS"),
+	}), */
 	// Kube sets up kubernetes
 	kube.Setup(kube.Config{
-
+		// Path is a path to kubeconfig,
+		// which is optional, if not set,
+		// force assumes that it is running inside kubernetes
+		Path: ExpectEnv("KUBE_CREDENTIALS"),
+	}),
+	// configure SSH to be able to log into hosts locally
+	ssh.Setup(ssh.Config{
+		KeyPairs: []ssh.KeyPair{
+			{
+				PrivateKeyFile: ExpectEnv("FORCE_SSH_PRIVATE_KEY_FILE_JENKINS"),
+			},
+			{
+				PrivateKeyFile: ExpectEnv("FORCE_SSH_PRIVATE_KEY_FILE_OPS"),
+			},
+		},
+		KnownHostsFile: ExpectEnv("FORCE_SSH_KNOWN_HOSTS_FILE"),
+		User:           ExpectEnv("FORCE_SSH_USER"),
+	}),
+	// configure AWS plugin locally
+	aws.Setup(aws.Config{
+		Region: ExpectEnv("AWS_REGION"),
 	}),
 )

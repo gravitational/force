@@ -1,0 +1,73 @@
+// TODO(gus): switch to using named/optional arguments for all functions
+func(){
+	Include("release-lib.force")
+	Process(Spec{
+		Name: "teleport-release",
+		Run: func() {
+			Defer(Exit())
+			armBuildHost := ExpectEnv("FORCE_ARM_BUILD_HOST")
+			fipsBuildHost := ExpectEnv("FORCE_FIPS_BUILD_HOST")
+			macBuildHost := ExpectEnv("FORCE_MAC_BUILD_HOST")			
+			// version does not include v
+			teleportVersion := "4.1.3"
+			Parallel(
+				// linux amd64 oss/ent
+				ReleaseTeleport(teleportVersion, "teleport.git", "linux", "amd64"),
+				// linux amd64 fips oss/ent
+				// NOTE: the fips string must currently be set to "yes" in order for the artefacts to get renamed correctly
+				// this is an issue with the build script - https://github.com/gravitational/ops/blob/master/xcloud/release-teleport.sh#L178-L188
+				ReleaseTeleportRemote(fipsBuildHost, teleportVersion, "teleport.git", "linux", "amd64", "", "yes"),
+				// linux i386 (note GOARCH is '386' not 'i386' because reasons) oss/ent
+				ReleaseTeleport(teleportVersion, "teleport.git", "linux", "386"),
+				
+				// arm amd64 oss/ent
+				ReleaseTeleportRemote(armBuildHost, teleportVersion, "teleport.git", "linux", "arm", "", ""),
+				
+				// mac amd64 oss/ent
+				ReleaseTeleportRemote(macBuildHost, teleportVersion, "teleport.git", "darwin", "amd64", "", ""),
+				
+				// windows amd64 (tsh only)
+				ReleaseTeleport(teleportVersion, "teleport.git", "windows", "amd64"),
+
+				// oss docker container
+				BuildTeleportDockerContainer(teleportVersion, "teleport.git", "", ""),
+				// enterprise docker container
+				BuildTeleportDockerContainer(teleportVersion, "teleport.git", "enterprise", ""),
+				// enterprise fips docker container
+				BuildTeleportDockerContainer(teleportVersion, "teleport.git", "enterprise", "fips"),
+			)
+			Parallel(
+				// linux amd64 oss rpm 
+				BuildTeleportPackageLinux("oss", teleportVersion, "rpm", "amd64", ""),
+				// linux amd64 enterprise rpm 
+				BuildTeleportPackageLinux("ent", teleportVersion, "rpm", "amd64", ""),
+				// linux amd64 oss fips rpm
+				BuildTeleportPackageLinux("oss", teleportVersion, "rpm", "amd64", "fips"),
+				// linux amd64 enterprise fips rpm
+				BuildTeleportPackageLinux("ent", teleportVersion, "rpm", "amd64", "fips"),
+				// linux i386 oss rpm
+				BuildTeleportPackageLinux("oss", teleportVersion, "rpm", "i386", ""),
+				// linux i386 enterprise rpm
+				BuildTeleportPackageLinux("ent", teleportVersion, "rpm", "i386", ""),
+				
+				// linux amd64 oss deb 
+				BuildTeleportPackageLinux("oss", teleportVersion, "deb", "amd64", ""),
+				// linux amd64 enterprise deb 
+				BuildTeleportPackageLinux("ent", teleportVersion, "deb", "amd64", ""),
+				// linux amd64 oss fips deb
+				BuildTeleportPackageLinux("oss", teleportVersion, "deb", "amd64", "fips"),
+				// linux amd64 enterprise fips deb
+				BuildTeleportPackageLinux("ent", teleportVersion, "deb", "amd64", "fips"),
+				// linux i386 oss deb
+				BuildTeleportPackageLinux("oss", teleportVersion, "deb", "i386", ""),
+				// linux i386 enterprise deb
+				BuildTeleportPackageLinux("ent", teleportVersion, "deb", "i386", ""),
+
+				// mac amd64 oss pkg
+				BuildTeleportPackageMac(macBuildHost, "oss", teleportVersion),
+				// mac amd64 enterprise pkg
+				BuildTeleportPackageMac(macBuildHost, "ent", teleportVersion),
+			)
+		},
+	})
+}()

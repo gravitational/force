@@ -2,12 +2,12 @@
 Process(Spec{
 	// Name is used for reporting and debugging purposes
 	Name: "force-ci",
-	// Watch pull requests
+	// Watch Slack for commands
 	Watch: slack.Listen(
 		slack.Command{
 			Name:    "publish teleport",
 			Confirm: false,
-			Help: "Publishes teleport release. Use flags to control the publish process. For example, to build and publish all non-Windows builds:\n`publish teleport with flags build-linux-amd64, build-darwin-amd64, build-linux-arm, publish-s3, publish-image`.\nTo build and publish only macOS binaries:\n`publish teleport with flags build-darwin-amd64,publish-s3.`\n",
+			Help:    "Publishes teleport release. Use flags to control the publish process. For example, to build and publish all non-Windows builds:\n`publish teleport with flags build-linux-amd64, build-darwin-amd64, build-linux-arm, publish-s3, publish-image`.\nTo build and publish only macOS binaries:\n`publish teleport with flags build-darwin-amd64,publish-s3.`\n",
 			Fields: []slack.Field{
 				{
 					Name:     "version",
@@ -36,11 +36,15 @@ Process(Spec{
 							"build-deb",
 							"publish-deb-s3",
 						)},
-						Help: "`flags` selects publishing steps, by default builds/publish everything",
+					Help: "`flags` selects publishing steps, by default builds/publish everything",
 				},
 			},
 		}),
 	Run: slack.PostStatusOf(
+		If(
+			Contains(event.Values.Flags, "build-linux-amd64"),
+			Infof("Running build-linux-amd64"),
+		),
 		If(
 			Contains(event.Values.Flags, "build-deb"),
 			Infof("Deploying build-deb"),

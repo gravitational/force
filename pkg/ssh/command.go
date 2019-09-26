@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/gravitational/force"
@@ -44,9 +45,21 @@ func (s *CommandAction) BindClient(client *ssh.Client, config *ssh.ClientConfig)
 	}, nil
 }
 
+// Eval evaluates variable and returns string
+func (s *CommandAction) Eval(ctx force.ExecutionContext) (string, error) {
+	out := force.NewSyncBuffer()
+	err := s.run(ctx, out)
+	return strings.TrimSpace(out.String()), err
+}
+
 func (s *CommandAction) Run(ctx force.ExecutionContext) error {
 	log := force.Log(ctx)
+	writer := force.Writer(log)
+	defer writer.Close()
+	return s.run(ctx, writer)
+}
 
+func (s *CommandAction) run(ctx force.ExecutionContext, writer io.Writer) error {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
 		return trace.NotFound("initialize ssh plugin in the setup section")
@@ -82,9 +95,6 @@ func (s *CommandAction) Run(ctx force.ExecutionContext) error {
 		return trace.ConnectionProblem(err, "could not start session")
 	}
 	defer session.Close()
-
-	writer := force.Writer(log)
-	defer writer.Close()
 
 	session.Stdout = writer
 	session.Stderr = writer

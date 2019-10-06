@@ -7,9 +7,7 @@
 Create your first `Hello, world!` file named `G`:
 
 ```go
-Process(Spec{
-    Run: Command(`echo "hello, world!"`),
-})
+Command(`echo "hello, world!"`)
 ```
 
 To process the file, run `force`:

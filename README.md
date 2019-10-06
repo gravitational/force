@@ -46,7 +46,7 @@ it's design from the [CSP](http://www.usingcsp.com/cspbook.pdf).
 Force already includes out of the box plugins for:
 
 * Local linux Docker builds.
-* Github.
+* Github and git
 
 Soon force will include out of the box plugins for:
 

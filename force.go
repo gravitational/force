@@ -23,6 +23,13 @@ type LexicalScope interface {
 	// Variables returns a list of variable names
 	// defined in this scope (and the parent scopes)
 	Variables() []string
+
+	// GetParent returns a parent scope definition,
+	// NotFound error is returned if scope has no parent
+	GetParent() (interface{}, error)
+
+	// SetParent sets parent type of the scope
+	SetParent(p interface{})
 }
 
 // Group represents a group of processes

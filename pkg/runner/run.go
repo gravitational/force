@@ -284,17 +284,22 @@ func (r *Runner) Close() error {
 	return nil
 }
 
-// Setup creates a new setup process
-func (r *Runner) Setup(actions ...force.Action) (force.Process, error) {
-	oneshotC, err := force.Oneshot()
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+// OneshotWithExit creates a oneshot process that wraps actions and exits
+func (r *Runner) OneshotWithExit(actions ...force.Action) (force.Process, error) {
+	actions = append([]force.Action{force.Defer(force.Exit())}, actions...)
+	return r.Oneshot("", actions...)
+}
+
+// Oneshot creates a new oneshot process
+func (r *Runner) Oneshot(name string, actions ...force.Action) (force.Process, error) {
 	spec := force.Spec{
-		Name:  "setup",
-		Watch: oneshotC,
+		Name:  force.String(name),
 		Run:   force.Sequence(actions...),
 		Group: r,
+	}
+	err := spec.CheckAndSetDefaults()
+	if err != nil {
+		return nil, trace.Wrap(err)
 	}
 	logger := r.Logger().AddFields(map[string]interface{}{
 		force.KeyProc:   spec.Name,
@@ -305,6 +310,11 @@ func (r *Runner) Setup(actions ...force.Action) (force.Process, error) {
 		return nil, trace.Wrap(err)
 	}
 	return l, nil
+}
+
+// Setup creates a new setup process
+func (r *Runner) Setup(actions ...force.Action) (force.Process, error) {
+	return r.Oneshot("setup", actions...)
 }
 
 // Process creates a local process

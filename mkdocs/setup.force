@@ -1,6 +1,13 @@
 // Setup configures force plugins, configurations
 // all other force files share the configuration defined in this file
 Setup(
+	kube.Setup(kube.Config{
+		// Path is a path to kubeconfig,
+		// which is optional, if not set,
+		// force assumes that it is running inside kubernetes
+		Path: ExpectEnv("KUBE_CREDENTIALS"),
+	}),	
+
 	// Builder configures docker builder
 	builder.Setup(builder.Config{
 		// Logs into quay io server

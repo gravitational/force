@@ -1,4 +1,1 @@
-Process(Spec{
-    Run: Command(`echo "hello, world!"`),
-})
-
+Command(`echo "hello, world!"`)

@@ -8,10 +8,10 @@ import (
 
 // Exit exits, if the exit code has been supplied
 // it will extract for whatever exit event was sent in the context
-func Exit() (Action, error) {
+func Exit() Action {
 	return &SendAction{
 		GetEvent: GetExitEventFromContext,
-	}, nil
+	}
 }
 
 type GetEventFunc func(ctx ExecutionContext) Event

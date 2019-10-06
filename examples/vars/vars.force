@@ -1,8 +1,12 @@
 func() {
-	testVar := "message(%v)"
+	testVar := "message(%v, %v, %v)"
 	
 	infof := func(message string) {
 		Infof(testVar, message)
+	}
+
+	infofs := func(m struct{Message string; BoolVar bool; IntVar int}) {
+		Infof(testVar, m.Message, m.BoolVar, m.IntVar)
 	}
 
 	infof2 := func(message []string) {

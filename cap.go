@@ -68,6 +68,14 @@ func CaptureSnippet(pos token.Position, text string) Snippet {
 	}
 }
 
+// StartsWithLower returns true if the string starts with lower case
+func StartsWithLower(v string) bool {
+	for _, r := range v {
+		return unicode.IsLower(r)
+	}
+	return false
+}
+
 // Capitalize returns a copy of the string
 // with first rune converted to capital letter
 func Capitalize(s string) string {

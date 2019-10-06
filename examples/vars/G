@@ -3,6 +3,8 @@ Process(Spec{
 	Watch: Oneshot(),
 	Run: func(){
 		v := "hello"
+		infofs(_{Message: "hola"})
+		infofs(_{Message: "hola", BoolVar: true, IntVar: 7})		
 		infof(Sprintf("hola: %v %v", v, "bueno"))
 		infof2(Strings(v, "whoa"))
 		infof(Marshal(func(){

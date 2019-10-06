@@ -71,7 +71,7 @@ type CopyAction struct {
 	clientConfig *ssh.ClientConfig
 }
 
-func (s *CopyAction) BindClient(client *ssh.Client, config *ssh.ClientConfig) (Action, error) {
+func (s *CopyAction) BindClient(client *ssh.Client, config *ssh.ClientConfig, _ []Env) (Action, error) {
 	if s.client != nil {
 		return nil, trace.AlreadyExists("client already set")
 	}

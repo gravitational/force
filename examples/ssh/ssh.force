@@ -2,15 +2,27 @@ Process(Spec{
 	Name: "log",
 	Watch: Oneshot(),
 	Run: func(){
-		ssh.Session(Strings("jenkins.gravitational.io:22"),
-			ssh.Command("ls -l /tmp"),
+		Defer(Exit())
+		ssh.Session(
+			ssh.Hosts{
+				Hosts: Strings("jenkins.gravitational.io:22"),
+				Env: []_{
+					// Target ssh server must be configured to accept environment
+					// AcceptEnv LANG LC_* FOO BAR*
+					{
+						Key: "LANG",
+						Val: "RU",
+					},
+				},
+			},
+			ssh.Command("env"),
 			ssh.Copy(ssh.Remote("/home/centos/prize/got"), ssh.Local("/tmp/bla")),
 		)
 		out := ssh.Command("Xcloud@xcloud.gravitational.io:22", "hostname")
 		Infof("Captured output: %v", out)		
-		ssh.Command("jenkins.gravitational.io:22", "ls -l /tmp")
+		ssh.Command("jenkins.gravitational.io:22", "hostname")
 		ssh.Copy("jenkins.gravitational.io:22", ssh.Remote("/home/centos/prize/got"), ssh.Local("/tmp/bla"))
-		ssh.Session(Strings("jenkins.gravitational.io:22", "Xcloud@xcloud.gravitational.io:22"),
+		ssh.Session(ssh.Hosts{Hosts: Strings("jenkins.gravitational.io:22", "Xcloud@xcloud.gravitational.io:22")},
 			ssh.Command("hostname"),
 		)
 	},

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gravitational/force"
+	"github.com/gravitational/force/pkg/aws"
 	"github.com/gravitational/force/pkg/builder"
 	"github.com/gravitational/force/pkg/git"
 	"github.com/gravitational/force/pkg/github"
@@ -168,6 +169,7 @@ func Parse(i Input) (*Runner, error) {
 		string(kube.Key):    kube.Scope,
 		string(slack.Key):   slack.Scope,
 		string(ssh.Key):     ssh.Scope,
+		string(aws.Key):     aws.Scope,
 	}
 	for key, plugin := range plugins {
 		scope, err := plugin()
@@ -202,6 +204,7 @@ func Parse(i Input) (*Runner, error) {
 	for _, st := range builtinStructs {
 		g.runner.AddDefinition(force.StructName(reflect.TypeOf(st)), reflect.TypeOf(st))
 	}
+	// add builtin types
 
 	// Setup the runner
 	if i.Setup.Content != "" {
@@ -253,19 +256,29 @@ func Parse(i Input) (*Runner, error) {
 	if err != nil {
 		return nil, trace.Wrap(convertScanError(err, i.Script))
 	}
+
 	procI, err := g.parseExpr(f, runner, expr)
 	if err != nil {
 		return nil, trace.Wrap(convertScanError(err, i.Script))
 	}
 
-	proc, ok := procI.(force.Process)
-	if !ok {
-		return nil, trace.BadParameter("expected Process or Setup, got something else")
+	var proc force.Process
+	switch v := procI.(type) {
+	case force.Process:
+		proc = v
+	case force.Action:
+		out, err := runner.OneshotWithExit(v)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		proc = out
+	default:
+		return nil, trace.BadParameter("expected Process or Setup, got something else: %T", procI)
 	}
 
 	// if after parsing, logging plugin is not set up
 	// set it up with default plugin instance
-	_, ok = runner.GetPlugin(log.Key)
+	_, ok := runner.GetPlugin(log.Key)
 	if !ok {
 		runner.SetPlugin(log.Key, &log.Plugin{})
 	}
@@ -305,10 +318,17 @@ type gParser struct {
 	plugins map[string]force.Group
 }
 
-func (g *gParser) parseArguments(f *token.FileSet, scope force.Group, nodes []ast.Node) ([]interface{}, error) {
+func (g *gParser) parseArguments(f *token.FileSet, scope force.Group, nodes []ast.Node, argumentTypes []reflect.Type) ([]interface{}, error) {
 	out := make([]interface{}, len(nodes))
 	for i, n := range nodes {
-		val, err := g.parseExpr(f, scope, n)
+		var argType reflect.Type
+		// assume it's a variadic arg call
+		if i > len(argumentTypes)-1 {
+			argType = argumentTypes[len(argumentTypes)-1]
+		} else {
+			argType = argumentTypes[i]
+		}
+		val, err := g.parseExpr(f, force.WithParent(scope, argType), n)
 		if err != nil {
 			return nil, wrap(f, n, trace.Wrap(err))
 		}
@@ -334,6 +354,12 @@ func (g *gParser) parseStatements(f *token.FileSet, scope force.Group, nodes []a
 }
 
 func (g *gParser) parseStructFields(f *token.FileSet, scope force.Group, nodes []ast.Expr) (map[string]interface{}, error) {
+	parent, err := scope.GetParent()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	parentType := parent.(reflect.Type)
+	structScope := force.WithLexicalScope(scope)
 	out := make(map[string]interface{}, len(nodes))
 	for _, n := range nodes {
 		kv, ok := n.(*ast.KeyValueExpr)
@@ -344,7 +370,30 @@ func (g *gParser) parseStructFields(f *token.FileSet, scope force.Group, nodes [
 		if !ok {
 			return nil, trace.BadParameter("expected value identifier, got %#v", n)
 		}
-		val, err := g.parseExpr(f, scope, kv.Value)
+		var structField *reflect.StructField
+		var err error
+		if parentType.Kind() == reflect.Struct {
+			structField, err = fieldTypeByName(parentType, key.Name)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+		} else if parentType.Kind() == reflect.Map {
+			structField = &reflect.StructField{
+				Name: key.Name,
+				Type: parentType.Elem(),
+			}
+		} else {
+			return nil, trace.BadParameter("unsupported type %v", parentType)
+		}
+		//
+		// this scope is shared between struct fields, because in Force, the following is possible:
+		// PullRequests defines a new event type
+		// further references in the Run, so in struct definition
+		// Fields are sharing the same lexical scope
+		//
+		// Spec: {Watch: PullReqeuests(), Run: func(){event.Commit}}
+		structScope.SetParent(structField.Type)
+		val, err := g.parseExpr(f, structScope, kv.Value)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -375,37 +424,87 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 			if err != nil {
 				return nil, wrap(f, n, trace.Wrap(err))
 			}
-			fields, err := g.parseStructFields(f, scope, l.Elts)
+			fields, err := g.parseStructFields(f, force.WithParent(scope, structProto), l.Elts)
 			if err != nil {
 				return nil, wrap(f, n, trace.Wrap(err))
 			}
-			st, err := createStruct(structProto, fields)
+			st, err := createStruct(structProto, fields, false)
 			if err != nil {
 				return nil, wrap(f, n, trace.Wrap(err))
 			}
 			return st, nil
 		case *ast.Ident:
-			structProto, err := g.runner.GetDefinition(literal.Name)
+			var protoType reflect.Type
+			var err error
+			// assume this is a shortcut
+			var isPointer bool
+			if literal.Name == force.Underscore {
+				parent, err := scope.GetParent()
+				if err != nil {
+					return nil, wrap(f, n, trace.NotFound("not enough information to infer type"))
+				}
+				parentType, ok := parent.(reflect.Type)
+				if !ok {
+					return nil, wrap(f, n, trace.NotFound("unsupported type got %T", parent))
+				}
+				if parentType.Kind() == reflect.Ptr {
+					protoType = parentType.Elem()
+					isPointer = true
+				} else {
+					protoType = parentType
+				}
+			} else {
+				out, err := g.runner.GetDefinition(literal.Name)
+				if err != nil {
+					return nil, wrap(f, n, trace.Wrap(err))
+				}
+				protoType = out.(reflect.Type)
+			}
+			fields, err := g.parseStructFields(f, force.WithParent(scope, protoType), l.Elts)
 			if err != nil {
 				return nil, wrap(f, n, trace.Wrap(err))
 			}
-			fields, err := g.parseStructFields(f, scope, l.Elts)
-			if err != nil {
-				return nil, wrap(f, n, trace.Wrap(err))
+			switch protoType.Kind() {
+			case reflect.Struct:
+				st, err := createStruct(protoType, fields, isPointer)
+				if err != nil {
+					return nil, wrap(f, n, trace.Wrap(err))
+				}
+				return st, nil
+			case reflect.Map:
+				m := reflect.MakeMapWithSize(protoType, len(fields))
+				for key := range fields {
+					m.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(fields[key]))
+				}
+				return m.Interface(), nil
+			default:
+				return nil, wrap(f, n,
+					trace.BadParameter("can not convert type %v to map or struct", protoType.Kind()))
 			}
-			st, err := createStruct(structProto, fields)
-			if err != nil {
-				return nil, wrap(f, n, trace.Wrap(err))
-			}
-			return st, nil
 		case *ast.ArrayType:
 			var structProto interface{}
 			var err error
 			switch arrayType := literal.Elt.(type) {
 			case *ast.Ident:
-				structProto, err = g.runner.GetDefinition(arrayType.Name)
-				if err != nil {
-					return nil, wrap(f, n, trace.Wrap(err))
+				// Underscore triggers attempt at type inference
+				if arrayType.Name == force.Underscore {
+					parent, err := scope.GetParent()
+					if err != nil {
+						return nil, wrap(f, n, trace.NotFound("underscore is supported either in struct definitions, or function calls"))
+					}
+					structType, ok := parent.(reflect.Type)
+					if !ok {
+						return nil, wrap(f, n, trace.NotFound("underscore is supported either in struct definitions or function calls, got %T", parent))
+					}
+					if structType.Kind() != reflect.Slice {
+						return nil, wrap(f, n, trace.NotFound("expected slice, got %v", structType.Kind()))
+					}
+					structProto = structType.Elem()
+				} else {
+					structProto, err = g.runner.GetDefinition(arrayType.Name)
+					if err != nil {
+						return nil, wrap(f, n, trace.Wrap(err))
+					}
 				}
 			case *ast.SelectorExpr:
 				module, ok := arrayType.X.(*ast.Ident)
@@ -433,11 +532,11 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 				if !ok {
 					return nil, wrap(f, n, trace.BadParameter("unsupported composite literal type: %T", l.Type))
 				}
-				fields, err := g.parseStructFields(f, scope, member.Elts)
+				fields, err := g.parseStructFields(f, force.WithParent(scope, structType), member.Elts)
 				if err != nil {
 					return nil, wrap(f, n, trace.Wrap(err))
 				}
-				st, err := createStruct(structProto, fields)
+				st, err := createStruct(structProto, fields, false)
 				if err != nil {
 					return nil, wrap(f, n, trace.Wrap(err))
 				}
@@ -517,12 +616,26 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 		for i := range l.Args {
 			nodes[i] = l.Args[i]
 		}
-		arguments, err := g.parseArguments(f, newScope, nodes)
+		// argumentTypes should go here:
+		var argumentTypes []reflect.Type
+		lambda, isLambda := newFn.(*force.LambdaFunction)
+		if isLambda {
+			argumentTypes = make([]reflect.Type, len(lambda.Params))
+			for i := range lambda.Params {
+				argumentTypes[i] = reflect.TypeOf(lambda.Params[i].Prototype)
+			}
+		} else {
+			fnType := reflect.TypeOf(fn)
+			argumentTypes = make([]reflect.Type, fnType.NumIn())
+			for i := 0; i < fnType.NumIn(); i++ {
+				argumentTypes[i] = fnType.In(i)
+			}
+		}
+		arguments, err := g.parseArguments(f, newScope, nodes, argumentTypes)
 		if err != nil {
 			return nil, wrap(f, n, err)
 		}
-		lambda, ok := newFn.(*force.LambdaFunction)
-		if !ok {
+		if !isLambda {
 			return callFunction(fn, arguments)
 		}
 		if len(arguments) != len(lambda.Params) {
@@ -582,7 +695,7 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 				if len(p.Names) != 1 {
 					return nil, wrap(f, n, trace.BadParameter("lambda function parameter %v name is not supported", i))
 				}
-				arg, err := g.evalFunctionArg(f, p.Type)
+				arg, err := g.evalFunctionArg(f, lambda.Scope, p.Type)
 				if err != nil {
 					return nil, wrap(f, n, trace.Wrap(err))
 				}
@@ -611,7 +724,11 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 	accumulate:
 		switch selector := l.X.(type) {
 		case *ast.Ident:
-			return force.Var(scope)(force.String(selector.Name), fields...)
+			v, err := force.Var(scope)(force.String(selector.Name), fields...)
+			if err != nil {
+				return nil, wrap(f, selector, trace.Wrap(err))
+			}
+			return v, nil
 		case *ast.SelectorExpr:
 			l = selector
 			fields = append([]force.String{force.String(selector.Sel.Name)}, fields...)
@@ -624,7 +741,7 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 	}
 }
 
-func (g *gParser) evalFunctionArg(f *token.FileSet, n ast.Node) (interface{}, error) {
+func (g *gParser) evalFunctionArg(f *token.FileSet, scope force.Group, n ast.Node) (interface{}, error) {
 	switch l := n.(type) {
 	case *ast.Ident:
 		return literalZeroValue(l.Name)
@@ -634,10 +751,52 @@ func (g *gParser) evalFunctionArg(f *token.FileSet, n ast.Node) (interface{}, er
 			return nil, wrap(f, n, trace.BadParameter("unsupported composite literal: %v %T", l.Elt, l.Elt))
 		}
 		switch arrayType.Name {
-		case "string":
+		case force.StringType:
 			return []force.String{}, nil
+		case force.IntType:
+			return []force.Int{}, nil
+		case force.BoolType:
+			return []force.Bool{}, nil
 		}
 		return nil, wrap(f, n, trace.BadParameter("%T is not supported", n))
+	case *ast.StructType:
+		structFields := make([]reflect.StructField, len(l.Fields.List))
+		for i := range l.Fields.List {
+			field := l.Fields.List[i]
+			fieldTypeI, ok := field.Type.(*ast.Ident)
+			if !ok {
+				return nil, wrap(f, field.Type, trace.BadParameter("expected identifier, got %v", field.Type))
+			}
+			fieldName := field.Names[0].Name
+			if force.StartsWithLower(fieldName) {
+				return nil, wrap(f, field.Type,
+					trace.BadParameter("struct field %v has to start with upper case: %v", fieldName, force.Capitalize(fieldName)))
+			}
+			switch fieldTypeI.Name {
+			case force.StringType:
+				varType := reflect.TypeOf((*force.StringVar)(nil)).Elem()
+				structFields[i] = reflect.StructField{
+					Name: fieldName,
+					Type: varType,
+				}
+			case force.BoolType:
+				varType := reflect.TypeOf((*force.BoolVar)(nil)).Elem()
+				structFields[i] = reflect.StructField{
+					Name: fieldName,
+					Type: varType,
+				}
+			case force.IntType:
+				varType := reflect.TypeOf((*force.IntVar)(nil)).Elem()
+				structFields[i] = reflect.StructField{
+					Name: fieldName,
+					Type: varType,
+				}
+			default:
+				return nil, wrap(f, field.Type, trace.BadParameter("unsupported struct type %v, supported: string", field.Type))
+			}
+		}
+		structProto := reflect.StructOf(structFields)
+		return createStruct(structProto, nil, false)
 	default:
 		return nil, wrap(f, n, trace.BadParameter("%T is not supported", n))
 	}
@@ -738,7 +897,7 @@ func callFunction(f interface{}, args []interface{}) (v interface{}, err error) 
 	return nil, trace.BadParameter("expected at least one return argument for '%v'", fn)
 }
 
-func createStruct(val interface{}, args map[string]interface{}) (v interface{}, err error) {
+func createStruct(val interface{}, args map[string]interface{}, pointer bool) (v interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = trace.BadParameter("struct %v: %v %v %v", force.StructName(reflect.TypeOf(val)), r, val, args)
@@ -749,17 +908,72 @@ func createStruct(val interface{}, args map[string]interface{}) (v interface{}, 
 		return nil, trace.BadParameter("expected type, got %T", val)
 	}
 	st := reflect.New(structType)
+	for i := 0; i < structType.NumField(); i++ {
+		field := st.Elem().Field(i)
+		zeroVal, ok := force.Zero(field.Type())
+		if ok {
+			field.Set(zeroVal)
+		}
+	}
 	for key, val := range args {
-		field := st.Elem().FieldByName(key)
-		if !field.IsValid() {
-			return nil, trace.BadParameter("field %q is not found in %v", key, force.StructName(reflect.TypeOf(structType)))
+		field, err := fieldByName(st.Elem(), key)
+		if err != nil {
+			return nil, trace.Wrap(err)
 		}
 		if !field.CanSet() {
 			return nil, trace.BadParameter("can't set value of %v", field)
 		}
 		field.Set(reflect.ValueOf(val))
 	}
+	if pointer {
+		return st.Interface(), nil
+	}
 	return st.Elem().Interface(), nil
+}
+
+func fieldTypeByName(st reflect.Type, name string) (*reflect.StructField, error) {
+	for i := 0; i < st.NumField(); i++ {
+		fieldType := st.Field(i)
+		if fieldType.Type.Kind() == reflect.Struct && fieldType.Anonymous {
+			f, err := fieldTypeByName(fieldType.Type, name)
+			if err == nil {
+				return f, nil
+			}
+			if !trace.IsNotFound(err) {
+				return nil, trace.Wrap(err)
+			}
+		} else {
+			if fieldType.Name == name {
+				return &fieldType, nil
+			}
+		}
+	}
+
+	return nil, trace.NotFound("field type %v is not found in struct %v", name, force.StructName(st))
+}
+
+func fieldByName(st reflect.Value, name string) (reflect.Value, error) {
+	stType := st.Type()
+	for i := 0; i < st.NumField(); i++ {
+		field := st.Field(i)
+		fieldType := stType.Field(i)
+
+		if fieldType.Type.Kind() == reflect.Struct && fieldType.Anonymous {
+			f, err := fieldByName(field, name)
+			if err == nil {
+				return f, nil
+			}
+			if !trace.IsNotFound(err) {
+				return reflect.Value{}, trace.Wrap(err)
+			}
+		} else {
+			if fieldType.Name == name {
+				return field, nil
+			}
+		}
+	}
+
+	return reflect.Value{}, trace.NotFound("field %v is not found in struct %v", name, force.StructName(st.Type()))
 }
 
 // wrap wraps parse error
@@ -767,10 +981,18 @@ func wrap(f *token.FileSet, n ast.Node, err error) error {
 	if _, ok := trace.Unwrap(err).(*force.CodeError); ok {
 		return err
 	}
-	return &force.CodeError{
+	codeErr := &force.CodeError{
 		Snippet: force.Snippet{
 			Pos: f.Position(n.Pos()),
 		},
 		Err: err,
 	}
+	// rewrap to preserve original stack
+	terr, ok := err.(*trace.TraceErr)
+	if !ok {
+		return codeErr
+	}
+	codeErr.Err = trace.Unwrap(err)
+	terr.Err = codeErr
+	return terr
 }

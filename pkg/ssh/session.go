@@ -10,8 +10,19 @@ import (
 )
 
 type Action interface {
-	BindClient(client *ssh.Client, config *ssh.ClientConfig) (Action, error)
+	BindClient(client *ssh.Client, config *ssh.ClientConfig, env []Env) (Action, error)
 	force.Action
+}
+
+type Env struct {
+	Key string
+	Val string
+}
+
+// Hosts enumerates hosts and helps to set environment
+type Hosts struct {
+	Hosts []string
+	Env   []Env
 }
 
 // NewSession
@@ -25,7 +36,7 @@ func (n *NewSession) NewInstance(group force.Group) (force.Group, interface{}) {
 
 // Session groups sequence of commands together,
 // if one fails, the chain stop execution
-func Session(hosts force.StringsVar, actions ...Action) force.Action {
+func Session(hosts interface{}, actions ...Action) force.Action {
 	return &SessionAction{
 		hosts:   hosts,
 		actions: actions,
@@ -36,7 +47,7 @@ func Session(hosts force.StringsVar, actions ...Action) force.Action {
 // if the action fails, next actions are not run
 type SessionAction struct {
 	actions []Action
-	hosts   force.StringsVar
+	hosts   interface{}
 }
 
 // MarshalCode marshals action into code representation
@@ -55,16 +66,17 @@ func (p *SessionAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) 
 
 // RunWithScope runs actions in sequence using the passed scope
 func (s *SessionAction) Run(ctx force.ExecutionContext) error {
-	hosts, err := s.hosts.Eval(ctx)
-	if err != nil {
+	var hosts Hosts
+	if err := force.EvalInto(ctx, s.hosts, &hosts); err != nil {
 		return trace.Wrap(err)
 	}
-	if len(hosts) == 0 {
-		return trace.BadParameter("ssh.Sequence needs at least one host")
+
+	if len(hosts.Hosts) == 0 {
+		return trace.BadParameter("ssh.Session needs at least one host")
 	}
-	actions := make([]force.Action, len(hosts))
-	for i, h := range hosts {
-		actions[i] = &HostSequence{host: h, actions: s.actions}
+	actions := make([]force.Action, len(hosts.Hosts))
+	for i, h := range hosts.Hosts {
+		actions[i] = &HostSequence{host: h, actions: s.actions, env: hosts.Env}
 	}
 	return force.Parallel(actions...).Run(ctx)
 }
@@ -73,6 +85,7 @@ func (s *SessionAction) Run(ctx force.ExecutionContext) error {
 type HostSequence struct {
 	host    string
 	actions []Action
+	env     []Env
 }
 
 // Run runs actions in sequence on a single host
@@ -91,7 +104,7 @@ func (s *HostSequence) Run(ctx force.ExecutionContext) error {
 
 	forceActions := make([]force.Action, len(s.actions))
 	for i := range s.actions {
-		action, err := s.actions[i].BindClient(client, config)
+		action, err := s.actions[i].BindClient(client, config, s.env)
 		if err != nil {
 			return trace.Wrap(err)
 		}

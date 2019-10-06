@@ -1,0 +1,17 @@
+Setup(
+	log.Setup(log.Config{
+		Level: "info",
+		Outputs: []log.Output{
+			{
+				Type: "stdout",
+			},
+			{
+				Type: "stackdriver",
+				CredentialsFile: ExpectEnv("LOGGING_CREDENTIALS"),
+			},
+		},
+	}),
+
+	aws.Setup(aws.Config{
+	}),	
+)

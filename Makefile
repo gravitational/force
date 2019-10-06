@@ -52,6 +52,11 @@ ssh:
 	$(MAKE) all
 	cd examples/ssh && force -d ssh.force
 
+.PHONY: aws
+aws: 
+	$(MAKE) all
+	cd examples/aws && force -d aws.force
+
 .PHONY: flows
 flows:
 	$(MAKE) all

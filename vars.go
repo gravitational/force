@@ -66,6 +66,10 @@ func GetField(v interface{}, name String, fields ...String) (interface{}, error)
 		return nil, trace.BadParameter("%v has to be struct to have field %v", name, fields[0])
 	}
 	fieldName := fields[0]
+	_, found := vType.FieldByName(string(fieldName))
+	if !found {
+		return nil, trace.BadParameter("%v does not have a field %v in %#v", name, fieldName, v)
+	}
 	vVal := reflect.ValueOf(v)
 	field := vVal.FieldByName(string(fieldName))
 	if !field.IsValid() {

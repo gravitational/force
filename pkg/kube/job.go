@@ -27,119 +27,6 @@ const (
 	KindPod          = "Pod"
 )
 
-// Job is a simplified job spec
-type Job struct {
-	// Completions specifies job completions,
-	// Force's default is not set
-	Completions           int
-	ActiveDeadlineSeconds int
-	BackoffLimit          int
-	// TTLSeconds provides auto cleanup of the job
-	TTLSeconds      int
-	Name            string
-	Namespace       string
-	Containers      []Container
-	SecurityContext *PodSecurityContext
-	Volumes         []Volume
-}
-
-type PodSecurityContext struct {
-	RunAsUser  int
-	RunAsGroup int
-}
-
-func (s *PodSecurityContext) CheckAndSetDefaults() error {
-	return nil
-}
-
-func (s *PodSecurityContext) Spec() (*corev1.PodSecurityContext, error) {
-	return &corev1.PodSecurityContext{
-		RunAsUser:  force.PInt64(int64(s.RunAsUser)),
-		RunAsGroup: force.PInt64(int64(s.RunAsGroup)),
-	}, nil
-}
-
-// CheckAndSetDefaults checks and sets defaults
-func (j *Job) CheckAndSetDefaults() error {
-	if j.Name == "" {
-		return trace.BadParameter("specify a job name")
-	}
-	if j.TTLSeconds == 0 {
-		// 48 hours to clean up old jobs
-		j.TTLSeconds = JobTTLSeconds
-	}
-	if j.ActiveDeadlineSeconds == 0 {
-		j.ActiveDeadlineSeconds = ActiveDeadlineSeconds
-	}
-	if j.Namespace == "" {
-		j.Namespace = DefaultNamespace
-	}
-	if len(j.Containers) == 0 {
-		return trace.BadParameter("the job needs at least one container")
-	}
-	if j.SecurityContext != nil {
-		if err := j.SecurityContext.CheckAndSetDefaults(); err != nil {
-			return trace.Wrap(err)
-		}
-	}
-	for i := range j.Containers {
-		if err := j.Containers[i].CheckAndSetDefaults(); err != nil {
-			return trace.Wrap(err)
-		}
-	}
-	for i := range j.Volumes {
-		if err := j.Volumes[i].CheckAndSetDefaults(); err != nil {
-			return trace.Wrap(err)
-		}
-	}
-	return nil
-}
-
-// Spec returns kubernetes version of the job spec
-func (j *Job) Spec() (*batchv1.Job, error) {
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      j.Name,
-			Namespace: j.Namespace,
-		},
-		Spec: batchv1.JobSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-				},
-			},
-		},
-	}
-	if j.BackoffLimit != 0 {
-		job.Spec.BackoffLimit = force.PInt32(int32(j.BackoffLimit))
-	}
-	if j.Completions != 0 {
-		job.Spec.Completions = force.PInt32(int32(j.Completions))
-	}
-	if j.SecurityContext != nil {
-		spec, err := j.SecurityContext.Spec()
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		job.Spec.Template.Spec.SecurityContext = spec
-	}
-	for _, c := range j.Containers {
-		spec, err := c.Spec()
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		job.Spec.Template.Spec.Containers = append(job.Spec.Template.Spec.Containers, *spec)
-	}
-	for _, v := range j.Volumes {
-		spec, err := v.Spec()
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		job.Spec.Template.Spec.Volumes = append(job.Spec.Template.Spec.Volumes, *spec)
-	}
-	return job, nil
-}
-
 func evalJobStatus(ctx context.Context, eventsC <-chan watch.Event) error {
 	log := force.Log(ctx)
 	for {
@@ -216,4 +103,53 @@ func namespace(namespace string) string {
 		return DefaultNamespace
 	}
 	return namespace
+}
+
+// checkAndSetDefaults checks and sets defaults
+func checkAndSetJobDefaults(j *batchv1.Job) error {
+	if j.Name == "" {
+		return trace.BadParameter("specify a job name")
+	}
+	if j.Kind == "" {
+		j.Kind = KindJob
+	}
+	if len(j.Spec.Template.Spec.Containers) == 0 {
+		return trace.BadParameter("the job needs at least one container")
+	}
+	// by default, do not retry the job
+	if j.Spec.BackoffLimit == nil {
+		j.Spec.BackoffLimit = force.PInt32(0)
+	}
+	if j.Spec.Template.Spec.RestartPolicy == "" {
+		j.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
+	}
+	if j.Spec.TTLSecondsAfterFinished == nil {
+		// 48 hours to clean up old jobs
+		j.Spec.TTLSecondsAfterFinished = force.PInt32(JobTTLSeconds)
+	}
+	if j.Spec.ActiveDeadlineSeconds == nil {
+		j.Spec.ActiveDeadlineSeconds = force.PInt64(ActiveDeadlineSeconds)
+	}
+	if j.Namespace == "" {
+		j.Namespace = DefaultNamespace
+	}
+	for i := range j.Spec.Template.Spec.Containers {
+		if err := checkAndSetContainerDefaults(&j.Spec.Template.Spec.Containers[i]); err != nil {
+			return trace.Wrap(err)
+		}
+	}
+	return nil
+}
+
+func checkAndSetContainerDefaults(c *corev1.Container) error {
+	if c.Image == "" {
+		return trace.BadParameter("specify Container{Image: ``}")
+	}
+	if c.Name == "" {
+		return trace.BadParameter("specify Container{Name: ``}")
+	}
+	if c.ImagePullPolicy == "" {
+		c.ImagePullPolicy = corev1.PullAlways
+	}
+	return nil
 }

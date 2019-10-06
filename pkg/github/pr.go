@@ -102,7 +102,6 @@ func (r *PullRequestWatcher) pollRepo(ctx context.Context) {
 			}
 		case <-time.After(5 * time.Second):
 			pulls, err := r.updatedPullRequests(ctx, afterDate, cache)
-			fmt.Printf("Updated pulls: %v %v\n", pulls, err)
 			if err != nil {
 				log.WithError(err).Warningf("Pull request check failed")
 				continue

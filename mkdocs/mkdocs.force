@@ -10,12 +10,9 @@ Process(Spec{
 		// Create temporary directory "repo"
 		repo := TempDir("", "")
 		Defer(RemoveAll(repo))
-		// Clone clones git repository into temp dir
 		git.Clone(git.Repo{
 			URL: "git@github.com:gravitational/force.git",
 			Into: repo,
-			// Commit is a commit variable defined by pull request watch,
-			// the problem is that there is no namespacing here
 			Hash: event.Commit,
 		})		
 		// Image is an image name to build
@@ -42,5 +39,33 @@ Process(Spec{
 		builder.Push(builder.Image{Tag: image})
 		// Prune the build cache
 		builder.Prune()
+		docNamespace := "docrouter"
+		branchName := kube.Name(event.Branch)
+		// Create or update a deployment serving the docs
+		kube.Apply(kube.Deployment{
+			Name: branchName,
+			Namespace: docNamespace,
+			Spec: _{
+				Replicas: 1,
+				Selector: _{
+					MatchLabels: _{
+						branch: branchName,
+					},
+				},
+				Template: _{
+					Labels: _{
+						branch: branchName,
+					},
+					Spec: _{
+						Containers: []_{
+							{
+								Image: image,
+								Name: branchName,
+							},
+						},											
+					},
+				},
+			},
+		})
 	},
 })

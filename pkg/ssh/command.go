@@ -31,9 +31,10 @@ type CommandAction struct {
 	host         force.StringVar
 	client       *ssh.Client
 	clientConfig *ssh.ClientConfig
+	env          []Env
 }
 
-func (s *CommandAction) BindClient(client *ssh.Client, config *ssh.ClientConfig) (Action, error) {
+func (s *CommandAction) BindClient(client *ssh.Client, config *ssh.ClientConfig, env []Env) (Action, error) {
 	if s.client != nil {
 		return nil, trace.AlreadyExists("client already set")
 	}
@@ -42,6 +43,7 @@ func (s *CommandAction) BindClient(client *ssh.Client, config *ssh.ClientConfig)
 		command:      s.command,
 		client:       client,
 		clientConfig: config,
+		env:          env,
 	}, nil
 }
 
@@ -95,6 +97,12 @@ func (s *CommandAction) run(ctx force.ExecutionContext, writer io.Writer) error 
 		return trace.ConnectionProblem(err, "could not start session")
 	}
 	defer session.Close()
+
+	for _, env := range s.env {
+		if err := session.Setenv(env.Key, env.Val); err != nil {
+			return trace.ConnectionProblem(err, "setting environment variable failed, perhaps missing AcceptEnv directive on the target server?")
+		}
+	}
 
 	session.Stdout = writer
 	session.Stderr = writer

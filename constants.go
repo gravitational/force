@@ -26,4 +26,9 @@ const (
 	KeyForce = "force"
 	// KeyEvent is an event produced by watchers
 	KeyEvent = "event"
+	// Underscore is underscore symbol
+	Underscore = "_"
+	StringType = "string"
+	IntType    = "int"
+	BoolType   = "bool"
 )

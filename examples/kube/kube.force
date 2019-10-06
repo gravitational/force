@@ -1,65 +1,86 @@
-Process(Spec{
-	Name: "kube",
-	Watch: Oneshot(),
-	Run: func(){
+func(){
 		Defer(Exit())
-		Parallel(
-			kube.Run(kube.Job{
-			Name: Sprintf("hello-second-%v", ID()),
-			Volumes: []kube.Volume{
-				{
-					Name: "gocache",
-					EmptyDir: &kube.EmptyDir{},
-				},
-			},			
-			Containers: []kube.Container{
-				{
-					Image: "busybox",
-					Name: "busybox",
-					Command: Strings("/bin/sh", "-c", `echo "hello, first $GOCACHE" && sleep 10;`),
-					Env: []kube.EnvVar{
-						{
-							Name: "GOCACHE",
-							Value: "/mnt/gocache",
+		kube.Run(kube.Job{
+			Name: Sprintf("hello-first-%v", ID()),
+			Namespace: "default",
+			Spec: _{
+				Template: _{
+					Spec: _{
+						Containers: []_{
+							{
+								Image: "busybox",
+								Name: "busybox",
+								Command: Strings("/bin/sh", "-c", `echo "hello, first $GOCACHE" && sleep 10;`),
+								Env: []_{
+									{
+										Name: "GOCACHE",
+										Value: "/mnt/gocache",
+									},
+								},
+								VolumeMounts: []_{
+									{
+										Name: "gocache",
+										MountPath: "/mnt/gocache",
+									},
+								},
+								SecurityContext: _{Privileged: true},
+							},
+						},
+						Volumes: []_{
+							{
+								Name: "gocache",
+								EmptyDir: _{},
+							},
 						},
 					},
-					VolumeMounts: []kube.VolumeMount{
-						{
-							Name: "gocache",
-							MountPath: "/mnt/gocache",
-						},
+				},
+			},
+		})
+		kube.Apply(kube.Deployment{
+			Name: "howdy",
+			Namespace: "default",
+			Spec: _{
+				Replicas: 1,
+				Selector: _{
+					MatchLabels: _{
+						run: "doc-router",
+					},
+				},
+				Template: _{
+					Labels: _{
+						run: "doc-router",
+					},
+					Spec: _{
+						Containers: []_{
+							{
+								Image: "busybox",
+								Name: "busybox",
+								Command: Strings("/bin/sh", "-c", `echo "hello"; sleep 10;`),
+							},
+						},											
+					},
+				},
+			},
+		},kube.Service{
+			Name: "howdy",
+			Namespace: "default",
+			Spec: _{
+				Type: "ClusterIP",
+				Selector: _{
+					run: "doc-router",
+				},
+				Ports: []_{
+					{
+						Name: "http",
+						Port: 80,
+						Protocol: "TCP",
+					},
+					{
+						Name: "https",
+						Port: 443,
+						Protocol: "TCP",
 					},					
 				},
 			},
-			}),
-			kube.Run(kube.Job{
-				Name: Sprintf("hello-first-%v", ID()),
-				Volumes: []kube.Volume{
-					{
-						Name: "gocache",
-						EmptyDir: &kube.EmptyDir{},
-					},
-				},
-				Containers: []kube.Container{
-					{
-						Image: "busybox",
-						Name: "busybox",
-						Command: Strings("/bin/sh", "-c", `echo "hello, second $GOCACHE" && sleep 10;`),
-						Env: []kube.EnvVar{
-							{
-								Name: "GOCACHE",
-								Value: "/mnt/gocache",
-							},
-						},
-						VolumeMounts: []kube.VolumeMount{
-							{
-								Name: "gocache",
-								MountPath: "/mnt/gocache",
-							},
-						},
-					},
-				},
-			}),
-		)
-	},
-})
+		})
+	}

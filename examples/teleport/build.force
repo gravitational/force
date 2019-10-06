@@ -41,51 +41,57 @@ func(){
 	RunBuildJob := func(image string, script string){
 		kube.Run(kube.Job{
 			Name: Sprintf("tele-build-%v", ID()),
-			Volumes: []kube.Volume{
-				{Name: "creds", Secret: &kube.Secret{Name: "creds"}},
-				{Name: "gitkey", Secret: &kube.Secret{Name: "gitkey"}},						
-				{Name: "scripts", ConfigMap: &kube.ConfigMap{Name: "scripts"}},
-				{Name: "cache", EmptyDir: &kube.EmptyDir{}},
-				{Name: "tmp", EmptyDir: &kube.EmptyDir{}},
-			},
-			Containers: []kube.Container{
-				{
-					Name: "kbuild",
-					Image: forceImage,
-					Command: Strings("force", "-d"),					
-					Env: []kube.EnvVar{
-						// ID is passed so the job spawned in k8s
-						// will have the same job id, having the same logs
-						{Name: "FORCE_ID",Value: ID()},
-						// Script is passed as an environment variable,
-						// thanks to Marshal the script is inline,
-						// can reference outside variables
-						{
-							Name: "FORCE_SCRIPT",
-							Value: script,
+			Spec: _{
+				Template: _{
+					Spec: _{
+						Containers: []_{
+							{
+								Name: "kbuild",
+								Image: forceImage,
+								Command: Strings("force", "-d"),					
+								Env: []_{
+									// ID is passed so the job spawned in k8s
+									// will have the same job id, having the same logs
+									{Name: "FORCE_ID",Value: ID()},
+									// Script is passed as an environment variable,
+									// thanks to Marshal the script is inline,
+									// can reference outside variables
+									{
+										Name: "FORCE_SCRIPT",
+										Value: script,
+									},
+									// Setup is passed as an environment variable
+									{
+										Name: "FORCE_SETUP",
+										Value: containerSetupScript,
+									},
+									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
+									{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
+									{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},
+								},
+								VolumeMounts: []_{
+									// tmp is for temporary directory, just in case
+									{Name: "tmp", MountPath: "/tmp"},
+									// cache is for container build cache
+									{Name: "cache", MountPath: "/root/.local"},
+									// creds is for google creds
+									{Name: "creds", MountPath: "/var/secrets/google"},
+									// scripts is a script with a dockerfile
+									{Name: "gitkey", MountPath: "/var/secrets/git"},
+									// scripts is a script with a dockerfile
+									{Name: "scripts", MountPath: "/mnt/scripts"},								
+								},
+								SecurityContext: _{Privileged: true},
+							},
 						},
-						// Setup is passed as an environment variable
-						{
-							Name: "FORCE_SETUP",
-							Value: containerSetupScript,
+						Volumes: []_{
+							{Name: "creds", Secret: _{SecretName: "creds"}},
+						    {Name: "gitkey", Secret: _{SecretName: "gitkey"}},
+							{Name: "scripts", ConfigMap: _{Name: "scripts"}},
+							{Name: "cache", EmptyDir: _{}},
+							{Name: "tmp", EmptyDir: _{}},
 						},
-						{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
-						{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
-						{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},
 					},
-					VolumeMounts: []kube.VolumeMount{
-						// tmp is for temporary directory, just in case
-						{Name: "tmp", MountPath: "/tmp"},
-						// cache is for container build cache
-						{Name: "cache", MountPath: "/root/.local"},
-						// creds is for google creds
-						{Name: "creds", MountPath: "/var/secrets/google"},
-						// scripts is a script with a dockerfile
-						{Name: "gitkey", MountPath: "/var/secrets/git"},
-						// scripts is a script with a dockerfile
-						{Name: "scripts", MountPath: "/mnt/scripts"},								
-					},
-					SecurityContext: &kube.SecurityContext{Privileged: true},
 				},
 			},
 		})
@@ -149,24 +155,30 @@ func(){
 	RunTestJob := func(image string, name string, command []string) {
 		kube.Run(kube.Job{
 			Name: name,
-			SecurityContext: &kube.PodSecurityContext{RunAsUser: uid, RunAsGroup: gid},
-			Volumes: []kube.Volume{
-				{Name: "gocache", EmptyDir: &kube.EmptyDir{}},
-				{Name: "etcd", EmptyDir: &kube.EmptyDir{}},
-			},
-			Containers: []kube.Container{
-				{
-					Image: image,
-					Name: "test",
-					Command: command,
-					WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
-					Env: []kube.EnvVar{{Name: "GOCACHE", Value: "/mnt/gocache"}},
-					VolumeMounts: []kube.VolumeMount{
-						{Name: "gocache", MountPath: "/mnt/gocache"},
-						{Name: "etcd", MountPath: "/gopath/src/github.com/gravitational/teleport/examples/etcd/data"},
+			Spec: _{
+				Template: _{
+					Spec: _{
+						Containers: []_{
+							{
+								Image: image,
+								Name: "test",
+								Command: command,
+								WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
+								Env: []_{{Name: "GOCACHE", Value: "/mnt/gocache"}},
+								VolumeMounts: []_{
+									{Name: "gocache", MountPath: "/mnt/gocache"},
+									{Name: "etcd", MountPath: "/gopath/src/github.com/gravitational/teleport/examples/etcd/data"},
+								},
+								TTY: true,
+								Stdin: true,
+							},
+						},
+						SecurityContext: _{RunAsUser: uid, RunAsGroup: gid},
+						Volumes: []_{
+							{Name: "gocache", EmptyDir: _{}},
+							{Name: "etcd", EmptyDir: _{}},
+						},
 					},
-					TTY: true,
-					Stdin: true,
 				},
 			},
 		})

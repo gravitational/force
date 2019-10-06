@@ -40,25 +40,21 @@ type RunAction struct {
 func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.BadParameter("initialize Kube plugin")
+		return trace.BadParameter("initialize kube plugin")
 	}
 	plugin := pluginI.(*Plugin)
 
-	var j Job
-	if err := force.EvalInto(ctx, r.job, &j); err != nil {
+	var spec batchv1.Job
+	if err := force.EvalInto(ctx, r.job, &spec); err != nil {
 		return trace.Wrap(err)
 	}
-	if err := j.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
-	}
-	spec, err := j.Spec()
-	if err != nil {
+	if err := checkAndSetJobDefaults(&spec); err != nil {
 		return trace.Wrap(err)
 	}
 	log := force.Log(ctx)
 
 	jobs := plugin.client.BatchV1().Jobs(spec.Namespace)
-	job, err := jobs.Create(spec)
+	job, err := jobs.Create(&spec)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -120,7 +116,7 @@ func jobCheckAndSetDefaults(j *batchv1.Job) error {
 func (s *RunAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	call := &force.FnCall{
 		Package: string(Key),
-		FnName:  KeySetup,
+		FnName:  KeyRun,
 		Args:    []interface{}{s.job},
 	}
 	return call.MarshalCode(ctx)

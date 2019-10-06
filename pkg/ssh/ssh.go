@@ -17,6 +17,7 @@ func Scope() (force.Group, error) {
 	scope := force.WithLexicalScope(nil)
 	err := force.ImportStructsIntoAST(scope,
 		reflect.TypeOf(Config{}),
+		reflect.TypeOf(Hosts{}),
 	)
 	if err != nil {
 		return nil, trace.Wrap(err)

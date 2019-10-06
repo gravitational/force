@@ -9,6 +9,23 @@ import (
 	"github.com/gravitational/trace"
 )
 
+// Zero returns a zero value for interface
+func Zero(iface reflect.Type) (reflect.Value, bool) {
+	if iface.Kind() != reflect.Interface {
+		return reflect.Value{}, false
+	}
+	ifacePtr := reflect.New(iface).Interface()
+	switch ifacePtr.(type) {
+	case *StringVar:
+		return reflect.ValueOf(String("")), true
+	case *BoolVar:
+		return reflect.ValueOf(Bool(false)), true
+	case *IntVar:
+		return reflect.ValueOf(Int(0)), true
+	}
+	return reflect.Value{}, false
+}
+
 // ConvertValueToAST converts value to the value of the
 // force-compatible type
 func ConvertValueToAST(in interface{}) (interface{}, error) {
@@ -32,6 +49,11 @@ func ConvertValueToAST(in interface{}) (interface{}, error) {
 // ConvertTypeToAST converts incoming type to the type understood
 // by force interpreter
 func ConvertTypeToAST(in reflect.Type) (reflect.Type, error) {
+	return convertTypeToAST(in, []reflect.Type{in})
+}
+
+// types are used to detect self referrential types and avoid loops
+func convertTypeToAST(in reflect.Type, types []reflect.Type) (reflect.Type, error) {
 	switch in.Kind() {
 	case reflect.Bool:
 		return reflect.TypeOf((*BoolVar)(nil)).Elem(), nil
@@ -44,13 +66,25 @@ func ConvertTypeToAST(in reflect.Type) (reflect.Type, error) {
 	case reflect.String:
 		return reflect.TypeOf((*StringVar)(nil)).Elem(), nil
 	case reflect.Ptr:
-		out, err := ConvertTypeToAST(in.Elem())
+		out, err := convertTypeToAST(in.Elem(), append([]reflect.Type{in.Elem()}, types...))
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
+		// this is to catch *bool taht should be converted to BoolVar, not *BoolVar
+		if out.Kind() == reflect.Interface {
+			ifacePtr := reflect.New(out).Interface()
+			switch ifacePtr.(type) {
+			case *StringVar:
+				return out, nil
+			case *BoolVar:
+				return out, nil
+			case *IntVar:
+				return out, nil
+			}
+		}
 		return reflect.PtrTo(out), nil
 	case reflect.Map:
-		out, err := ConvertTypeToAST(in.Elem())
+		out, err := convertTypeToAST(in.Elem(), append([]reflect.Type{in.Elem()}, types...))
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -65,6 +99,13 @@ func ConvertTypeToAST(in reflect.Type) (reflect.Type, error) {
 		}
 		return reflect.SliceOf(out), nil
 	case reflect.Struct:
+		// in case of self referrential types,
+		// just use interface{} as a placeholder
+		// because golang StructOf does not support self referrential fields
+		// convert the reference to interface{}
+		if detectLoop(types) {
+			return reflect.TypeOf((*interface{})(nil)).Elem(), nil
+		}
 		if _, ok := in.FieldByName(metadataFieldName); ok {
 			// struct has been already converted
 			return in, nil
@@ -75,13 +116,14 @@ func ConvertTypeToAST(in reflect.Type) (reflect.Type, error) {
 			if !isExported(name) || in.Field(i).Tag.Get(codeTag) == codeSkip {
 				continue
 			}
-			out, err := ConvertTypeToAST(in.Field(i).Type)
+			out, err := convertTypeToAST(in.Field(i).Type, append([]reflect.Type{in.Field(i).Type}, types...))
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
 			fields = append(fields, reflect.StructField{
-				Name: name,
-				Type: out,
+				Name:      name,
+				Type:      out,
+				Anonymous: in.Field(i).Anonymous,
 			})
 		}
 		metaField := reflect.StructField{
@@ -110,6 +152,19 @@ func ConvertTypeToAST(in reflect.Type) (reflect.Type, error) {
 	default:
 		return nil, trace.NotImplemented("type %v is not supported for type %v", in.Kind(), in)
 	}
+}
+
+func detectLoop(in []reflect.Type) bool {
+	if len(in) < 2 {
+		return false
+	}
+	first := in[0]
+	for _, v := range in[1:] {
+		if v == first {
+			return true
+		}
+	}
+	return false
 }
 
 const (

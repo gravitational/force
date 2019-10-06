@@ -35,11 +35,22 @@ func WithLexicalScope(group Group) *LexScope {
 	}
 }
 
+// WithParent wraps a group to create a new lexical scope
+func WithParent(group Group, parent interface{}) *LexScope {
+	return &LexScope{
+		RWMutex: &sync.RWMutex{},
+		Group:   group,
+		defs:    make(map[string]interface{}),
+		parent:  parent,
+	}
+}
+
 // LexScope wraps a group to create a new lexical scope
 type LexScope struct {
 	*sync.RWMutex
 	Group
-	defs map[string]interface{}
+	defs   map[string]interface{}
+	parent interface{}
 }
 
 // ImportStructsIntoAST converts structs to AST compatible
@@ -92,6 +103,23 @@ func ImportStructsIntoAST(l *LexScope, structs ...reflect.Type) error {
 		}
 	}
 	return nil
+}
+
+// SetParent returns a parent definition of the lexical scope
+func (l *LexScope) SetParent(p interface{}) {
+	l.Lock()
+	defer l.Unlock()
+	l.parent = p
+}
+
+// GetParent returns a parent definition of the lexical scope
+func (l *LexScope) GetParent() (interface{}, error) {
+	l.RLock()
+	defer l.RUnlock()
+	if l.parent == nil {
+		return nil, trace.NotFound("scope has no defined parent")
+	}
+	return l.parent, nil
 }
 
 // AddDefinition defines variable to track its type

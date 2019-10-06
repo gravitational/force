@@ -1,0 +1,11 @@
+func(){
+	// Download file from bucket
+	aws.Copy(aws.S3{Bucket: "elpha.gravitational.io", Key: "V3Systems Engineer.pdf"},aws.Local{Path: "/tmp/challenge.pdf"})
+
+	// Upload file from local location with KMS encryption
+	aws.Copy(aws.Local{Path: "/tmp/challenge.pdf"}, aws.S3{
+		Bucket: "elpha.gravitational.io",
+		Key: "encrypted-test.pdf",
+		ServerSideEncryption: "aws:kms",
+	})
+}

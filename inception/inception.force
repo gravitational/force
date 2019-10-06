@@ -7,7 +7,7 @@ Process(Spec{
 		// Image is an image name to build
 		image := Sprintf(`gcr.io/kubeadm-167321/force:%v`, ver)
 		// Go version to use for builds
-		goVer := "1.12.8"
+		goVer := "1.13.1"
 		// Runc version to include
 		runcVer := "1.0.0-rc8"
 		Infof("Going to build %v with go runtime %v, runc %v", image, goVer, runcVer)

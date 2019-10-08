@@ -25,6 +25,7 @@ func Scope() (force.Group, error) {
 		return nil, trace.Wrap(err)
 	}
 	scope.AddDefinition(force.FunctionName(Copy), &force.NopScope{Func: Copy})
+	scope.AddDefinition(force.FunctionName(RecursiveCopy), &force.NopScope{Func: RecursiveCopy})
 	scope.AddDefinition(force.StructName(reflect.TypeOf(Setup{})), &Setup{})
 	return scope, nil
 }

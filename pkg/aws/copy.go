@@ -129,7 +129,7 @@ func (s *CopyAction) Run(ctx force.ExecutionContext) error {
 
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize ssh plugin in the setup section")
+		return trace.NotFound("initialize AWS plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 

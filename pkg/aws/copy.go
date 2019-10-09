@@ -231,6 +231,9 @@ func downloadDir(ctx context.Context, sess *awssession.Session, source S3, desti
 		sourceFile.Key = *item.Key
 		destFile := destination
 		destFile.Path = filepath.Join(destination.Path, *item.Key)
+		if err := os.MkdirAll(filepath.Dir(destFile.Path), 0755); err != nil {
+			return trace.ConvertSystemError(err)
+		}
 		if err := downloadFile(ctx, sess, sourceFile, destFile); err != nil {
 			return trace.Wrap(err)
 		}
@@ -265,8 +268,7 @@ func uploadDir(ctx context.Context, sess *awssession.Session, dirPath string, de
 	for _, relPath := range relPaths {
 		destKey := destination
 		destKey.Key = filepath.Join(destination.Key, relPath)
-		fmt.Printf("Dest bucket: %v, key: %v", destKey.Bucket, destKey.Key)
-		if err := uploadFile(ctx, sess, relPath, destKey); err != nil {
+		if err := uploadFile(ctx, sess, filepath.Join(dirPath, relPath), destKey); err != nil {
 			return trace.Wrap(err)
 		}
 	}

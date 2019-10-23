@@ -32,6 +32,10 @@ type PushAction struct {
 	image interface{}
 }
 
+func (p *PushAction) Type() interface{} {
+	return ""
+}
+
 // MarshalCode marshals the action into code representation
 func (p *PushAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	call := &force.FnCall{
@@ -42,11 +46,11 @@ func (p *PushAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-// Run pushes image to remote repository
-func (p *PushAction) Run(ctx force.ExecutionContext) error {
+// Eval pushes image to remote repository
+func (p *PushAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize Builder plugin in the setup section")
+		return nil, trace.NotFound("initialize Builder plugin in the setup section")
 	}
 	return pluginI.(*Builder).Push(ctx, p.image)
 }
@@ -56,14 +60,14 @@ func (b *PushAction) String() string {
 }
 
 // Push pushes image to remote registry
-func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) error {
+func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) (interface{}, error) {
 	var img Image
 	if err := force.EvalInto(ectx, iface, &img); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	if err := img.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	log := force.Log(ectx)
 
@@ -71,7 +75,7 @@ func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) error {
 
 	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
-		return trace.Wrap(err, "failed to create session")
+		return nil, trace.Wrap(err, "failed to create session")
 	}
 
 	ctx := session.NewContext(ectx, sess.ID())
@@ -86,11 +90,11 @@ func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) error {
 	})
 
 	if err := eg.Wait(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	log.Infof("Successfully pushed %v.", img.Tag)
 
-	return nil
+	return img.Tag, nil
 }
 
 // push sends an image to a remote registry.

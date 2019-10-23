@@ -41,9 +41,6 @@ func CaptureSnippet(pos token.Position, text string) Snippet {
 	}
 	// go back until the start of the previous line
 	start := pos.Offset - 1
-	if start < 0 {
-		start = 0
-	}
 	for ; start >= 0; start-- {
 		if text[start] == '\n' {
 			start++
@@ -52,6 +49,9 @@ func CaptureSnippet(pos token.Position, text string) Snippet {
 			}
 			break
 		}
+	}
+	if start < 0 {
+		start = 0
 	}
 	var snippet []rune
 	// go forward until the end of the line

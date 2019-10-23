@@ -21,14 +21,26 @@ func Marshal(node interface{}) *Marshaler {
 	}
 }
 
-// Marshaler marshals action to string
+// Marshaler marshals expression to string
 type Marshaler struct {
 	node interface{}
 }
 
+func (n *Marshaler) Type() interface{} {
+	return ""
+}
+
+func (n *Marshaler) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	data, err := MarshalCode(ctx, n.node)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return data, nil
+}
+
 // Eval returns code representation of the expression
 // without evaluating it
-func (n *Marshaler) Eval(ctx ExecutionContext) (string, error) {
+func (n *Marshaler) Eval(ctx ExecutionContext) (interface{}, error) {
 	data, err := MarshalCode(ctx, n.node)
 	if err != nil {
 		return "", trace.Wrap(err)
@@ -38,7 +50,7 @@ func (n *Marshaler) Eval(ctx ExecutionContext) (string, error) {
 
 // Unquote evaluates the argument first,
 // and then returns code representation of the returned result
-func Unquote(node interface{}) *Unquoter {
+func Unquote(node Expression) *Unquoter {
 	return &Unquoter{
 		node: node,
 	}
@@ -46,39 +58,26 @@ func Unquote(node interface{}) *Unquoter {
 
 // Unquoter unquotes the expression
 type Unquoter struct {
-	node interface{}
+	node Expression
 }
 
 // Eval evaluates the argument first,
 // and then returns code representation of the returned result
-func (u *Unquoter) Eval(ctx ExecutionContext) (string, error) {
-	return "", trace.BadParameter("Unquote can't be evaluated")
+func (u *Unquoter) Eval(ctx ExecutionContext) (interface{}, error) {
+	return "", trace.BadParameter("unquote can not be evaluated")
+}
+
+func (u *Unquoter) Type() interface{} {
+	return u.node.Type()
 }
 
 // MarshalCode marshals code
 func (u *Unquoter) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	switch v := u.node.(type) {
-	case StringVar:
-		out, err := v.Eval(ctx)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return MarshalCode(ctx, out)
-	case IntVar:
-		out, err := v.Eval(ctx)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return MarshalCode(ctx, out)
-	case BoolVar:
-		out, err := v.Eval(ctx)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return MarshalCode(ctx, out)
-	default:
-		return nil, trace.BadParameter("Can't unquote %T", v)
+	out, err := u.node.Eval(ctx)
+	if err != nil {
+		return nil, trace.Wrap(err)
 	}
+	return MarshalCode(ctx, out)
 }
 
 // MarshalCode marshals parsed types into representation
@@ -105,24 +104,12 @@ func MarshalCode(ctx ExecutionContext, iface interface{}) ([]byte, error) {
 		return call.MarshalCode(ctx)
 	case CodeMarshaler:
 		return val.MarshalCode(ctx)
-	case IntVar:
+	case Expression:
 		i, err := val.Eval(ctx)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 		return MarshalCode(ctx, i)
-	case StringVar:
-		s, err := val.Eval(ctx)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return MarshalCode(ctx, s)
-	case BoolVar:
-		b, err := val.Eval(ctx)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return MarshalCode(ctx, b)
 	case []StringVar:
 		call := &FnCall{
 			Fn:   Strings,
@@ -172,7 +159,7 @@ func MarshalCode(ctx ExecutionContext, iface interface{}) ([]byte, error) {
 				}
 				return call.MarshalCode(ctx)
 			default:
-				return nil, trace.NotImplemented("not implemented yet")
+				return nil, trace.NotImplemented("%T is not implemented yet", ifacePtr)
 			}
 		default:
 			return nil, trace.NotImplemented("not implemented")
@@ -285,6 +272,14 @@ type FnCall struct {
 	FnName string
 	// Args is a list of arguments to the function
 	Args []interface{}
+}
+
+// SetExpressionArgs sets arguments from expressions
+func (f *FnCall) SetExpressionArgs(expressions []Expression) {
+	f.Args = make([]interface{}, len(expressions))
+	for i := range expressions {
+		f.Args[i] = expressions[i]
+	}
 }
 
 // MarshalCode marshals object to code

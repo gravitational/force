@@ -85,18 +85,37 @@ buildbox:
 .PHONY: teleport
 teleport:
 	$(MAKE) all
-	cd examples/teleport && force -d teleport.force --setup=../github/setup.force  -i build.force
+	cd examples/teleport && force -d teleport.force --setup=../github/setup.force
 
 .PHONY: kube
 kube:
 	$(MAKE) all
 	cd examples/kube && force -d kube.force --setup=./setup.force
 
-
 .PHONY: vars
 vars:
 	$(MAKE) all
-	cd examples/vars && force -d  --include=vars.force
+	cd examples/vars && force -d
+
+.PHONY: reload
+reload:
+	$(MAKE) all
+	cd examples/reload && force -d reload.force
+
+.PHONY: conditionals
+conditionals:
+	$(MAKE) all
+	cd examples/conditionals && force -d conditionals.force
+
+.PHONY: hello
+hello:
+	$(MAKE) all
+	cd examples/hello && force -d
+
+.PHONY: hello-lambda
+hello-lambda:
+	$(MAKE) all
+	cd examples/hello-lambda && force -d
 
 
 .PHONY: inception

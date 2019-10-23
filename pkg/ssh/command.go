@@ -12,7 +12,12 @@ import (
 )
 
 // Command runs SSH command on a remote server
-func Command(args ...force.StringVar) (force.Action, error) {
+func Command(args ...force.Expression) (force.Action, error) {
+	for i := range args {
+		if err := force.ExpectString(args[i]); err != nil {
+			return nil, trace.Wrap(err)
+		}
+	}
 	a := CommandAction{}
 	switch {
 	case len(args) == 1:
@@ -27,8 +32,8 @@ func Command(args ...force.StringVar) (force.Action, error) {
 }
 
 type CommandAction struct {
-	command      force.StringVar
-	host         force.StringVar
+	command      force.Expression
+	host         force.Expression
 	client       *ssh.Client
 	clientConfig *ssh.ClientConfig
 	env          []Env
@@ -47,18 +52,17 @@ func (s *CommandAction) BindClient(client *ssh.Client, config *ssh.ClientConfig,
 	}, nil
 }
 
-// Eval evaluates variable and returns string
-func (s *CommandAction) Eval(ctx force.ExecutionContext) (string, error) {
-	out := force.NewSyncBuffer()
-	err := s.run(ctx, out)
-	return strings.TrimSpace(out.String()), err
+func (s *CommandAction) Type() interface{} {
+	return ""
 }
 
-func (s *CommandAction) Run(ctx force.ExecutionContext) error {
-	log := force.Log(ctx)
-	writer := force.Writer(log)
-	defer writer.Close()
-	return s.run(ctx, writer)
+// Eval evaluates variable and returns string
+func (s *CommandAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+	w := force.Writer(force.Log(ctx))
+	defer w.Close()
+	buf := force.NewSyncBuffer()
+	err := s.run(ctx, io.MultiWriter(w, buf))
+	return strings.TrimSpace(buf.String()), err
 }
 
 func (s *CommandAction) run(ctx force.ExecutionContext, writer io.Writer) error {
@@ -74,12 +78,11 @@ func (s *CommandAction) run(ctx force.ExecutionContext, writer io.Writer) error 
 	}
 
 	var client *ssh.Client
-	if s.host != nil {
-		host, err := force.EvalString(ctx, s.host)
-		if err != nil {
-			return trace.Wrap(err)
-		}
-
+	host, err := force.EvalString(ctx, s.host)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if host != "" {
 		client, _, err = dial(host, *plugin.clientConfig)
 		if err != nil {
 			return trace.Wrap(err)

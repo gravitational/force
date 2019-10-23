@@ -5,25 +5,72 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"reflect"
 
 	"github.com/gravitational/trace"
 )
 
+// EvalString evaluates string from var
+func EvalString(ctx ExecutionContext, in Expression) (string, error) {
+	if in == nil {
+		return "", nil
+	}
+	out, err := in.Eval(ctx)
+	if err != nil {
+		return "", trace.Wrap(err)
+	}
+	s, ok := out.(string)
+	if !ok {
+		return "", trace.BadParameter("expected string got %T", out)
+	}
+	return s, nil
+}
+
+// EvalBool evaluates bool from var
+func EvalBool(ctx ExecutionContext, in Expression) (bool, error) {
+	out, err := in.Eval(ctx)
+	if err != nil {
+		return false, trace.Wrap(err)
+	}
+	b, ok := out.(bool)
+	if !ok {
+		return false, trace.BadParameter("expected bool got %T", out)
+	}
+	return b, nil
+}
+
+// EvalInt evaluates int from var
+func EvalInt(ctx ExecutionContext, in Expression) (int, error) {
+	out, err := in.Eval(ctx)
+	if err != nil {
+		return 0, trace.Wrap(err)
+	}
+	i, ok := out.(int)
+	if !ok {
+		return 0, trace.BadParameter("expected bool got %T", out)
+	}
+	return i, nil
+}
+
 // EvalStringVars evaluates string vars and returns a slice of strings
-func EvalStringVars(ctx ExecutionContext, in []StringVar) ([]string, error) {
+func EvalStringVars(ctx ExecutionContext, in []Expression) ([]string, error) {
 	if in == nil {
 		return nil, nil
 	}
 	out := make([]string, len(in))
-	var err error
 	for i, v := range in {
 		if v == nil {
 			out[i] = ""
 		} else {
-			out[i], err = v.Eval(ctx)
+			iface, err := v.Eval(ctx)
 			if err != nil {
 				return nil, trace.Wrap(err)
 			}
+			s, ok := iface.(string)
+			if !ok {
+				return nil, trace.BadParameter("expected string, got %T", iface)
+			}
+			out[i] = s
 		}
 	}
 	return out, nil
@@ -39,53 +86,140 @@ func ExpectEnv(key string) (string, error) {
 	return val, nil
 }
 
-// StringVarSlice is a wrapper around
-// a slice of string variables that adds interface
-// method to evaluate to slice of strings
-type StringVarSlice []StringVar
+// ExpressionSlice is a wrapper around
+// a slice of expressoins that adds interface
+// method to evaluate to expression
+type ExpressionSlice []Expression
 
-// Eval evaluates a list of string var references to strings
-func (s StringVarSlice) Eval(ctx ExecutionContext) ([]string, error) {
-	return EvalStringVars(ctx, s)
+// Eval evaluates a list of var references to types
+func (s ExpressionSlice) Eval(ctx ExecutionContext) (interface{}, error) {
+	values := reflect.MakeSlice(reflect.TypeOf(s.Type()), len(s), len(s))
+	for i := range s {
+		v, err := s[i].Eval(ctx)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		values.Index(i).Set(reflect.ValueOf(v))
+	}
+	return values.Interface(), nil
+}
+
+// Type of slice of expressions
+func (s ExpressionSlice) Type() interface{} {
+	if len(s) == 0 {
+		return []interface{}{}
+	}
+	sliceType := reflect.SliceOf(reflect.TypeOf(s[0].Type()))
+	return reflect.Zero(sliceType).Interface()
 }
 
 // Vars returns string vars
-func (s StringVarSlice) Vars() []StringVar {
-	return []StringVar(s)
+func (s ExpressionSlice) Vars() []Expression {
+	return []Expression(s)
+}
+
+// StringSlice represents a slice of strings
+type StringSlice []Expression
+
+// Eval evaluates a list of var references to types
+func (s StringSlice) Eval(ctx ExecutionContext) (interface{}, error) {
+	return ExpressionSlice(s).Eval(ctx)
+}
+
+// MarshalCode
+func (s StringSlice) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Strings,
+		Args: make([]interface{}, len(s)),
+	}
+	for i := 0; i < len(s); i++ {
+		call.Args[i] = s[i]
+	}
+	return call.MarshalCode(ctx)
+}
+
+// Type of slice of expressions
+func (s StringSlice) Type() interface{} {
+	return []string{}
+}
+
+// Vars returns string vars
+func (s StringSlice) Vars() []Expression {
+	return []Expression(s)
+}
+
+// IntSlice represents a slice of integers
+type IntSlice []Expression
+
+// MarshalCode
+func (s IntSlice) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return MarshalCode(ctx, []Expression(s))
+}
+
+// Eval evaluates a list of var references to types
+func (s IntSlice) Eval(ctx ExecutionContext) (interface{}, error) {
+	return ExpressionSlice(s).Eval(ctx)
+}
+
+// Type of slice of expressions
+func (s IntSlice) Type() interface{} {
+	return []int{}
+}
+
+// Vars returns string vars
+func (s IntSlice) Vars() []Expression {
+	return []Expression(s)
+}
+
+// BoolSlice represents a slice of integers
+type BoolSlice []Expression
+
+// MarshalCode
+func (s BoolSlice) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return MarshalCode(ctx, []Expression(s))
+}
+
+// Eval evaluates a list of var references to types
+func (s BoolSlice) Eval(ctx ExecutionContext) (interface{}, error) {
+	return ExpressionSlice(s).Eval(ctx)
+}
+
+// Type of slice of expressions
+func (s BoolSlice) Type() interface{} {
+	return []bool{}
+}
+
+// Vars returns string vars
+func (s BoolSlice) Vars() []Expression {
+	return []Expression(s)
 }
 
 // Strings returns a list of strings evaluated from the arguments
-func Strings(args ...interface{}) (StringsVar, error) {
-	out := make([]StringVar, len(args))
+func Strings(args ...Expression) (Expression, error) {
+	out := make([]Expression, len(args))
 	for i := range args {
-		switch v := args[i].(type) {
-		case StringVar:
-			out[i] = v
-		case String:
-			out[i] = v
-		case string:
-			out[i] = String(v)
-		default:
-			return nil, trace.BadParameter("argument %q is not a string, but is %T", v, v)
+		if err := ExpectString(args[i]); err != nil {
+			return nil, trace.Wrap(err)
 		}
+		out[i] = args[i]
 	}
-	return StringVarSlice(out), nil
+	return StringSlice(out), nil
 }
 
 // Script is a shell script
 type Script struct {
 	// ExportEnv exports all variables from host environment
-	ExportEnv BoolVar
+	ExportEnv Expression
 	// Command is an inline script, shortcut for
 	// /bin/sh -c args...
-	Command StringVar
+	Command Expression
 	// Args is a list of arguments, if supplied
 	// used instead of the command
-	Args []StringVar
+	Args []Expression
 	// WorkingDir is a working directory
-	WorkingDir StringVar
+	WorkingDir Expression
 	// Env is a list of key value environment variables
-	Env []StringVar
+	Env []Expression
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -112,7 +246,10 @@ func (s *Script) CheckAndSetDefaults(ctx ExecutionContext) error {
 }
 
 // Command is a shortcut for shell action
-func Command(cmd StringVar) (Action, error) {
+func Command(cmd Expression) (Action, error) {
+	if err := ExpectString(cmd); err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return &ShellAction{
 		script: Script{
 			Command: cmd,
@@ -135,17 +272,16 @@ type ShellAction struct {
 	script Script
 }
 
-// Run runs the script
-func (s *ShellAction) Run(ctx ExecutionContext) error {
-	w := Writer(Log(ctx))
-	defer w.Close()
-	return s.run(ctx, w)
+func (s *ShellAction) Type() interface{} {
+	return ""
 }
 
 // Eval runs shell script and returns output as a string
-func (s *ShellAction) Eval(ctx ExecutionContext) (string, error) {
+func (s *ShellAction) Eval(ctx ExecutionContext) (interface{}, error) {
+	w := Writer(Log(ctx))
+	defer w.Close()
 	buf := NewSyncBuffer()
-	err := s.run(ctx, buf)
+	err := s.run(ctx, io.MultiWriter(w, buf))
 	return buf.String(), trace.Wrap(err)
 }
 
@@ -211,10 +347,19 @@ func (n *NewParallel) NewInstance(group Group) (Group, interface{}) {
 }
 
 // Parallel runs actions in parallel
-func Parallel(actions ...Action) Action {
+func Parallel(actions ...Action) (Action, error) {
+	if len(actions) == 0 {
+		return nil, trace.BadParameter("provide at least one argument for Parallel")
+	}
+	t := actions[0].Type()
+	for _, a := range actions {
+		if err := ExpectEqualTypes(a.Type(), t); err != nil {
+			return nil, trace.BadParameter("all arguments in Parallel should evaluate to the same type %v, %v", t, err)
+		}
+	}
 	return &ParallelAction{
 		actions: actions,
-	}
+	}, nil
 }
 
 // ParallelAction runs actions in parallel
@@ -224,29 +369,44 @@ type ParallelAction struct {
 	actions []Action
 }
 
-// Run runs actions in parallel
-func (p *ParallelAction) Run(ctx ExecutionContext) error {
+// Type returns a slice of actions' results
+func (p *ParallelAction) Type() interface{} {
+	elementType := reflect.TypeOf(p.actions[0].Type())
+	sliceType := reflect.SliceOf(elementType)
+	return reflect.Zero(sliceType).Interface()
+}
+
+type result struct {
+	err   error
+	value interface{}
+}
+
+// Eval runs actions in parallel and returns a slice of results
+func (p *ParallelAction) Eval(ctx ExecutionContext) (interface{}, error) {
 	scopeCtx := WithRuntimeScope(ctx)
-	errC := make(chan error, len(p.actions))
+	resultsC := make(chan result, len(p.actions))
 	for _, action := range p.actions {
-		go p.runAction(scopeCtx, action, errC)
+		go p.runAction(scopeCtx, action, resultsC)
 	}
 	var errors []error
+	values := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(p.actions[0].Type())), len(p.actions), len(p.actions))
 	for i := 0; i < len(p.actions); i++ {
 		select {
-		case err := <-errC:
-			if err != nil {
-				Log(ctx).WithError(err).Warningf("Action %v has failed.", p.actions[i])
-				errors = append(errors, err)
+		case out := <-resultsC:
+			if out.err != nil {
+				Log(ctx).WithError(out.err).Warningf("Action %v has failed.", p.actions[i])
+				errors = append(errors, out.err)
+			} else {
+				values.Index(i).Set(reflect.ValueOf(out.value))
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 	if len(errors) > 0 {
 		SetError(ctx, trace.NewAggregate(errors...))
 	}
-	return Error(ctx)
+	return values.Interface(), Error(ctx)
 }
 
 // MarshalCode marshals action into code representation
@@ -261,10 +421,10 @@ func (p *ParallelAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-func (p *ParallelAction) runAction(ctx ExecutionContext, action Action, errC chan error) {
-	err := action.Run(ctx)
+func (p *ParallelAction) runAction(ctx ExecutionContext, action Action, errC chan result) {
+	value, err := action.Eval(ctx)
 	select {
-	case errC <- err:
+	case errC <- result{value: value, err: err}:
 	case <-ctx.Done():
 	}
 }
@@ -281,9 +441,13 @@ type DeferAction struct {
 	action Action
 }
 
+func (d *DeferAction) Type() interface{} {
+	return d.action.Type()
+}
+
 // Run runs deferred action
-func (d *DeferAction) Run(ctx ExecutionContext) error {
-	return d.action.Run(ctx)
+func (d *DeferAction) Eval(ctx ExecutionContext) (interface{}, error) {
+	return d.action.Eval(ctx)
 }
 
 // MarshalCode marshals action into code representation
@@ -303,16 +467,23 @@ func (n *NewSequence) NewInstance(group Group) (Group, interface{}) {
 
 // Sequence groups sequence of commands together,
 // if one fails, the chain stop execution
-func Sequence(actions ...Action) ScopeAction {
+func Sequence(actions ...Action) (ScopeAction, error) {
+	if len(actions) == 0 {
+		return nil, trace.BadParameter("provide at least one argument for Sequence")
+	}
 	return &SequenceAction{
 		actions: actions,
-	}
+	}, nil
 }
 
 // SequenceAction runs actions in a sequence,
 // if the action fails, next actions are not run
 type SequenceAction struct {
 	actions []Action
+}
+
+func (p *SequenceAction) Type() interface{} {
+	return p.actions[len(p.actions)-1].Type()
 }
 
 // MarshalCode marshals action into code representation
@@ -328,9 +499,10 @@ func (p *SequenceAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 }
 
 // RunWithScope runs actions in sequence using the passed scope
-func (s *SequenceAction) RunWithScope(ctx ExecutionContext) error {
+func (s *SequenceAction) EvalWithScope(ctx ExecutionContext) (interface{}, error) {
 	var err error
 	var deferred []Action
+	var last interface{}
 	for i := range s.actions {
 		action := s.actions[i]
 		_, isDefer := action.(*DeferAction)
@@ -338,78 +510,35 @@ func (s *SequenceAction) RunWithScope(ctx ExecutionContext) error {
 			deferred = append(deferred, action)
 			continue
 		}
-		err = action.Run(ctx)
+		last, err = action.Eval(ctx)
 		SetError(ctx, err)
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 	}
 	// deferred actions are executed in reverse order
 	// when defined, and do not prevent other deferreds from running
 	for i := len(deferred) - 1; i >= 0; i-- {
 		action := deferred[i]
-		err = action.Run(ctx)
+		_, err = action.Eval(ctx)
 		if err != nil {
 			SetError(ctx, err)
 		}
 	}
-	return Error(ctx)
+	return last, Error(ctx)
 }
 
-// Run runs actions in sequence
-func (s *SequenceAction) Run(ctx ExecutionContext) error {
-	return s.RunWithScope(WithRuntimeScope(ctx))
-}
-
-// NewContinue creates a new continued sequence
-// with a new lexical scope
-type NewContinue struct {
-}
-
-// NewInstance returns a new instance of a function with a new lexical scope
-func (n *NewContinue) NewInstance(group Group) (Group, interface{}) {
-	return WithLexicalScope(group), Sequence
-}
-
-// Continue runs actions one by one,
-// if one fails, it will continue running others
-func Continue(actions ...Action) Action {
-	return &ContinueAction{
-		actions: actions,
-	}
-}
-
-// ContinueAction runs actions
-type ContinueAction struct {
-	actions []Action
-}
-
-func (s *ContinueAction) Run(ctx ExecutionContext) error {
-	scopeCtx := WithRuntimeScope(ctx)
-	for _, action := range s.actions {
-		SetError(ctx, action.Run(scopeCtx))
-	}
-	return Error(ctx)
-}
-
-// MarshalCode marshals action into code representation
-func (p *ContinueAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	call := &FnCall{
-		Fn:   Continue,
-		Args: make([]interface{}, len(p.actions)),
-	}
-	for i := range p.actions {
-		call.Args[i] = p.actions[i]
-	}
-	return call.MarshalCode(ctx)
+// Eval evaluates actions in sequence
+func (s *SequenceAction) Eval(ctx ExecutionContext) (interface{}, error) {
+	return s.EvalWithScope(WithRuntimeScope(ctx))
 }
 
 // Test is a struct used for tests
 type Test struct {
 	// I is an integer variable
-	I IntVar
+	I Expression
 	// S is a string variable
-	S StringVar
+	S Expression
 	// B is a bool variable
-	B BoolVar
+	B Expression
 }

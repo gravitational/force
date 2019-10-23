@@ -4,6 +4,7 @@ Process(Spec{
 		Repo: "gravitational/teleport",
 	}),
 	Run: github.PostStatusOf(func(){
+		Include("build.force")
 		image := Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, event.Commit)
 		BuildAndPublishImage(image, event.Commit)
 		Parallel(
@@ -16,5 +17,5 @@ Process(Spec{
 				Strings(
 					"/bin/bash", "-c", "make FLAGS='-cover' integration")),
 		)
-	}),
+	}()),
 })

@@ -36,27 +36,31 @@ type RunAction struct {
 	job interface{}
 }
 
-// Run runs kubernetes job
-func (r *RunAction) Run(ctx force.ExecutionContext) error {
+func (r *RunAction) Type() interface{} {
+	return 0
+}
+
+// Eval runs kubernetes job
+func (r *RunAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.BadParameter("initialize kube plugin")
+		return nil, trace.BadParameter("initialize kube plugin")
 	}
 	plugin := pluginI.(*Plugin)
 
 	var spec batchv1.Job
 	if err := force.EvalInto(ctx, r.job, &spec); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	if err := checkAndSetJobDefaults(&spec); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	log := force.Log(ctx)
 
 	jobs := plugin.client.BatchV1().Jobs(spec.Namespace)
 	job, err := jobs.Create(&spec)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	log.Infof("Created job %v in namespace %v.", spec.Name, spec.Namespace)
 	writer := force.Writer(log.AddFields(map[string]interface{}{"job": job.Name}))
@@ -82,9 +86,12 @@ func (r *RunAction) Run(ctx force.ExecutionContext) error {
 
 	select {
 	case err := <-waitC:
-		return trace.Wrap(err)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		return 0, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 

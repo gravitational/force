@@ -63,6 +63,6 @@ Process(Spec{
 			builder.Push(builder.Image{Tag: image})
 			// Prune the build cache
 			builder.Prune()
-		},
+		}(),
 	),
 })

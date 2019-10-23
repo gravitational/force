@@ -1,0 +1,5 @@
+func() {
+	Command(`echo "hello, lambda!"`)
+}
+
+

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/gravitational/trace"
 )
 
 // Duplicate creates a channel that sends the same event
@@ -114,4 +116,78 @@ func (o *OneshotEvent) String() string {
 }
 
 func (e OneshotEvent) AddMetadata(ctx ExecutionContext) {
+}
+
+// Ticker returns a channel that fires with period
+func Ticker(period String) (Channel, error) {
+	if period == "" {
+		return nil, trace.BadParameter(
+			`set duration parameter, for example Ticker("100s"), supported abbreviations: s (seconds), m (minutes), h (hours), d (days), for example "100m" is tick every 100 minutes`)
+	}
+	duration, err := time.ParseDuration(string(period))
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &TickerChannel{
+		// TODO(klizhentas): queues have to be configurable
+		eventsC: make(chan Event, 1024),
+		period:  duration,
+	}, nil
+}
+
+type TickerChannel struct {
+	eventsC chan Event
+	period  time.Duration
+}
+
+func (o *TickerChannel) String() string {
+	return fmt.Sprintf("Ticker()")
+}
+
+// MarshalCode marshals channel to code
+func (o *TickerChannel) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	return NewFnCall(Ticker, o.period).MarshalCode(ctx)
+}
+
+func (o *TickerChannel) Start(pctx context.Context) error {
+	go func() {
+		ticker := time.NewTicker(o.period)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pctx.Done():
+				return
+			case tm := <-ticker.C:
+				select {
+				case <-pctx.Done():
+					return
+				case o.eventsC <- &TickEvent{Time: tm.UTC()}:
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+func (o *TickerChannel) Events() <-chan Event {
+	return o.eventsC
+}
+
+func (o *TickerChannel) Done() <-chan struct{} {
+	return nil
+}
+
+type TickEvent struct {
+	time.Time
+}
+
+func (o *TickEvent) Created() time.Time {
+	return o.Time
+}
+
+func (o *TickEvent) String() string {
+	return fmt.Sprintf("Tick(time=%v)", o.Time)
+}
+
+func (e TickEvent) AddMetadata(ctx ExecutionContext) {
 }

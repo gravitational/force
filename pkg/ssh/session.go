@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/gravitational/force"
 
@@ -36,11 +37,14 @@ func (n *NewSession) NewInstance(group force.Group) (force.Group, interface{}) {
 
 // Session groups sequence of commands together,
 // if one fails, the chain stop execution
-func Session(hosts interface{}, actions ...Action) force.Action {
+func Session(hosts interface{}, actions ...Action) (force.Action, error) {
+	if len(actions) == 0 {
+		return nil, trace.BadParameter("provide at least one session action")
+	}
 	return &SessionAction{
 		hosts:   hosts,
 		actions: actions,
-	}
+	}, nil
 }
 
 // SessionAction runs actions in a sequence,
@@ -64,21 +68,30 @@ func (p *SessionAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) 
 	return call.MarshalCode(ctx)
 }
 
-// RunWithScope runs actions in sequence using the passed scope
-func (s *SessionAction) Run(ctx force.ExecutionContext) error {
+func (s *SessionAction) Type() interface{} {
+	elementType := reflect.TypeOf(s.actions[len(s.actions)-1].Type())
+	sliceType := reflect.SliceOf(elementType)
+	return reflect.Zero(sliceType).Interface()
+}
+
+// Eval runs actions in sequence using the passed scope
+func (s *SessionAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var hosts Hosts
 	if err := force.EvalInto(ctx, s.hosts, &hosts); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
-
 	if len(hosts.Hosts) == 0 {
-		return trace.BadParameter("ssh.Session needs at least one host")
+		return nil, trace.BadParameter("ssh.Session needs at least one host")
 	}
 	actions := make([]force.Action, len(hosts.Hosts))
 	for i, h := range hosts.Hosts {
 		actions[i] = &HostSequence{host: h, actions: s.actions, env: hosts.Env}
 	}
-	return force.Parallel(actions...).Run(ctx)
+	p, err := force.Parallel(actions...)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return p.Eval(ctx)
 }
 
 // HostSequence executes a series of commands in a sequence
@@ -88,17 +101,22 @@ type HostSequence struct {
 	env     []Env
 }
 
-// Run runs actions in sequence on a single host
-func (s *HostSequence) Run(ctx force.ExecutionContext) error {
+// Type returns type of the sequence
+func (s *HostSequence) Type() interface{} {
+	return s.actions[len(s.actions)-1].Type()
+}
+
+// Eval runs actions in sequence on a single host
+func (s *HostSequence) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize ssh plugin in the setup section")
+		return nil, trace.NotFound("initialize ssh plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 
 	client, config, err := dial(s.host, *plugin.clientConfig)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	defer client.Close()
 
@@ -106,11 +124,15 @@ func (s *HostSequence) Run(ctx force.ExecutionContext) error {
 	for i := range s.actions {
 		action, err := s.actions[i].BindClient(client, config, s.env)
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		forceActions[i] = action
 	}
-	return force.Sequence(forceActions...).Run(ctx)
+	seq, err := force.Sequence(forceActions...)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return seq.Eval(ctx)
 }
 
 // MarshalCode marshals action into code representation

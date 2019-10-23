@@ -192,26 +192,30 @@ type Setup struct {
 	cfg interface{}
 }
 
+func (n *Setup) Type() interface{} {
+	return true
+}
+
 // NewInstance returns a new instance
 func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
 	return group, Github
 }
 
-func (n *Setup) Run(ctx force.ExecutionContext) error {
+func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cfg Config
 	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	if err := cfg.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	client, err := newGithubClient(ctx, cfg)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	p := &Plugin{cfg: cfg, client: client, start: time.Now().UTC()}
 	ctx.Process().Group().SetPlugin(Key, p)
-	return nil
+	return true, nil
 }
 
 // MarshalCode marshals plugin setup to code representation

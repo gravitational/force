@@ -30,11 +30,16 @@ type ApplyAction struct {
 	objects []interface{}
 }
 
-// Run runs kubernetes job
-func (r *ApplyAction) Run(ctx force.ExecutionContext) error {
+// Type returns apply action type
+func (r *ApplyAction) Type() interface{} {
+	return 0
+}
+
+// Eval creates or updates K8s object
+func (r *ApplyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.BadParameter("initialize Kube plugin")
+		return nil, trace.BadParameter("initialize Kube plugin")
 	}
 	plugin := pluginI.(*Plugin)
 
@@ -42,7 +47,7 @@ func (r *ApplyAction) Run(ctx force.ExecutionContext) error {
 	for i := 0; i < len(r.objects); i++ {
 		eval, err := force.EvalFromAST(ctx, r.objects[i])
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		out[i] = eval
 	}
@@ -51,22 +56,22 @@ func (r *ApplyAction) Run(ctx force.ExecutionContext) error {
 		switch obj := iface.(type) {
 		case batchv1.Job:
 			if err := r.applyJob(ctx, plugin.client, obj); err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 		case appsv1.Deployment:
 			if err := r.applyDeployment(ctx, plugin.client, obj); err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 		case corev1.Service:
 			if err := r.applyService(ctx, plugin.client, obj); err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 		default:
-			return trace.BadParameter("object %T is not supported", obj)
+			return nil, trace.BadParameter("object %T is not supported", obj)
 		}
 	}
 
-	return nil
+	return 0, nil
 }
 
 func (r *ApplyAction) applyJob(ctx context.Context, client *kubernetes.Clientset, j batchv1.Job) error {

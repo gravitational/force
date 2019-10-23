@@ -124,96 +124,100 @@ type CopyAction struct {
 	dest      interface{}
 }
 
-func (s *CopyAction) Run(ctx force.ExecutionContext) error {
+func (s *CopyAction) Type() interface{} {
+	return 0
+}
+
+func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	log := force.Log(ctx)
 
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize AWS plugin in the setup section")
+		return nil, trace.NotFound("initialize AWS plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 
 	src, err := force.EvalFromAST(ctx, s.src)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	dest, err := force.EvalFromAST(ctx, s.dest)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	switch source := src.(type) {
 	case Local:
 		destination, ok := dest.(S3)
 		if !ok {
-			return trace.BadParameter("unsupported configuration, expected S3, got %T", dest)
+			return nil, trace.BadParameter("unsupported configuration, expected S3, got %T", dest)
 		}
 		if err := destination.CheckAndSetDefaults(); err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		if err := source.CheckAndSetDefaults(); err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		fi, err := os.Stat(source.Path)
 		if err != nil {
-			return trace.ConvertSystemError(err)
+			return nil, trace.ConvertSystemError(err)
 		}
 		start := time.Now()
 		if fi.Mode().IsDir() {
 			if !s.recursive {
-				return trace.BadParameter("path %v is a directory, use RecursiveCopy", source.Path)
+				return nil, trace.BadParameter("path %v is a directory, use RecursiveCopy", source.Path)
 			}
 			err := uploadDir(ctx, plugin.sess, source.Path, destination)
 			if err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 		} else {
 			err := uploadFile(ctx, plugin.sess, source.Path, destination)
 			if err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 		}
 		diff := time.Now().Sub(start)
 		log.Infof("Uploaded %v to %v in %v.", source.Path, destination, diff)
-		return nil
+		return 0, nil
 	case S3:
 		if err := source.CheckAndSetDefaults(); err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		destination, ok := dest.(Local)
 		if !ok {
-			return trace.BadParameter("unsupported configuration, expected Local, got %T", dest)
+			return nil, trace.BadParameter("unsupported configuration, expected Local, got %T", dest)
 		}
 		if err := destination.CheckAndSetDefaults(); err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		start := time.Now()
 		fi, err := os.Stat(destination.Path)
 		err = trace.ConvertSystemError(err)
 		if err != nil {
 			if !trace.IsNotFound(err) {
-				return err
+				return nil, err
 			}
 		}
 		if fi != nil && fi.Mode().IsDir() {
 			if !s.recursive {
-				return trace.BadParameter("path %v is a directory, use RecursiveCopy", destination.Path)
+				return nil, trace.BadParameter("path %v is a directory, use RecursiveCopy", destination.Path)
 			}
 			err := downloadDir(ctx, plugin.sess, source, destination)
 			if err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 		} else {
 			if err := downloadFile(ctx, plugin.sess, source, destination); err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 		}
 		diff := time.Now().Sub(start)
 		log.Infof("Downloaded %v to %v in %v.", source, destination, diff)
-		return nil
+		return 0, nil
 	default:
-		return trace.BadParameter("unsupported type %T", src)
+		return nil, trace.BadParameter("unsupported type %T", src)
 	}
 }
 

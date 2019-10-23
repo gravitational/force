@@ -25,7 +25,12 @@ func (n *NewPostStatusOf) NewInstance(group force.Group) (force.Group, interface
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
 		}
+		seq, err := force.Sequence(inner...)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
 		return &PostStatusOfAction{
+			seq:     seq,
 			actions: inner,
 			plugin:  pluginI.(*Plugin),
 		}, nil
@@ -60,18 +65,22 @@ type PostStatusAction struct {
 	repo   Repository
 }
 
+func (p *PostStatusAction) Type() interface{} {
+	return p.status
+}
+
 // Run posts github status
-func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
+func (p *PostStatusAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	event, ok := ctx.Event().(CommitGetter)
 	if !ok {
 		// it should be possible to execute post status
 		// in the standalone mode given all the parameters
-		return trace.BadParameter(
+		return nil, trace.BadParameter(
 			"PostStatus can only be executed with github watch setup either with github.PullRequests or github.Commits")
 	}
 	repo, err := event.GetSource().Repository()
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	log := force.Log(ctx)
@@ -96,7 +105,7 @@ func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
 
 	log.Debugf("Posted %v -> %v.", p.status, err)
 
-	return trace.Wrap(err)
+	return p.status, trace.Wrap(err)
 }
 
 // MarshalCode marshals the action into code representation
@@ -113,14 +122,19 @@ func (p *PostStatusAction) MarshalCode(ctx force.ExecutionContext) ([]byte, erro
 // to the github
 type PostStatusOfAction struct {
 	plugin  *Plugin
+	seq     force.ScopeAction
 	actions []force.Action
 }
 
-func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) error {
+func (p *PostStatusOfAction) Type() interface{} {
+	return p.seq.Type()
+}
+
+func (p *PostStatusOfAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	// First, post pending status
 	pending := Status{State: StatePending}
 	if err := pending.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	postPending := &PostStatusAction{
 		status: pending,
@@ -128,17 +142,17 @@ func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) error {
 	}
 
 	// run the inner action
-	err := postPending.Run(ctx)
+	_, err := postPending.Eval(ctx)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	// Post result of the execution of all actions in a sequence
 	result := Status{State: StateSuccess, Description: "CI executed successfully"}
 	if err := result.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
-	err = force.Sequence(p.actions...).Run(ctx)
+	out, err := p.seq.Eval(ctx)
 	if err != nil {
 		result.State = StateFailure
 		result.Description = err.Error()
@@ -147,7 +161,8 @@ func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) error {
 		status: result,
 		plugin: p.plugin,
 	}
-	return trace.NewAggregate(err, postResult.Run(ctx))
+	_, resultErr := postResult.Eval(ctx)
+	return out, trace.NewAggregate(err, resultErr)
 }
 
 // MarshalCode marshals the action into code representation

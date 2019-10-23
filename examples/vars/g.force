@@ -1,0 +1,64 @@
+Process(Spec{
+	Name: "vars",
+	Watch: Oneshot(),
+	Run: func(){
+		// Inlclude includes and evaluates files
+		Include("vars.force")
+		// Marshal include directive
+		Infof(Marshal(Include("vars.force")))
+		// Direct function call
+		Infof("0. hello, world")
+		// Call with variable reference
+		v := "1. hello var!"
+		Infof(v)
+		// Call lambda
+		infof("2. hello, lambda!")
+		// Call lambda with expression
+		v1 := "banana"
+		infof(Sprintf("3. hello expression: %v %v", v1, "bueno"))
+		// Call with anonymous struct and all fields filled in
+		infofStruct(_{Message: "4. hola", BoolVar: true, IntVar: 7})
+		// Call with lambda and some fields not filled in
+		infofStruct(_{Message: "5. hola"})
+		// Call slice
+		infofSlice(Strings(v, "6. whoa slice"))
+		// Marshal some code qith quoting
+		infof(Marshal(func(){
+			Infof(Sprintf("7. var: %v", Unquote(v)))
+			Infof(Sprintf("8. var: %v", Strings("a", "b")))			
+		}()))
+		// Marshal setup function call
+		infof(Marshal(log.Setup(log.Config{
+			Level: "info",
+			Outputs: []log.Output{
+				{
+					Type: "stdout",
+				},
+				{
+					Type: "stackdriver",
+					CredentialsFile: ExpectEnv("LOGGING_CREDENTIALS"),
+				},
+			},
+		})))
+		// Variables with scopes
+		intVar := 1
+		boolVar := true
+		stringVar := "hello"
+		infof(Sprintf("Outer scope %#v, i: %v, b: %v, s: %v", Test{I: intVar, B: boolVar, S: stringVar}, intVar, boolVar, stringVar))
+		Infof("Outer scope %#v, i: %v, b: %v, s: %v", Test{I: intVar, B: boolVar, S: stringVar}, intVar, boolVar, stringVar)
+		func(){
+			intVar := 2
+			boolVar := false
+			stringVar := "byte"
+			Infof("Inner scope i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
+		}()
+		Infof("Outer scope after inner i: %#v, b: %#v, s: %#v", intVar, boolVar, stringVar)
+		// Temp dir with cleanup
+		dir := TempDir("", "")
+		Infof("My dir is %v", dir)
+		Defer(
+			RemoveAll(dir),
+		)
+		Exit()
+	},
+})

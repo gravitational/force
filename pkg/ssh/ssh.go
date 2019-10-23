@@ -169,6 +169,10 @@ type Setup struct {
 	cfg interface{}
 }
 
+func (n *Setup) Type() interface{} {
+	return true
+}
+
 // NewInstance returns a new instance of a plugin bound to group
 func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
 	return group, func(cfg interface{}) (force.Action, error) {
@@ -188,20 +192,20 @@ func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-// Run sets up logging plugin for the instance group
-func (n *Setup) Run(ctx force.ExecutionContext) error {
+// Eval sets up logging plugin for the instance group
+func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cfg Config
 	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	clientConfig, err := cfg.CheckAndSetDefaults()
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	p := &Plugin{
 		cfg:          cfg,
 		clientConfig: clientConfig,
 	}
 	ctx.Process().Group().SetPlugin(Key, p)
-	return nil
+	return true, nil
 }

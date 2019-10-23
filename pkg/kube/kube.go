@@ -91,6 +91,10 @@ type Setup struct {
 	cfg interface{}
 }
 
+func (n *Setup) Type() interface{} {
+	return true
+}
+
 // NewInstance returns a new kubernetes client bound to the process group
 // and registers plugin within variable
 func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
@@ -109,17 +113,17 @@ func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-func (n *Setup) Run(ctx force.ExecutionContext) error {
+func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cfg Config
 	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	if err := cfg.CheckAndSetDefaults(ctx); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	client, config, err := GetClient(cfg.Path)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	plugin := &Plugin{
 		cfg:    cfg,
@@ -127,7 +131,7 @@ func (n *Setup) Run(ctx force.ExecutionContext) error {
 		config: config,
 	}
 	ctx.Process().Group().SetPlugin(Key, plugin)
-	return nil
+	return true, nil
 }
 
 // Plugin is a new plugin

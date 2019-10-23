@@ -46,6 +46,10 @@ type Setup struct {
 	cfg   interface{}
 }
 
+func (n *Setup) Type() interface{} {
+	return false
+}
+
 // NewInstance returns function creating new plugins based on configs
 func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
 	return group, func(cfg interface{}) force.Action {
@@ -56,20 +60,20 @@ func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
 	}
 }
 
-// Run sets up plugin for the given process group
-func (n *Setup) Run(ctx force.ExecutionContext) error {
+// Eval sets up plugin for the given process group
+func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cfg Config
 	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	cfg.Context = ctx
 	cfg.Group = n.group
 	builder, err := New(cfg)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	cfg.Group.SetPlugin(Key, builder)
-	return nil
+	return true, nil
 }
 
 // MarshalCode marshals plugin to code representation
@@ -98,13 +102,17 @@ type BuildAction struct {
 	image interface{}
 }
 
-// Run runs build process
-func (b *BuildAction) Run(ctx force.ExecutionContext) error {
+func (b *BuildAction) Type() interface{} {
+	return ""
+}
+
+// Eval runs build process
+func (b *BuildAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize Builder plugin in the setup section")
+		return nil, trace.NotFound("initialize Builder plugin in the setup section")
 	}
-	return pluginI.(*Builder).Run(ctx, b.image)
+	return pluginI.(*Builder).Eval(ctx, b.image)
 }
 
 func (b *BuildAction) String() string {

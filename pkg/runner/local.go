@@ -122,7 +122,16 @@ func (l *LocalProcess) triggerActions(ctx force.ExecutionContext) {
 				// add optional data from the event
 				event.AddMetadata(execContext)
 				start := time.Now()
-				err := l.Run.Run(execContext)
+				lambda, ok := l.Run.(*force.LambdaFunction)
+				var err error
+				if ok {
+					// normally, lambda function evaluates to itself,
+					// in Process{Run: func(){}) has to be explicitly callled,
+					//
+					_, err = lambda.Call(execContext)
+				} else {
+					_, err = l.Run.Eval(execContext)
+				}
 				if err != nil {
 					logger.WithError(err).Errorf("%v failed after running for %v.", l, time.Now().Sub(start))
 				} else {

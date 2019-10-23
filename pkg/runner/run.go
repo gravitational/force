@@ -29,6 +29,33 @@ type Runner struct {
 	plugins       map[interface{}]interface{}
 	logger        force.Logger
 	parser        *gParser
+	runners       map[string]*Runner
+}
+
+// RemoveRunner removes the runner if it matches
+// the passed runner pointer (to avoid removing new runner)
+func (r *Runner) RemoveRunner(name string, in *Runner) bool {
+	r.Lock()
+	defer r.Unlock()
+	prev, ok := r.runners[name]
+	if !ok {
+		return false
+	}
+	if prev != in {
+		return false
+	}
+	delete(r.runners, name)
+	return true
+}
+
+// SwapRunner sets the runner by name and returns
+// the previous version of the runner
+func (r *Runner) SwapRunner(name string, in *Runner) *Runner {
+	r.Lock()
+	defer r.Unlock()
+	prev := r.runners[name]
+	r.runners[name] = in
+	return prev
 }
 
 // Logger returns a logger associated with this runner
@@ -274,6 +301,7 @@ func (r *Runner) Start() {
 		if err := p.Start(r.parser.scope); err != nil {
 			log.Errorf("%v has failed to start: %v.", p, err)
 		}
+		log.Debugf("Started process %v.", p)
 		go r.wait(p)
 	}
 }
@@ -286,18 +314,36 @@ func (r *Runner) Close() error {
 
 // OneshotWithExit creates a oneshot process that wraps actions and exits
 func (r *Runner) OneshotWithExit(actions ...force.Action) (force.Process, error) {
-	actions = append([]force.Action{force.Defer(force.Exit())}, actions...)
-	return r.Oneshot("", actions...)
+	// convert lambda with no arguments to their calls,
+	// this allows for syntax sugar when G file is just a lambda
+	out := make([]force.Action, 0, len(actions)+1)
+	for i := range actions {
+		if lambda, ok := actions[i].(*force.LambdaFunction); ok {
+			call, err := lambda.NewCall()
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			out = append(out, call)
+		} else {
+			out = append(out, actions[i])
+		}
+	}
+	out = append(out, force.Defer(force.Exit()))
+	return r.Oneshot("", out...)
 }
 
 // Oneshot creates a new oneshot process
 func (r *Runner) Oneshot(name string, actions ...force.Action) (force.Process, error) {
+	seq, err := force.Sequence(actions...)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	spec := force.Spec{
 		Name:  force.String(name),
-		Run:   force.Sequence(actions...),
+		Run:   seq,
 		Group: r,
 	}
-	err := spec.CheckAndSetDefaults()
+	err = spec.CheckAndSetDefaults()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}

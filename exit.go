@@ -39,7 +39,11 @@ type SendAction struct {
 	Process  Process
 }
 
-func (e *SendAction) Run(ctx ExecutionContext) error {
+func (e *SendAction) Type() interface{} {
+	return 0
+}
+
+func (e *SendAction) Eval(ctx ExecutionContext) (interface{}, error) {
 	proc := e.Process
 	// no process specified? assume broadcast to the process group
 	if proc == nil {
@@ -47,9 +51,9 @@ func (e *SendAction) Run(ctx ExecutionContext) error {
 	}
 	select {
 	case proc.Group().BroadcastEvents() <- e.GetEvent(ctx):
-		return nil
+		return 0, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return -1, ctx.Err()
 	}
 }
 

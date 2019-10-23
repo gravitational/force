@@ -1,15 +1,18 @@
 func() {
-	testVar := "message(%v, %v, %v)"
-	
+	// infof accepts message string as an argument
+	formatVar := "lambda(message=%v)"
 	infof := func(message string) {
-		Infof(testVar, message)
+		Infof(formatVar, message)
 	}
 
-	infofs := func(m struct{Message string; BoolVar bool; IntVar int}) {
+	// infofStruct accepts struct as an argument
+	testVar := "message(%v, %v, %v)"
+	infofStruct := func(m struct{Message string; BoolVar bool; IntVar int}) {
 		Infof(testVar, m.Message, m.BoolVar, m.IntVar)
 	}
 
-	infof2 := func(message []string) {
-		infof(message)
+	// infofSlice is a lambda function accepting slice
+	infofSlice := func(sliceMessage []string) {
+		infof(Sprintf("%v", sliceMessage))
 	}
 }()

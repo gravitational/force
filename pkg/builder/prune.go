@@ -28,11 +28,15 @@ type PruneAction struct {
 	builder *Builder
 }
 
-// Run runs prune action
-func (p *PruneAction) Run(ctx force.ExecutionContext) error {
+func (p *PruneAction) Type() interface{} {
+	return 0
+}
+
+// Eval runs prune action
+func (p *PruneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize Builder plugin in the setup section")
+		return nil, trace.NotFound("initialize Builder plugin in the setup section")
 	}
 	return pluginI.(*Builder).Prune(ctx)
 }
@@ -51,7 +55,7 @@ func (p *PruneAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 }
 
 // Prune clears build cache
-func (b *Builder) Prune(ectx force.ExecutionContext) error {
+func (b *Builder) Prune(ectx force.ExecutionContext) (interface{}, error) {
 	log := force.Log(ectx)
 	log.Infof("Prune.")
 
@@ -60,7 +64,7 @@ func (b *Builder) Prune(ectx force.ExecutionContext) error {
 	// Create the new worker.
 	w, err := base.NewWorker(*b.opt)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	eg, ctx := errgroup.WithContext(ectx)
@@ -94,5 +98,8 @@ func (b *Builder) Prune(ectx force.ExecutionContext) error {
 		return nil
 	})
 
-	return trace.Wrap(eg2.Wait())
+	if err := eg2.Wait(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return 0, nil
 }

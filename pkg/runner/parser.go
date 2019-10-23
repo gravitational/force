@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gravitational/force"
+
 	"github.com/gravitational/force/pkg/aws"
 	"github.com/gravitational/force/pkg/builder"
 	"github.com/gravitational/force/pkg/git"
@@ -44,8 +45,6 @@ type Input struct {
 	Setup Script
 	// Script is a script to parse
 	Script Script
-	// IncludeScripts is a set of scripts to include
-	IncludeScripts []Script
 	// Context is a global context
 	Context context.Context
 	// Debug turns on global debug mode
@@ -102,6 +101,7 @@ func Parse(i Input) (*Runner, error) {
 	}
 	ctx, cancel := context.WithCancel(i.Context)
 	runner := &Runner{
+		runners:       make(map[string]*Runner),
 		LexScope:      force.WithLexicalScope(nil),
 		debugOverride: i.Debug,
 		cancel:        cancel,
@@ -116,13 +116,13 @@ func Parse(i Input) (*Runner, error) {
 
 		// Action runners
 		"Sequence": &force.NewSequence{},
-		"Continue": &force.NewContinue{},
 		"Parallel": &force.NewParallel{},
 		"Defer":    &force.NopScope{Func: force.Defer},
 		"If":       &force.NewIf{},
 
 		// Builtin event generator channels
 		"Oneshot":   &force.NopScope{Func: force.Oneshot},
+		"Ticker":    &force.NopScope{Func: force.Ticker},
 		"Duplicate": &force.NopScope{Func: force.Duplicate},
 		"Files":     &force.NopScope{Func: force.Files},
 
@@ -163,11 +163,11 @@ func Parse(i Input) (*Runner, error) {
 	}
 	plugins := map[string]func() (force.Group, error){
 		string(log.Key):     log.Scope,
-		string(github.Key):  github.Scope,
 		string(git.Key):     git.Scope,
+		string(github.Key):  github.Scope,
+		string(slack.Key):   slack.Scope,
 		string(builder.Key): builder.Scope,
 		string(kube.Key):    kube.Scope,
-		string(slack.Key):   slack.Scope,
 		string(ssh.Key):     ssh.Scope,
 		string(aws.Key):     aws.Scope,
 	}
@@ -184,6 +184,12 @@ func Parse(i Input) (*Runner, error) {
 		g.scope.SetValue(force.ContextKey(name), fn)
 	}
 
+	// some parsing builtins
+	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Include)), &force.NopScope{Func: g.Include})
+	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Load)), &force.NopScope{Func: g.Load})
+	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Reload)), &force.NopScope{Func: g.Reload})
+
+	// imported standard functions
 	importedFunctions := []interface{}{
 		fmt.Sprintf,
 		strings.TrimSpace,
@@ -204,7 +210,6 @@ func Parse(i Input) (*Runner, error) {
 	for _, st := range builtinStructs {
 		g.runner.AddDefinition(force.StructName(reflect.TypeOf(st)), reflect.TypeOf(st))
 	}
-	// add builtin types
 
 	// Setup the runner
 	if i.Setup.Content != "" {
@@ -228,26 +233,7 @@ func Parse(i Input) (*Runner, error) {
 			ID:      i.ID,
 			Event:   &force.OneshotEvent{Time: time.Now().UTC()},
 		})
-		if err := proc.Action().Run(setupContext); err != nil {
-			return nil, trace.Wrap(err)
-		}
-	}
-	for _, script := range i.IncludeScripts {
-		f := token.NewFileSet()
-		expr, err := parser.ParseExprFrom(f, "", []byte(script.Content), 0)
-		if err != nil {
-			return nil, trace.Wrap(convertScanError(err, script))
-		}
-		actionI, err := g.parseExpr(f, runner, expr)
-		if err != nil {
-			return nil, trace.Wrap(convertScanError(err, script))
-		}
-		action, ok := actionI.(force.ScopeAction)
-		if !ok {
-			return nil, trace.BadParameter("expected scope action, got %T", actionI)
-		}
-		err = action.RunWithScope(g.scope)
-		if err != nil {
+		if _, err := proc.Action().Eval(setupContext); err != nil {
 			return nil, trace.Wrap(err)
 		}
 	}
@@ -318,12 +304,70 @@ type gParser struct {
 	plugins map[string]force.Group
 }
 
+// Reload action parses the process at a given file
+// and waits until the process completes, when called twice
+// it shuts down the previous
+func (g *gParser) Reload(path force.Expression) (force.Action, error) {
+	if err := force.ExpectString(path); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &LoadAction{
+		reload: true,
+		g:      g,
+		path:   path,
+	}, nil
+}
+
+// Load starts a sub process by parsing the file,
+// and waits until the process completes
+func (g *gParser) Load(path force.Expression) (force.Action, error) {
+	if err := force.ExpectString(path); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	// include action has to be run right away,
+	// so it can define the methods
+	return &LoadAction{
+		g:    g,
+		path: path,
+	}, nil
+}
+
+// Include includes and evaluates script by given paths,
+// it does parsing at a parsing time, not at the exectuion time,
+// that is why it evaluates with the global scope
+// and returns a NopAction placeholder that does nothing at the runtime
+// in this sense, Include is more like a macro preprocessing directive
+func (g *gParser) Include(paths ...force.Expression) (force.Action, error) {
+	for _, p := range paths {
+		if err := force.ExpectString(p); err != nil {
+			return nil, trace.Wrap(err)
+		}
+	}
+	// include action has to be run right away,
+	// so it can define the methods
+	action := &IncludeAction{
+		g:     g,
+		paths: paths,
+	}
+	if _, err := action.Eval(g.scope); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return &force.NopAction{
+		FnName:   force.FunctionName(g.Include),
+		Args:     paths,
+		EvalType: "",
+	}, nil
+}
+
 func (g *gParser) parseArguments(f *token.FileSet, scope force.Group, nodes []ast.Node, argumentTypes []reflect.Type) ([]interface{}, error) {
 	out := make([]interface{}, len(nodes))
 	for i, n := range nodes {
 		var argType reflect.Type
 		// assume it's a variadic arg call
 		if i > len(argumentTypes)-1 {
+			if len(argumentTypes) == 0 {
+				return nil, wrap(f, n, trace.BadParameter("function does not accept any arguments"))
+			}
 			argType = argumentTypes[len(argumentTypes)-1]
 		} else {
 			argType = argumentTypes[i]
@@ -473,8 +517,17 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 				return st, nil
 			case reflect.Map:
 				m := reflect.MakeMapWithSize(protoType, len(fields))
+				converter, ok := reflect.Zero(protoType.Elem()).Interface().(force.Converter)
 				for key := range fields {
-					m.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(fields[key]))
+					if ok {
+						out, err := converter.Convert(fields[key])
+						if err != nil {
+							return nil, wrap(f, n, trace.Wrap(err))
+						}
+						m.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(out))
+					} else {
+						m.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(fields[key]))
+					}
 				}
 				return m.Interface(), nil
 			default:
@@ -616,13 +669,32 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 		for i := range l.Args {
 			nodes[i] = l.Args[i]
 		}
-		// argumentTypes should go here:
+		// argumentTypes are used to check argument types
 		var argumentTypes []reflect.Type
-		lambda, isLambda := newFn.(*force.LambdaFunction)
-		if isLambda {
-			argumentTypes = make([]reflect.Type, len(lambda.Params))
-			for i := range lambda.Params {
-				argumentTypes[i] = reflect.TypeOf(lambda.Params[i].Prototype)
+		// lambdaExpression is not the same as lambdaType,
+		// because at this point only lambdaType is known,
+		// the actual evaluated function is not
+		var lambdaExpression force.Expression
+		var lambdaType *force.LambdaFunction
+		switch fnType := newFn.(type) {
+		// LambdaFunction
+		case *force.LambdaFunction:
+			lambdaType, lambdaExpression = fnType, fnType
+		case force.Expression:
+			// Make sure that expression evaluates
+			var err error
+			lambdaType, err = force.ExpectLambdaFunction(fnType)
+			if err != nil {
+				return nil, wrap(f, n, err)
+			}
+			lambdaExpression = fnType
+		default:
+			// standard function call
+		}
+		if lambdaType != nil {
+			argumentTypes = make([]reflect.Type, len(lambdaType.Params))
+			for i := range lambdaType.Params {
+				argumentTypes[i] = reflect.TypeOf(lambdaType.Params[i].Prototype)
 			}
 		} else {
 			fnType := reflect.TypeOf(fn)
@@ -635,27 +707,17 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 		if err != nil {
 			return nil, wrap(f, n, err)
 		}
-		if !isLambda {
+		if lambdaType == nil {
 			return callFunction(fn, arguments)
 		}
-		if len(arguments) != len(lambda.Params) {
-			return nil, wrap(f, n, trace.BadParameter("expected %v params, found %v", len(lambda.Params), len(arguments)))
+		call := &force.LambdaFunctionCall{
+			Expression: lambdaExpression,
+			Arguments:  arguments,
 		}
-		callScope := force.WithLexicalScope(lambda.Scope)
-		// in case of lambda function, passed arguments
-		// are converted into defined statements
-		callArgs := make([]force.Action, len(arguments))
-		for i, param := range lambda.Params {
-			def, err := force.Define(callScope)(force.String(param.Name), arguments[i])
-			if err != nil {
-				return nil, wrap(f, n, trace.Wrap(err))
-			}
-			callArgs[i] = def
+		if err := call.CheckCall(); err != nil {
+			return nil, trace.Wrap(err)
 		}
-		return &force.LambdaFunctionCall{
-			LambdaFunction: *lambda,
-			Arguments:      callArgs,
-		}, nil
+		return call, nil
 	case *ast.AssignStmt:
 		if len(l.Lhs) != 1 || len(l.Rhs) != 1 {
 			return nil, wrap(f, n, trace.BadParameter("multiple assignment expressions are not supported"))
@@ -752,11 +814,11 @@ func (g *gParser) evalFunctionArg(f *token.FileSet, scope force.Group, n ast.Nod
 		}
 		switch arrayType.Name {
 		case force.StringType:
-			return []force.String{}, nil
+			return force.StringSlice(nil), nil
 		case force.IntType:
-			return []force.Int{}, nil
+			return force.IntSlice(nil), nil
 		case force.BoolType:
-			return []force.Bool{}, nil
+			return force.BoolSlice(nil), nil
 		}
 		return nil, wrap(f, n, trace.BadParameter("%T is not supported", n))
 	case *ast.StructType:
@@ -807,11 +869,11 @@ func (g *gParser) getFunction(scope force.Group, name string) (force.Function, e
 	if fnI == nil {
 		fnI, err := scope.GetDefinition(name)
 		if err == nil {
-			lambda, ok := fnI.(*force.LambdaFunction)
+			newFn, ok := fnI.(force.Function)
 			if !ok {
-				return nil, trace.BadParameter("expected lambda, got %T", lambda)
+				return nil, trace.BadParameter("expected Function, got %T", fnI)
 			}
-			return lambda, nil
+			return newFn, nil
 		}
 		return nil, trace.BadParameter("function %v is not defined", name)
 	}
@@ -875,8 +937,25 @@ func callFunction(f interface{}, args []interface{}) (v interface{}, err error) 
 		}
 	}()
 	arguments := make([]reflect.Value, len(args))
+	fnType := reflect.TypeOf(f)
 	for i, a := range args {
-		arguments[i] = reflect.ValueOf(a)
+		// variadic call
+		var inType reflect.Type
+		if i >= fnType.NumIn() {
+			inType = fnType.In(fnType.NumIn() - 1)
+		} else {
+			inType = fnType.In(i)
+		}
+		converter, ok := reflect.Zero(inType).Interface().(force.Converter)
+		if ok {
+			out, err := converter.Convert(a)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			arguments[i] = reflect.ValueOf(out)
+		} else {
+			arguments[i] = reflect.ValueOf(a)
+		}
 	}
 	fn := reflect.ValueOf(f)
 	ret := fn.Call(arguments)
@@ -910,9 +989,19 @@ func createStruct(val interface{}, args map[string]interface{}, pointer bool) (v
 	st := reflect.New(structType)
 	for i := 0; i < structType.NumField(); i++ {
 		field := st.Elem().Field(i)
-		zeroVal, ok := force.Zero(field.Type())
+		iface, ok := field.Interface().(force.Converter)
 		if ok {
-			field.Set(zeroVal)
+			// This is something like *StringVar,
+			// which means that it does not have to be initialized by default
+			if field.Type().Kind() != reflect.Ptr {
+				out, err := iface.Convert(force.Zero(field).Interface())
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				field.Set(reflect.ValueOf(out))
+			}
+		} else {
+			field.Set(force.Zero(field))
 		}
 	}
 	for key, val := range args {
@@ -923,7 +1012,31 @@ func createStruct(val interface{}, args map[string]interface{}, pointer bool) (v
 		if !field.CanSet() {
 			return nil, trace.BadParameter("can't set value of %v", field)
 		}
-		field.Set(reflect.ValueOf(val))
+		iface, ok := field.Interface().(force.Converter)
+		if ok {
+			if field.Type().Kind() != reflect.Ptr {
+				out, err := iface.Convert(val)
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				field.Set(reflect.ValueOf(out))
+			} else {
+				new := reflect.New(field.Type().Elem())
+				expr := new.Interface().(force.Converter)
+				out, err := expr.Convert(val)
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				// out is not addressable, so this code
+				// allocates the new version, assigns the value
+				// and uses it's address
+				allocCopy := reflect.New(reflect.TypeOf(out))
+				allocCopy.Elem().Set(reflect.ValueOf(out))
+				field.Set(allocCopy)
+			}
+		} else {
+			field.Set(reflect.ValueOf(val))
+		}
 	}
 	if pointer {
 		return st.Interface(), nil

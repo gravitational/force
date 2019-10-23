@@ -36,10 +36,14 @@ func Copy(args ...interface{}) (force.Action, error) {
 	var ok bool
 	switch len(args) {
 	case 3:
-		c.host, ok = args[0].(force.StringVar)
+		hostExpr, ok := args[0].(force.Expression)
 		if !ok {
-			return nil, trace.BadParameter("expected first argument to be string")
+			return nil, trace.BadParameter("expected first argument to be string, got %T", args[0])
 		}
+		if err := force.ExpectString(hostExpr); err != nil {
+			return nil, trace.BadParameter("expected first argument to be string: %v", err)
+		}
+		c.host = hostExpr
 		c.source, ok = args[1].(Target)
 		if !ok {
 			return nil, trace.BadParameter("expected second argument to be ssh.Local or ssh.Remote")
@@ -64,7 +68,7 @@ func Copy(args ...interface{}) (force.Action, error) {
 }
 
 type CopyAction struct {
-	host         force.StringVar
+	host         force.Expression
 	source       Target
 	destination  Target
 	client       *ssh.Client
@@ -84,32 +88,34 @@ func (s *CopyAction) BindClient(client *ssh.Client, config *ssh.ClientConfig, _ 
 	}, nil
 }
 
-func (s *CopyAction) Run(ctx force.ExecutionContext) error {
+func (s *CopyAction) Type() interface{} {
+	return 0
+}
+
+func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	log := force.Log(ctx)
 
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize ssh plugin in the setup section")
+		return nil, trace.NotFound("initialize ssh plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 
 	var client *ssh.Client
 	var clientConfig *ssh.ClientConfig
-	if s.host != nil {
-		host, err := force.EvalString(ctx, s.host)
-		if err != nil {
-			return trace.Wrap(err)
-		}
-
+	host, err := force.EvalString(ctx, s.host)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if host != "" {
 		client, clientConfig, err = dial(host, *plugin.clientConfig)
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
-
 		defer client.Close()
 	} else {
 		if s.client == nil {
-			return trace.BadParameter("ssh.Command does not have host, it has to be used within ssh.Session")
+			return nil, trace.BadParameter("ssh.Command does not have host, it has to be used within ssh.Session")
 		}
 		client = s.client
 		clientConfig = s.clientConfig
@@ -117,16 +123,16 @@ func (s *CopyAction) Run(ctx force.ExecutionContext) error {
 
 	sourcePath, err := force.EvalString(ctx, s.source.Path)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	destPath, err := force.EvalString(ctx, s.destination.Path)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	if s.source.Local && s.destination.Local {
-		return trace.BadParameter("source and destination can't be both local")
+		return nil, trace.BadParameter("source and destination can't be both local")
 	}
 
 	w := force.Writer(log)
@@ -146,7 +152,7 @@ func (s *CopyAction) Run(ctx force.ExecutionContext) error {
 
 		cmd, err = scp.CreateUploadCommand(scpConfig)
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 
 	} else {
@@ -162,13 +168,16 @@ func (s *CopyAction) Run(ctx force.ExecutionContext) error {
 
 		cmd, err = scp.CreateDownloadCommand(scpConfig)
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 	}
 
 	log.Infof("Copy: from %v to %v.", sourcePath, destPath)
 
-	return ExecuteSCP(log, client, cmd)
+	if err := ExecuteSCP(log, client, cmd); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return 0, nil
 }
 
 // MarshalCode marshals the action into code representation

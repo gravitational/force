@@ -177,18 +177,22 @@ func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-// Run sets up logging plugin for the instance group
-func (n *Setup) Run(ctx force.ExecutionContext) error {
+func (n *Setup) Type() interface{} {
+	return false
+}
+
+// Eval sets up logging plugin for the instance group
+func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cfg Config
 	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	if err := cfg.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	level, err := log.ParseLevel(cfg.Level)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	group := ctx.Process().Group()
 	if group.IsDebug() {
@@ -207,14 +211,14 @@ func (n *Setup) Run(ctx force.ExecutionContext) error {
 				Creds:   []byte(o.Credentials),
 			})
 			if err != nil {
-				return trace.Wrap(err)
+				return nil, trace.Wrap(err)
 			}
 			log.AddHook(h)
 		case TypeStdout:
 			hasTerminal = trace.IsTerminal(os.Stdout)
 			log.SetOutput(os.Stdout)
 		default:
-			return trace.BadParameter("unsupported %q, supported are: %q, %q", o.Type, TypeStackdriver, TypeStdout)
+			return nil, trace.BadParameter("unsupported %q, supported are: %q, %q", o.Type, TypeStackdriver, TypeStdout)
 		}
 	}
 	// disable line and file info in case if it's not debug
@@ -231,27 +235,34 @@ func (n *Setup) Run(ctx force.ExecutionContext) error {
 		cfg: cfg,
 	}
 	group.SetPlugin(Key, p)
-	return nil
+	return true, nil
 }
 
 // Infof returns an action that logs in info
-func Infof(format force.StringVar, args ...interface{}) force.Action {
+func Infof(format force.Expression, args ...interface{}) (force.Action, error) {
+	if err := force.ExpectString(format); err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return &InfofAction{
 		format: format,
 		args:   args,
-	}
+	}, nil
 }
 
 type InfofAction struct {
-	format force.StringVar
+	format force.Expression
 	args   []interface{}
 }
 
-func (s *InfofAction) Run(ctx force.ExecutionContext) error {
+func (s *InfofAction) Type() interface{} {
+	return false
+}
+
+func (s *InfofAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	log := force.Log(ctx)
 	format, err := force.EvalString(ctx, s.format)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	evalArgs := make([]interface{}, len(s.args))
 	for i := range s.args {
@@ -262,7 +273,7 @@ func (s *InfofAction) Run(ctx force.ExecutionContext) error {
 		}
 	}
 	log.Infof(format, evalArgs...)
-	return nil
+	return true, nil
 }
 
 // MarshalCode marshals the action into code representation

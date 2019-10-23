@@ -1,6 +1,7 @@
 package force
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/gravitational/trace"
@@ -78,6 +79,8 @@ func EvalInto(ctx ExecutionContext, inRaw, out interface{}) error {
 	switch inType.Kind() {
 	case reflect.Struct:
 		if outType.Elem().Kind() != reflect.Struct {
+			_, ok := inRaw.(Expression)
+			fmt.Printf("Eval %v %v into %v\n", inRaw, ok)
 			return trace.BadParameter("in is %v then out should be pointer to struct, got %T", inType, out)
 		}
 		inVal := reflect.ValueOf(in)
@@ -231,6 +234,9 @@ func EvalInto(ctx ExecutionContext, inRaw, out interface{}) error {
 
 // Eval evaluates variable based on the execution context
 func Eval(ctx ExecutionContext, variable interface{}) (interface{}, error) {
+	if reflect.TypeOf(variable).Kind() == reflect.Ptr && reflect.ValueOf(variable).IsZero() {
+		return nil, nil
+	}
 	switch v := variable.(type) {
 	case []interface{}:
 		outSlice := make([]interface{}, len(v))
@@ -242,57 +248,11 @@ func Eval(ctx ExecutionContext, variable interface{}) (interface{}, error) {
 			outSlice[i] = out
 		}
 		return outSlice, nil
-	case IntVar:
-		return v.Eval(ctx)
-	case BoolVar:
-		return v.Eval(ctx)
-	case StringVar:
-		return v.Eval(ctx)
-	case StringsVar:
+	case Expression:
 		return v.Eval(ctx)
 	default:
 		return v, nil
 	}
-}
-
-// EvalString evaluates empty or missing string into ""
-func EvalString(ctx ExecutionContext, v StringVar) (string, error) {
-	if v == nil {
-		return "", nil
-	}
-	return v.Eval(ctx)
-}
-
-// EvalBool evaluates empty or unspecified bool to false
-func EvalBool(ctx ExecutionContext, in BoolVar) (bool, error) {
-	if in == nil {
-		return false, nil
-	}
-	return in.Eval(ctx)
-}
-
-func EvalPInt64(ctx ExecutionContext, in IntVar) (*int64, error) {
-	if in == nil {
-		return nil, nil
-	}
-	out, err := in.Eval(ctx)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	val := int64(out)
-	return &val, nil
-}
-
-func EvalPInt32(ctx ExecutionContext, in IntVar) (*int32, error) {
-	if in == nil {
-		return nil, nil
-	}
-	out, err := in.Eval(ctx)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	val := int32(out)
-	return &val, nil
 }
 
 func PInt32(in int32) *int32 {

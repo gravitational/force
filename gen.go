@@ -10,20 +10,20 @@ import (
 )
 
 // Zero returns a zero value for interface
-func Zero(iface reflect.Type) (reflect.Value, bool) {
-	if iface.Kind() != reflect.Interface {
-		return reflect.Value{}, false
+func Zero(iface reflect.Value) reflect.Value {
+	switch i := iface.Interface().(type) {
+	case Expression:
+		// This is unclear - what if it's a legitimate pointer to some struct
+		// not *StringVar
+		if iface.Type().Kind() == reflect.Ptr && iface.IsZero() {
+			new := reflect.New(iface.Type().Elem())
+			expr := new.Interface().(Expression)
+			return reflect.New(reflect.TypeOf(expr.Type()))
+		}
+		return reflect.Zero(reflect.TypeOf(i.Type()))
+	default:
+		return reflect.Zero(iface.Type())
 	}
-	ifacePtr := reflect.New(iface).Interface()
-	switch ifacePtr.(type) {
-	case *StringVar:
-		return reflect.ValueOf(String("")), true
-	case *BoolVar:
-		return reflect.ValueOf(Bool(false)), true
-	case *IntVar:
-		return reflect.ValueOf(Int(0)), true
-	}
-	return reflect.Value{}, false
 }
 
 // ConvertValueToAST converts value to the value of the
@@ -36,7 +36,7 @@ func ConvertValueToAST(in interface{}) (interface{}, error) {
 	case string:
 		return String(val), nil
 	case []string:
-		out := make([]interface{}, len(val))
+		out := make([]Expression, len(val))
 		for i, v := range val {
 			out[i] = String(v)
 		}
@@ -56,29 +56,25 @@ func ConvertTypeToAST(in reflect.Type) (reflect.Type, error) {
 func convertTypeToAST(in reflect.Type, types []reflect.Type) (reflect.Type, error) {
 	switch in.Kind() {
 	case reflect.Bool:
-		return reflect.TypeOf((*BoolVar)(nil)).Elem(), nil
+		return reflect.TypeOf(BoolVar{}), nil
 	case reflect.Int:
-		return reflect.TypeOf((*IntVar)(nil)).Elem(), nil
+		return reflect.TypeOf(IntVar{}), nil
 	case reflect.Int64:
-		return reflect.TypeOf((*IntVar)(nil)).Elem(), nil
+		return reflect.TypeOf(IntVar{}), nil
 	case reflect.Int32:
-		return reflect.TypeOf((*IntVar)(nil)).Elem(), nil
+		return reflect.TypeOf(IntVar{}), nil
 	case reflect.String:
-		return reflect.TypeOf((*StringVar)(nil)).Elem(), nil
+		return reflect.TypeOf(StringVar{}), nil
 	case reflect.Ptr:
 		out, err := convertTypeToAST(in.Elem(), append([]reflect.Type{in.Elem()}, types...))
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		// this is to catch *bool taht should be converted to BoolVar, not *BoolVar
+		// this is to catch *bool that should be converted to BoolVar, not *BoolVar
 		if out.Kind() == reflect.Interface {
 			ifacePtr := reflect.New(out).Interface()
 			switch ifacePtr.(type) {
-			case *StringVar:
-				return out, nil
-			case *BoolVar:
-				return out, nil
-			case *IntVar:
+			case *Expression:
 				return out, nil
 			}
 		}
@@ -91,7 +87,7 @@ func convertTypeToAST(in reflect.Type, types []reflect.Type) (reflect.Type, erro
 		return reflect.MapOf(in.Key(), out), nil
 	case reflect.Slice:
 		if in.Elem().Kind() == reflect.String {
-			return reflect.TypeOf((*StringsVar)(nil)).Elem(), nil
+			return reflect.TypeOf(StringsVar{}), nil
 		}
 		out, err := ConvertTypeToAST(in.Elem())
 		if err != nil {
@@ -138,11 +134,7 @@ func convertTypeToAST(in reflect.Type, types []reflect.Type) (reflect.Type, erro
 		switch ifacePtr.(type) {
 		case *error:
 			return in, nil
-		case *StringVar:
-			return in, nil
-		case *BoolVar:
-			return in, nil
-		case *IntVar:
+		case *Expression:
 			return in, nil
 		case *interface{}:
 			return in, nil
@@ -213,47 +205,25 @@ func ConvertFunctionToAST(fn interface{}) (Function, error) {
 		convertedArgTypes[i] = outArgType
 	}
 
-	firstOutType := convertedOutTypes[0]
-	stringVarType := reflect.TypeOf((*StringVar)(nil)).Elem()
-
-	var convertedLambda func(args []reflect.Value) (results []reflect.Value)
-	var convertedOut []reflect.Type
-	if firstOutType.AssignableTo(stringVarType) {
-		convertedLambda = func(args []reflect.Value) (results []reflect.Value) {
-			out := &ConvertedStringFunc{
-				calledWithArgs:    args,
-				convertedOutTypes: convertedOutTypes,
-				origFn:            fn,
-				origFnType:        fnType,
-			}
-			return []reflect.Value{reflect.ValueOf(out)}
+	convertedLambda := func(args []reflect.Value) (results []reflect.Value) {
+		out := &ConvertedFunc{
+			calledWithArgs:    args,
+			convertedOutTypes: convertedOutTypes,
+			origFn:            fn,
+			origFnType:        fnType,
 		}
-		var out *ConvertedStringFunc
-		convertedOut = []reflect.Type{reflect.TypeOf(out)}
-	} else if firstOutType.AssignableTo(errType) && len(convertedOutTypes) == 1 {
-		convertedLambda = func(args []reflect.Value) (results []reflect.Value) {
-			out := &ConvertedVoidFunc{
-				calledWithArgs:    args,
-				convertedOutTypes: convertedOutTypes,
-				origFn:            fn,
-				origFnType:        fnType,
-			}
-			return []reflect.Value{reflect.ValueOf(out)}
-		}
-		var out *ConvertedVoidFunc
-		convertedOut = []reflect.Type{reflect.TypeOf(out)}
-	} else {
-		return nil, trace.BadParameter("first return value of type %v is not supported", firstOutType)
+		return []reflect.Value{reflect.ValueOf(out)}
 	}
-
+	var out *ConvertedFunc
+	convertedOut := []reflect.Type{reflect.TypeOf(out)}
 	// this takes function function func(int) error -> func(IntVar) *ConvertedFunc
 	convertedFuncType := reflect.FuncOf(convertedArgTypes, convertedOut, fnType.IsVariadic())
 	convertedFunc := reflect.MakeFunc(convertedFuncType, convertedLambda)
 	return &NopScope{Func: convertedFunc.Interface()}, nil
 }
 
-// ConvertedStringFunc holds converted function
-type ConvertedStringFunc struct {
+// ConvertedFunc holds converted function
+type ConvertedFunc struct {
 	calledWithArgs    []reflect.Value
 	convertedOutTypes []reflect.Type
 	origFn            interface{}
@@ -261,7 +231,7 @@ type ConvertedStringFunc struct {
 }
 
 // Eval evaluates function and returns string
-func (c *ConvertedStringFunc) Eval(ctx ExecutionContext) (string, error) {
+func (c *ConvertedFunc) Eval(ctx ExecutionContext) (interface{}, error) {
 	// evaluate all passed arguments
 	args := make([]interface{}, len(c.calledWithArgs))
 	for i := range c.calledWithArgs {
@@ -283,9 +253,9 @@ func (c *ConvertedStringFunc) Eval(ctx ExecutionContext) (string, error) {
 	}
 	switch len(returnValues) {
 	case 1:
-		return returnValues[0].Interface().(string), nil
+		return returnValues[0].Interface(), nil
 	case 2:
-		first := returnValues[0].Interface().(string)
+		first := returnValues[0].Interface()
 		second := returnValues[1].Interface()
 		if second == nil {
 			return first, nil
@@ -296,8 +266,17 @@ func (c *ConvertedStringFunc) Eval(ctx ExecutionContext) (string, error) {
 	}
 }
 
+func (c *ConvertedFunc) Type() interface{} {
+	outType := c.convertedOutTypes[0]
+	out := reflect.Zero(outType).Interface()
+	if expr, ok := out.(Expression); ok {
+		return expr.Type()
+	}
+	return outType
+}
+
 // MarshalCode marshals code
-func (c *ConvertedStringFunc) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+func (c *ConvertedFunc) MarshalCode(ctx ExecutionContext) ([]byte, error) {
 	return marshalGenFuncCode(ctx, c.origFn, c.origFnType, c.calledWithArgs)
 }
 
@@ -324,53 +303,6 @@ func marshalGenFuncCode(ctx ExecutionContext, origFn interface{}, origFnType ref
 		Args:    ifaces,
 	}
 	return call.MarshalCode(ctx)
-}
-
-// ConvertedVoidFunc holds converted function
-type ConvertedVoidFunc struct {
-	calledWithArgs    []reflect.Value
-	convertedOutTypes []reflect.Type
-	origFn            interface{}
-	origFnType        reflect.Type
-}
-
-func (c *ConvertedVoidFunc) Run(ctx ExecutionContext) error {
-	// evaluate all passed arguments
-	args := make([]interface{}, len(c.calledWithArgs))
-	for i := range c.calledWithArgs {
-		out, err := Eval(ctx, c.calledWithArgs[i].Interface())
-		if err != nil {
-			return trace.Wrap(err)
-		}
-		args[i] = out
-	}
-	vals := make([]reflect.Value, len(args))
-	for i := range args {
-		vals[i] = reflect.ValueOf(args[i])
-	}
-	var returnValues []reflect.Value
-	if c.origFnType.IsVariadic() {
-		returnValues = reflect.ValueOf(c.origFn).CallSlice(vals)
-	} else {
-		returnValues = reflect.ValueOf(c.origFn).Call(vals)
-	}
-	switch len(returnValues) {
-	case 0:
-		return nil
-	case 1:
-		first := returnValues[0].Interface()
-		if first == nil {
-			return nil
-		}
-		return first.(error)
-	default:
-		return trace.BadParameter("expected no values, got %v", len(returnValues))
-	}
-}
-
-// MarshalCode marshals code
-func (c *ConvertedVoidFunc) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return marshalGenFuncCode(ctx, c.origFn, c.origFnType, c.calledWithArgs)
 }
 
 func isExported(name string) bool {

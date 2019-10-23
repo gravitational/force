@@ -140,19 +140,23 @@ func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
 	}
 }
 
+func (n *Setup) Type() interface{} {
+	return true
+}
+
 // Run sets up git plugin for the process group
-func (n *Setup) Run(ctx force.ExecutionContext) error {
+func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cfg Config
 	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return trace.Wrap(err)
+		return false, trace.Wrap(err)
 	}
 	err := cfg.CheckAndSetDefaults()
 	if err != nil {
-		return trace.Wrap(err)
+		return false, trace.Wrap(err)
 	}
 	plugin := &Plugin{cfg: cfg, start: time.Now().UTC()}
 	ctx.Process().Group().SetPlugin(Key, plugin)
-	return nil
+	return true, nil
 }
 
 // MarshalCode marshals plugin code to representation
@@ -188,28 +192,32 @@ type CloneAction struct {
 	repo interface{}
 }
 
-func (p *CloneAction) Run(ctx force.ExecutionContext) error {
+func (p *CloneAction) Type() interface{} {
+	return ""
+}
+
+func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return trace.NotFound("initialize Git plugin in the setup section")
+		return nil, trace.NotFound("initialize Git plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 
 	var repo Repo
 	if err := force.EvalInto(ctx, p.repo, &repo); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	log := force.Log(ctx)
 	if repo.Into == "" {
-		return trace.BadParameter("got empty Into variable")
+		return nil, trace.BadParameter("got empty Into variable")
 	}
 	fi, err := os.Stat(repo.Into)
 	if err != nil {
-		return trace.ConvertSystemError(err)
+		return nil, trace.ConvertSystemError(err)
 	}
 	if !fi.IsDir() {
-		return trace.BadParameter("Into variable is not an existing directory")
+		return nil, trace.BadParameter("Into variable is not an existing directory")
 	}
 
 	log.Infof("Cloning repository %v into %v.", repo.URL, repo.Into)
@@ -217,7 +225,7 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 
 	auth, err := plugin.cfg.Auth()
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	r, err := git.PlainClone(repo.Into, false, &git.CloneOptions{
@@ -225,7 +233,7 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 		URL:  string(repo.URL),
 	})
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	log.Infof("Cloned %v into %v in %v.", repo.URL, repo.Into, time.Now().Sub(start))
@@ -233,14 +241,14 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 	if repo.Hash != "" {
 		w, err := r.Worktree()
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 
 		err = w.Checkout(&git.CheckoutOptions{
 			Hash: plumbing.NewHash(repo.Hash),
 		})
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 
 		log.Infof("Checked out repository %v commit %v.", repo.URL, repo.Hash)
@@ -249,14 +257,14 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 	if repo.Tag != "" {
 		w, err := r.Worktree()
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 
 		err = w.Checkout(&git.CheckoutOptions{
 			Branch: plumbing.NewTagReferenceName(repo.Tag),
 		})
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 
 		log.Infof("Checked out repository %v tag %v.", repo.URL, repo.Tag)
@@ -264,27 +272,27 @@ func (p *CloneAction) Run(ctx force.ExecutionContext) error {
 
 	for i, subName := range repo.Submodules {
 		if subName == "" {
-			return trace.BadParameter("got empty submodule name at %v", i)
+			return nil, trace.BadParameter("got empty submodule name at %v", i)
 		}
 		w, err := r.Worktree()
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		log.Infof("Updating submodule %v.", subName)
 		sub, err := w.Submodule(subName)
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 		err = sub.UpdateContext(ctx, &git.SubmoduleUpdateOptions{
 			Init: true,
 			Auth: auth,
 		})
 		if err != nil {
-			return trace.Wrap(err)
+			return nil, trace.Wrap(err)
 		}
 	}
 
-	return nil
+	return repo.URL, nil
 }
 
 // MarshalCode marshals action into code representation

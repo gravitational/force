@@ -77,14 +77,18 @@ func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
 	}
 }
 
+func (n *Setup) Type() interface{} {
+	return false
+}
+
 // Run sets up git plugin for the process group
-func (n *Setup) Run(ctx force.ExecutionContext) error {
+func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cfg Config
 	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	if err := cfg.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	client := slack.New(
 		cfg.Token,
@@ -93,7 +97,7 @@ func (n *Setup) Run(ctx force.ExecutionContext) error {
 	)
 	plugin := &Plugin{cfg: cfg, start: time.Now().UTC(), client: client}
 	ctx.Process().Group().SetPlugin(Key, plugin)
-	return nil
+	return true, nil
 }
 
 // MarshalCode marshals plugin code to representation

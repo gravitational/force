@@ -23,15 +23,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Run starts build
-func (b *Builder) Run(ectx force.ExecutionContext, iface interface{}) error {
+// Eval runs build
+func (b *Builder) Eval(ectx force.ExecutionContext, iface interface{}) (interface{}, error) {
 	var img Image
 	if err := force.EvalInto(ectx, iface, &img); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	if err := img.CheckAndSetDefaults(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	log := force.Log(ectx)
@@ -56,7 +56,7 @@ func (b *Builder) Run(ectx force.ExecutionContext, iface interface{}) error {
 
 	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
-		return trace.Wrap(err, "failed to create session")
+		return nil, trace.Wrap(err, "failed to create session")
 	}
 
 	id := identity.NewID()
@@ -89,11 +89,11 @@ func (b *Builder) Run(ectx force.ExecutionContext, iface interface{}) error {
 		return showProgress(ctx, statusC, writer)
 	})
 	if err := eg.Wait(); err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	log.Infof("Successfully built %v.", img.Tag)
 
-	return nil
+	return img.Tag, nil
 }
 
 // Session creates the session manager and returns the session and it's

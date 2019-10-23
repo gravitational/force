@@ -30,7 +30,6 @@ func main() {
 	app := kingpin.New("force", "Force is simple CI/CD tool")
 	app.Flag("debug", "Turn on debugging level").Short('d').BoolVar(&cfg.debug)
 	app.Flag("setup", "Path to setup file").Short('s').StringVar(&cfg.setup.Filename)
-	app.Flag("include", "Force library file to include").Short('i').StringsVar(&cfg.includeFiles)
 	app.Arg("file", "Force file to run").StringVar(&cfg.force.Filename)
 
 	app.Flag("id", "Optional run ID").Envar("FORCE_ID").StringVar(&cfg.id)
@@ -78,12 +77,11 @@ func main() {
 
 func generateAndStart(ctx context.Context, cfg config) (*runner.Runner, error) {
 	run, err := runner.Parse(runner.Input{
-		Context:        ctx,
-		ID:             cfg.id,
-		Setup:          cfg.setup,
-		Script:         cfg.force,
-		Debug:          cfg.debug,
-		IncludeScripts: cfg.include,
+		Context: ctx,
+		ID:      cfg.id,
+		Setup:   cfg.setup,
+		Script:  cfg.force,
+		Debug:   cfg.debug,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -127,7 +125,7 @@ func initLogger(debug bool) error {
 
 // GFile is a special file defining process
 const (
-	GFile = "G"
+	GFile = "g.force"
 	// SetupForce is a special file
 	// with setup for the properties
 	SetupForce = "setup.force"
@@ -135,12 +133,10 @@ const (
 
 // config contains force cli parameters
 type config struct {
-	id           string
-	setup        runner.Script
-	force        runner.Script
-	includeFiles []string
-	include      []runner.Script
-	debug        bool
+	id    string
+	setup runner.Script
+	force runner.Script
+	debug bool
 }
 
 func (c *config) CheckAndSetDefaults() error {
@@ -177,15 +173,6 @@ func (c *config) CheckAndSetDefaults() error {
 			return trace.ConvertSystemError(err)
 		}
 		c.force.Content = string(forceScript)
-	}
-	if len(c.includeFiles) != 0 {
-		for _, path := range c.includeFiles {
-			forceScript, err := ioutil.ReadFile(path)
-			if err != nil {
-				return trace.ConvertSystemError(err)
-			}
-			c.include = append(c.include, runner.Script{Filename: path, Content: string(forceScript)})
-		}
 	}
 	return nil
 }

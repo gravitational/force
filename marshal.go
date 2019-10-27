@@ -234,6 +234,9 @@ func OriginalType(t reflect.Type) reflect.Type {
 func StructPackageName(t reflect.Type) string {
 	field, ok := t.FieldByName(metadataFieldName)
 	if !ok {
+		if t.PkgPath() != reflect.TypeOf(Spec{}).PkgPath() {
+			return filepath.Base(t.PkgPath())
+		}
 		return ""
 	}
 	return filepath.Base(field.Type.PkgPath())

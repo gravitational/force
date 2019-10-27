@@ -92,6 +92,11 @@ teleport-reload:
 	$(MAKE) all
 	cd examples/teleport && force -d reload.force
 
+.PHONY: teleport-apply
+teleport-apply:
+	$(MAKE) all
+	cd examples/teleport && force -d apply.force
+
 
 .PHONY: kube
 kube:

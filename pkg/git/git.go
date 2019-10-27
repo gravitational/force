@@ -256,6 +256,7 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	}
 
 	err = r.Fetch(&git.FetchOptions{
+		Auth:     auth,
 		RefSpecs: []gitconfig.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
 	})
 	if err != nil {

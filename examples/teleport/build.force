@@ -36,7 +36,7 @@ func(){
 		),
 	)
 
-	forceImage := "gcr.io/kubeadm-167321/force:0.0.14"
+	forceImage := "gcr.io/kubeadm-167321/force:0.0.15"
 
 	RunBuildJob := func(image string, script string){
 		kube.Run(kube.Job{

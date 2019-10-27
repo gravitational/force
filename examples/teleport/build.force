@@ -36,7 +36,7 @@ func(){
 		),
 	)
 
-	forceImage := "gcr.io/kubeadm-167321/force:0.0.17"
+	forceImage := "gcr.io/kubeadm-167321/force:0.0.18"
 
 	RunBuildJob := func(image string, script string){
 		kube.Run(kube.Job{
@@ -48,7 +48,7 @@ func(){
 							{
 								Name: "kbuild",
 								Image: forceImage,
-								Command: Strings("force", "-d"),					
+								Command: Strings("force", "-d"),
 								Env: []_{
 									// ID is passed so the job spawned in k8s
 									// will have the same job id, having the same logs
@@ -184,50 +184,9 @@ func(){
 		})
 	}
 
-	setupScript := Marshal(
-		// Setup configures force plugins, configurations
-		// all other force files share the configuration defined in this file
-		Setup(
-			// Github is a setup of the github plugin valid in the
-			// context of this group, all calls to github methods will be using
-			// this syntax
-			github.Setup(github.Config{
-				// Token is a github access token
-				// passed to all callers in the group
-				TokenFile: ExpectEnv("GITHUB_ACCESS_TOKEN_FILE"),
-			}),
-
-			// Git sets up git client for cloning repositories
-			git.Setup(git.Config{
-				PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
-				KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
-			}),
-
-			// Logging sets up logging to stackdriver
-			// and stdout as well, with the current implementation,
-			// it should go first so other plugins can use it
-			log.Setup(log.Config{
-				Level: "info",
-				Outputs: []log.Output{
-					{
-						Type: "stdout",
-					},
-					{
-						Type: "stackdriver",
-						CredentialsFile: ExpectEnv("GOOGLE_CREDENTIALS"),
-					},
-				},
-			}),
-
-			// Kube sets up kubernetes
-			kube.Setup(kube.Config{
-			}),
-		),
-	)
-
 	// ApplyDeployment applies kubernetes deployment that
 	// triggers teleport CI jobs
-	ApplyDeployment := func(script string){
+	ApplyDeployment := func(){
 		kube.Apply(kube.Deployment{
 			Name: "teleport-ci",
 			Namespace: "default",
@@ -247,23 +206,12 @@ func(){
 							{
 								Name: "teleport-ci",
 								Image: forceImage,
-								Command: Strings("force", "-d"),
+								Command: Strings("force", "-d", "teleport.force"),
+								WorkingDir: "/var/teleport-ci",
 								Env: []_{
 									// ID is passed so the job spawned in k8s
 									// will have the same job id, having the same logs
 									{Name: "FORCE_ID", Value: "teleport-ci"},
-									// Script is passed as an environment variable,
-									// thanks to Marshal the script is inline,
-									// can reference outside variables
-									{
-										Name: "FORCE_SCRIPT",
-										Value: script,
-									},
-									// Setup is passed as an environment variable
-									{
-										Name: "FORCE_SETUP",
-										Value: setupScript,
-									},
 									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
 									{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
 									{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},
@@ -280,6 +228,8 @@ func(){
 									{Name: "gitkey", MountPath: "/var/secrets/git"},
 									// github mounts github token
 									{Name: "github", MountPath: "/var/secrets/github"},
+									// scripts with teleport CI spec
+									{Name: "teleport-ci", MountPath: "/var/teleport-ci"},
 								},
 								SecurityContext: _{Privileged: false},
 							},
@@ -288,6 +238,7 @@ func(){
 							{Name: "creds", Secret: _{SecretName: "creds"}},
 						    {Name: "gitkey", Secret: _{SecretName: "gitkey"}},
 						    {Name: "github", Secret: _{SecretName: "github"}},
+							{Name: "teleport-ci", ConfigMap: _{Name: "teleport-ci"}},
 							{Name: "cache", EmptyDir: _{}},
 							{Name: "tmp", EmptyDir: _{}},
 						},

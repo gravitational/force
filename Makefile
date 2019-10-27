@@ -95,7 +95,7 @@ teleport-reload:
 .PHONY: teleport-apply
 teleport-apply:
 	$(MAKE) all
-	cd examples/teleport && force -d apply.force
+	cd examples/teleport && force -d apply.force --setup=setup-local.force
 
 
 .PHONY: kube

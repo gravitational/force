@@ -109,106 +109,10 @@ func Parse(i Input) (*Runner, error) {
 		eventsC:       make(chan force.Event, 1024),
 		plugins:       make(map[interface{}]interface{}),
 	}
-	var builtinFunctions = map[string]force.Function{
-		// Standard library functions
-		"Process": &NewProcess{runner: runner},
-		"Setup":   &NewSetupProcess{runner: runner},
 
-		// Action runners
-		"Sequence": &force.NewSequence{},
-		"Parallel": &force.NewParallel{},
-		"Defer":    &force.NopScope{Func: force.Defer},
-		"If":       &force.NewIf{},
-
-		// Builtin event generator channels
-		"Oneshot":   &force.NopScope{Func: force.Oneshot},
-		"Ticker":    &force.NopScope{Func: force.Ticker},
-		"Duplicate": &force.NopScope{Func: force.Duplicate},
-		"Files":     &force.NopScope{Func: force.Files},
-
-		// Variable-related functions
-		// Define defines a variable in a lexical scope
-		"Define": &force.NewDefine{},
-		// Var references a variable in a lexcial scope
-		"Var": &force.NewVarRef{},
-
-		// Flow control function
-		"Exit": &force.NopScope{Func: force.Exit},
-
-		// Log functions
-		"Infof": &force.NopScope{Func: log.Infof},
-
-		// Helper functions
-		"Shell":    &force.NopScope{Func: force.Shell},
-		"Command":  &force.NopScope{Func: force.Command},
-		"ID":       &force.NopScope{Func: force.ID},
-		"Strings":  &force.NopScope{Func: force.Strings},
-		"Marshal":  &force.NopScope{Func: force.Marshal},
-		"Unquote":  &force.NopScope{Func: force.Unquote},
-		"Contains": &force.NopScope{Func: force.Contains},
-	}
-
-	var builtinStructs = []interface{}{force.Spec{}, force.Test{}, force.Script{}}
-
-	globalContext := force.NewContext(force.ContextConfig{
-		Parent:  &force.WrapContext{Context: runner.ctx},
-		Process: nil,
-		ID:      i.ID,
-		Event:   &force.OneshotEvent{Time: time.Now().UTC()},
-	})
-	g := &gParser{
-		runner:  runner,
-		scope:   force.WithRuntimeScope(globalContext),
-		plugins: map[string]force.Group{},
-	}
-	plugins := map[string]func() (force.Group, error){
-		string(log.Key):     log.Scope,
-		string(git.Key):     git.Scope,
-		string(github.Key):  github.Scope,
-		string(slack.Key):   slack.Scope,
-		string(builder.Key): builder.Scope,
-		string(kube.Key):    kube.Scope,
-		string(ssh.Key):     ssh.Scope,
-		string(aws.Key):     aws.Scope,
-	}
-	for key, plugin := range plugins {
-		scope, err := plugin()
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		g.plugins[key] = scope
-	}
-
-	runner.parser = g
-	for name, fn := range builtinFunctions {
-		g.scope.SetValue(force.ContextKey(name), fn)
-	}
-
-	// some parsing builtins
-	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Include)), &force.NopScope{Func: g.Include})
-	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Load)), &force.NopScope{Func: g.Load})
-	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Reload)), &force.NopScope{Func: g.Reload})
-
-	// imported standard functions
-	importedFunctions := []interface{}{
-		fmt.Sprintf,
-		strings.TrimSpace,
-		os.Getenv,
-		os.Getwd,
-		force.ExpectEnv,
-		ioutil.TempDir,
-		os.RemoveAll,
-	}
-	for _, fn := range importedFunctions {
-		outFn, err := force.ConvertFunctionToAST(fn)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		g.scope.SetValue(force.ContextKey(force.FunctionName(fn)), outFn)
-	}
-
-	for _, st := range builtinStructs {
-		g.runner.AddDefinition(force.StructName(reflect.TypeOf(st)), reflect.TypeOf(st))
+	g, err := newParser(i.ID, runner)
+	if err != nil {
+		return nil, trace.Wrap(err)
 	}
 
 	// Setup the runner
@@ -274,6 +178,112 @@ func Parse(i Input) (*Runner, error) {
 	runner.AddChannel(proc.Channel())
 
 	return runner, nil
+}
+
+func newParser(runID string, runner *Runner) (*gParser, error) {
+	var builtinFunctions = map[string]force.Function{
+		// Standard library functions
+		"Process": &NewProcess{runner: runner},
+		"Setup":   &NewSetupProcess{runner: runner},
+
+		// Action runners
+		"Sequence": &force.NewSequence{},
+		"Parallel": &force.NewParallel{},
+		"Defer":    &force.NopScope{Func: force.Defer},
+		"If":       &force.NewIf{},
+
+		// Builtin event generator channels
+		"Oneshot":   &force.NopScope{Func: force.Oneshot},
+		"Ticker":    &force.NopScope{Func: force.Ticker},
+		"Duplicate": &force.NopScope{Func: force.Duplicate},
+		"Files":     &force.NopScope{Func: force.Files},
+		"FanIn":     &force.NopScope{Func: force.FanIn},
+
+		// Variable-related functions
+		// Define defines a variable in a lexical scope
+		"Define": &force.NewDefine{},
+		// Var references a variable in a lexcial scope
+		"Var": &force.NewVarRef{},
+
+		// Flow control function
+		"Exit": &force.NopScope{Func: force.Exit},
+
+		// Log functions
+		"Infof": &force.NopScope{Func: log.Infof},
+
+		// Helper functions
+		"Shell":    &force.NopScope{Func: force.Shell},
+		"Command":  &force.NopScope{Func: force.Command},
+		"ID":       &force.NopScope{Func: force.ID},
+		"Strings":  &force.NopScope{Func: force.Strings},
+		"Marshal":  &force.NopScope{Func: force.Marshal},
+		"Unquote":  &force.NopScope{Func: force.Unquote},
+		"Contains": &force.NopScope{Func: force.Contains},
+	}
+
+	var builtinStructs = []interface{}{force.Spec{}, force.Test{}, force.Script{}}
+
+	globalContext := force.NewContext(force.ContextConfig{
+		Parent:  &force.WrapContext{Context: runner.ctx},
+		Process: nil,
+		ID:      runID,
+		Event:   &force.OneshotEvent{Time: time.Now().UTC()},
+	})
+	g := &gParser{
+		runner:  runner,
+		scope:   force.WithRuntimeScope(globalContext),
+		plugins: map[string]force.Group{},
+	}
+	plugins := map[string]func() (force.Group, error){
+		string(log.Key):     log.Scope,
+		string(git.Key):     git.Scope,
+		string(github.Key):  github.Scope,
+		string(slack.Key):   slack.Scope,
+		string(builder.Key): builder.Scope,
+		string(kube.Key):    kube.Scope,
+		string(ssh.Key):     ssh.Scope,
+		string(aws.Key):     aws.Scope,
+	}
+	for key, plugin := range plugins {
+		scope, err := plugin()
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		g.plugins[key] = scope
+	}
+
+	runner.parser = g
+	for name, fn := range builtinFunctions {
+		g.scope.SetValue(force.ContextKey(name), fn)
+	}
+
+	// some parsing builtins
+	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Include)), &force.NopScope{Func: g.Include})
+	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Load)), &force.NopScope{Func: g.Load})
+	g.scope.SetValue(force.ContextKey(force.FunctionName(g.Reload)), &force.NopScope{Func: g.Reload})
+
+	// imported standard functions
+	importedFunctions := []interface{}{
+		fmt.Sprintf,
+		strings.TrimSpace,
+		os.Getenv,
+		os.Getwd,
+		force.ExpectEnv,
+		ioutil.TempDir,
+		os.RemoveAll,
+	}
+	for _, fn := range importedFunctions {
+		outFn, err := force.ConvertFunctionToAST(fn)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		g.scope.SetValue(force.ContextKey(force.FunctionName(fn)), outFn)
+	}
+
+	for _, st := range builtinStructs {
+		g.runner.AddDefinition(force.StructName(reflect.TypeOf(st)), reflect.TypeOf(st))
+	}
+	return g, nil
 }
 
 // convertScanError converts scan error to code error

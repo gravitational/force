@@ -49,7 +49,6 @@ func (s *LoadAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	runnerCtx, cancel := context.WithCancel(ctx)
 	runner := &Runner{
 		LexScope:      force.WithLexicalScope(nil),
-		parser:        s.g,
 		debugOverride: s.g.runner.debugOverride,
 		cancel:        cancel,
 		ctx:           runnerCtx,
@@ -57,7 +56,13 @@ func (s *LoadAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 		plugins:       make(map[interface{}]interface{}),
 		logger:        s.g.runner.Logger(),
 	}
-	actionI, err := s.g.parseExpr(f, runner, expr)
+
+	localParser, err := newParser(s.g.scope.ID(), runner)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	actionI, err := localParser.parseExpr(f, runner, expr)
 	if err != nil {
 		return nil, trace.Wrap(convertScanError(err, script))
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gravitational/trace"
 	git "gopkg.in/src-d/go-git.v4"
+	gitconfig "gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
@@ -104,6 +105,8 @@ type Repo struct {
 	Hash string
 	// Tag is a git tag to clone
 	Tag string
+	// Branch is a branch to clone
+	Branch string
 	// Submodules is an optional submodule to init
 	Submodules []string
 }
@@ -114,6 +117,22 @@ func (r *Repo) CheckAndSetDefaults() error {
 	}
 	if r.Into == "" {
 		return trace.BadParameter("set git.Repo{Into: ``} parameter")
+	}
+	found := 0
+	if r.Hash != "" {
+		found++
+	}
+	if r.Tag != "" {
+		found++
+	}
+	if r.Branch != "" {
+		found++
+	}
+	if found == 0 {
+		return trace.BadParameter("specify one of git.Repo{Tag: ``, Hash: ``, Branch: ``}")
+	}
+	if found > 1 {
+		return trace.BadParameter("specify only one of git.Repo{Tag: ``, Hash: ``, Branch: ``}, not several at once")
 	}
 	return nil
 }
@@ -236,6 +255,13 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 		return nil, trace.Wrap(err)
 	}
 
+	err = r.Fetch(&git.FetchOptions{
+		RefSpecs: []gitconfig.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	log.Infof("Cloned %v into %v in %v.", repo.URL, repo.Into, time.Now().Sub(start))
 
 	if repo.Hash != "" {
@@ -264,10 +290,26 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 			Branch: plumbing.NewTagReferenceName(repo.Tag),
 		})
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, trace.BadParameter("failed to clone tag %v: %v", repo.Tag, err)
 		}
 
 		log.Infof("Checked out repository %v tag %v.", repo.URL, repo.Tag)
+	}
+
+	if repo.Branch != "" {
+		w, err := r.Worktree()
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+
+		err = w.Checkout(&git.CheckoutOptions{
+			Branch: plumbing.NewBranchReferenceName(repo.Branch),
+		})
+		if err != nil {
+			return nil, trace.BadParameter("failed to clone branch %v: %v", repo.Branch, err)
+		}
+
+		log.Infof("Checked out repository %v branch %v.", repo.URL, repo.Branch)
 	}
 
 	for i, subName := range repo.Submodules {

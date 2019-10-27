@@ -35,6 +35,18 @@ type FSNotify struct {
 	eventsC chan Event
 }
 
+// MarshalCode marshals channel to code
+func (f *FSNotify) MarshalCode(ctx ExecutionContext) ([]byte, error) {
+	call := &FnCall{
+		Fn:   Files,
+		Args: make([]interface{}, len(f.Files)),
+	}
+	for i := range f.Files {
+		call.Args[i] = f.Files[i]
+	}
+	return call.MarshalCode(ctx)
+}
+
 func (f *FSNotify) String() string {
 	return fmt.Sprintf("Files(%v)", strings.Join(f.Files, ","))
 }

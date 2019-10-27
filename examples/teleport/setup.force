@@ -1,0 +1,42 @@
+// Setup configures force plugins, configurations
+// all other force files share the configuration defined in this file
+Setup(
+	// Github is a setup of the github plugin valid in the
+	// context of this group, all calls to github methods will be using
+	// this syntax
+	github.Setup(github.Config{
+		// Token is a github access token
+		// passed to all callers in the group
+		TokenFile: ExpectEnv("GITHUB_ACCESS_TOKEN_FILE"),
+	}),
+
+	// Git sets up git client for cloning repositories
+	git.Setup(git.Config{
+		PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
+		KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
+	}),
+
+ 	// Logging sets up logging to stackdriver
+	// and stdout as well, with the current implementation,
+	// it should go first so other plugins can use it
+	log.Setup(log.Config{
+		Level: "info",
+		Outputs: []log.Output{
+			{
+				Type: "stdout",
+			},
+			{
+				Type: "stackdriver",
+				CredentialsFile: ExpectEnv("LOGGING_CREDENTIALS"),
+			},
+		},
+	}),
+
+	// Kube sets up kubernetes
+	kube.Setup(kube.Config{
+		// Path is a path to kubeconfig,
+		// which is optional, if not set,
+		// force assumes that it is running inside kubernetes
+		Path: ExpectEnv("KUBE_CREDENTIALS"),
+	}),
+)

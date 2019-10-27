@@ -47,6 +47,44 @@ func (l *LocalProcess) Action() force.Action {
 	return l.Run
 }
 
+func (l *LocalProcess) Type() interface{} {
+	return 0
+}
+
+func (l *LocalProcess) fanInEvents(ctx force.ExecutionContext) {
+	log := force.Log(ctx)
+	for {
+		select {
+		case <-l.Done():
+			return
+		case <-l.Channel().Done():
+			return
+		case <-ctx.Done():
+			return
+		case event := <-l.Channel().Events():
+			select {
+			case l.eventsC <- event:
+				log.Debugf("Fan in received event %v.", event)
+			case <-l.Done():
+				return
+			case <-ctx.Done():
+				return
+			default:
+				log.Warningf("Overflow, dropping event %v.", event)
+			}
+		}
+	}
+}
+
+func (l *LocalProcess) Eval(ctx force.ExecutionContext) (interface{}, error) {
+	if err := l.Channel().Start(ctx); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	go l.fanInEvents(ctx)
+	l.triggerActions(ctx)
+	return 0, nil
+}
+
 func (l *LocalProcess) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	call := &force.FnCall{FnName: "Process", Args: []interface{}{l.Spec}}
 	return call.MarshalCode(ctx)

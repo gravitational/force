@@ -66,6 +66,7 @@ type Group interface {
 
 // Process is a process that is triggered by the event
 type Process interface {
+	Expression
 	// Name returns a process name
 	Name() string
 	// Channel returns a process channel
@@ -88,6 +89,9 @@ type Process interface {
 
 // Channel produces events
 type Channel interface {
+	// CodeMarshaler allows to marshal action into code
+	CodeMarshaler
+	// Start starts the process
 	Start(ctx context.Context) error
 	Events() <-chan Event
 	Done() <-chan struct{}
@@ -98,7 +102,7 @@ type Channel interface {
 type Expression interface {
 	// CodeMarshaler allows to marshal action into code
 	CodeMarshaler
-	// Eval evaluates variable and returns string
+	// Eval evaluates variable and returns result of the expression
 	Eval(ctx ExecutionContext) (interface{}, error)
 	// Type returns the type of the expression,
 	// for concrete types it is a zero instance -

@@ -36,8 +36,8 @@ func(){
 		),
 	)
 
-	forceImage := "gcr.io/kubeadm-167321/force:0.0.13"
-	
+	forceImage := "gcr.io/kubeadm-167321/force:0.0.14"
+
 	RunBuildJob := func(image string, script string){
 		kube.Run(kube.Job{
 			Name: Sprintf("tele-build-%v", ID()),

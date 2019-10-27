@@ -1,21 +1,25 @@
-Process(Spec{
-	Name: "teleport-ci",
-	Watch: github.PullRequests(github.Source{
-		Repo: "gravitational/teleport",
-	}),
-	Run: github.PostStatusOf(func(){
-		Include("build.force")
-		image := Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, event.Commit)
-		BuildAndPublishImage(image, event.Commit)
-		Parallel(
-			RunTestJob(image,
-				Sprintf("tele-test-%v", ID()),
-				Strings(
-					"/bin/bash", "-c", "./examples/etcd/start-etcd.sh & sleep 1; make FLAGS='-cover -race' test")),
-			RunTestJob(image,
-				Sprintf("tele-int-%v", ID()),				
-				Strings(
-					"/bin/bash", "-c", "make FLAGS='-cover' integration")),
-		)
-	}()),
-})
+func() {
+	Include("setup.force")
+	Include("build.force")
+	Process(Spec{
+		Name: "teleport-ci",
+		Watch: github.PullRequests(github.Source{
+			Repo: "gravitational/teleport",
+		}),
+		Run: github.PostStatusOf(func(){
+			image := Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, event.Commit)
+			// BuildAndPublishImage builds and publishes image via job
+			BuildAndPublishImage(image, event.Commit)
+			Parallel(
+				RunTestJob(image,
+					Sprintf("tele-test-%v", ID()),
+					Strings(
+						"/bin/bash", "-c", "./examples/etcd/start-etcd.sh & sleep 1; make FLAGS='-cover -race' test")),
+				RunTestJob(image,
+					Sprintf("tele-int-%v", ID()),
+					Strings(
+						"/bin/bash", "-c", "make FLAGS='-cover' integration")),
+			)
+		}()),
+	})
+}()

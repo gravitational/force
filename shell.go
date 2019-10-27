@@ -508,12 +508,20 @@ func (s *SequenceAction) EvalWithScope(ctx ExecutionContext) (interface{}, error
 		_, isDefer := action.(*DeferAction)
 		if isDefer {
 			deferred = append(deferred, action)
+		}
+	}
+eval:
+	for i := range s.actions {
+		action := s.actions[i]
+		_, isDefer := action.(*DeferAction)
+		if isDefer {
+			deferred = append(deferred, action)
 			continue
 		}
 		last, err = action.Eval(ctx)
 		SetError(ctx, err)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			break eval
 		}
 	}
 	// deferred actions are executed in reverse order

@@ -1,6 +1,6 @@
 # Force
 
-`Force` is an event processing and infrastructure automation framework.
+`Force` is an event processing and infrastructure automation framework.z
 
 `Makefiles` create an easy way to build targets and projects.
 

@@ -7,9 +7,13 @@
 `.force` scripts create event-driven workflows with multiple services
 combined together: Github to Docker builds, Slack to Kubernetes Deployments.
 
+## Status
+
+Current version is not even alpha, use at your own risk (0.0.18).
+
 ## Documentation
 
-Read the docs at [https://force.gravitational.co](https://force.gravitational.co)
+Read the docs at [https://force.gravitational.com](https://force.gravitational.com)
 
 ## Goals
 

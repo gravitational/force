@@ -9,7 +9,7 @@ combined together: Github to Docker builds, Slack to Kubernetes Deployments.
 
 ## Status
 
-Current version is not even alpha, use at your own risk (0.0.18).
+Current version is not even alpha, use at your own risk (`0.0.18`).
 
 ## Documentation
 

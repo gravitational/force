@@ -1,0 +1,18 @@
+Setup(
+	// Builder configures docker builder, optional credentials
+	builder.Setup(builder.Config{
+		// Server logs into docker registry servier
+		Server: "gcr.io",
+		// Username is a username to login with the registry server
+		Username: ExpectEnv("REGISTRY_USERNAME"),
+		// SecretFile is a path to registry secret, for example
+		// in gcr this is a path to JSON file with service account:
+		// SecretFile: /var/secrets/serviceaccount.json
+		//
+		// Check this document to configure GCR access:
+		//
+		// https://cloud.google.com/container-registry/docs/access-control
+		//
+		SecretFile: ExpectEnv("REGISTRY_SECRET"),
+	}),
+)

@@ -1,0 +1,14 @@
+func(){
+	myChoices := Strings("banana", "orange", "apple")
+	// outLambda evaluates to a function
+	outLambda := If(
+		Contains(myChoices, "banana"),
+		func(){
+			Infof("Your choice contains a banana")
+		},
+		func(){
+			Infof("Your choice does not contain a banana")
+		},
+	)
+	outLambda()
+}

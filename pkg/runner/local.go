@@ -173,7 +173,7 @@ func (l *LocalProcess) triggerActions(ctx force.ExecutionContext) {
 				if err != nil {
 					logger.WithError(err).Errorf("%v failed after running for %v.", l, time.Now().Sub(start))
 				} else {
-					logger.Infof("%v completed successfully in %v.", l, time.Now().Sub(start))
+					logger.Debugf("%v completed successfully in %v.", l, time.Now().Sub(start))
 				}
 			}()
 		}

@@ -1,0 +1,6 @@
+func(){
+	messageFunc := func(message string) {
+		message
+	}
+	Infof("hello, %v", messageFunc("var"))
+}()

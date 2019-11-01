@@ -137,7 +137,18 @@ func generateEmptyValues(command Command, structType reflect.Type) (interface{},
 			return nil, trace.Wrap(err)
 		}
 		structField := structVal.FieldByName(force.Capitalize(field.Name))
-		structField.Set(reflect.ValueOf(outVal))
+		iface, ok := structField.Interface().(force.Converter)
+		if ok {
+			if structField.Type().Kind() != reflect.Ptr {
+				converted, err := iface.Convert(outVal)
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				structField.Set(reflect.ValueOf(converted))
+			}
+		} else {
+			structField.Set(force.Zero(reflect.ValueOf(outVal)))
+		}
 	}
 	return structVal.Interface(), nil
 }
@@ -160,7 +171,18 @@ func generateValues(command Command, structType reflect.Type, values map[string]
 			return nil, trace.Wrap(err)
 		}
 		field := structVal.FieldByName(force.Capitalize(field.Name))
-		field.Set(reflect.ValueOf(outVal))
+		iface, ok := field.Interface().(force.Converter)
+		if ok {
+			if field.Type().Kind() != reflect.Ptr {
+				converted, err := iface.Convert(outVal)
+				if err != nil {
+					return nil, trace.Wrap(err)
+				}
+				field.Set(reflect.ValueOf(converted))
+			}
+		} else {
+			field.Set(reflect.ValueOf(outVal))
+		}
 	}
 	return structVal.Interface(), nil
 }

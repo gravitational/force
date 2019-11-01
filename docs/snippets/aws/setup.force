@@ -1,0 +1,5 @@
+Setup(
+	// By default AWS plugin assumes
+	// that credentials are available at $HOME/.aws/credentials
+	aws.Setup(aws.Config{}),
+)

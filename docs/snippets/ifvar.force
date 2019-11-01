@@ -1,0 +1,10 @@
+func(){
+	myChoices := Strings("banana", "orange", "apple")
+	// result variable evaluates to string
+	result := If(
+		Contains(myChoices, "banana"),
+		"contains banana",
+		"does not contain a banana",
+	)
+	Infof("Result is: %v.", result)
+}

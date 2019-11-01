@@ -1,0 +1,4 @@
+func(){
+	Include("lib.force")
+	GlobalLog("log this line")
+}()

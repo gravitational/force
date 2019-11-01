@@ -1,0 +1,18 @@
+Setup(
+	// github uses secure token 
+	github.Setup(github.Config{
+		// TokenFile is a path to github access token
+		// for example, /var/screts/github.token
+		TokenFile: ExpectEnv("GITHUB_ACCESS_TOKEN_FILE"),
+	}),
+
+	// Git sets up git client for cloning private repositories
+	git.Setup(git.Config{
+		// PrivateKeyFile is a path to private SSH key file
+		// for example, /home/alice/.ssh/github.key
+		PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
+		// KnownHostsFile is a path to file in SSH known_hosts
+		// format
+		KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
+	}),
+)

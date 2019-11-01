@@ -1,0 +1,3 @@
+func(){
+	Infof("HOME: %v", ExpectEnv("HOME"))
+}()

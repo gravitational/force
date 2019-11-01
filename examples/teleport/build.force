@@ -79,7 +79,7 @@ func(){
 									// scripts is a script with a dockerfile
 									{Name: "gitkey", MountPath: "/var/secrets/git"},
 									// scripts is a script with a dockerfile
-									{Name: "scripts", MountPath: "/mnt/scripts"},								
+									{Name: "teleport-ci", MountPath: "/var/teleport-ci"},
 								},
 								SecurityContext: _{Privileged: true},
 							},
@@ -87,7 +87,7 @@ func(){
 						Volumes: []_{
 							{Name: "creds", Secret: _{SecretName: "creds"}},
 						    {Name: "gitkey", Secret: _{SecretName: "gitkey"}},
-							{Name: "scripts", ConfigMap: _{Name: "scripts"}},
+							{Name: "teleport-ci", ConfigMap: _{Name: "teleport-ci"}},
 							{Name: "cache", EmptyDir: _{}},
 							{Name: "tmp", EmptyDir: _{}},
 						},
@@ -132,7 +132,7 @@ func(){
 						// Set build context to the cloned repository
 						Context: tempDir,
 						// Dockerfile is a dockerfile to build (from current dir),
-						Dockerfile: "/mnt/scripts/test.dockerfile",
+						Dockerfile: "/var/teleport-ci/test.dockerfile",
 						// Tag is the tag to build - here, as you see, we need to reimplement
 						// Sprintf and every other method that works with our vars
 						Tag: Unquote(image),

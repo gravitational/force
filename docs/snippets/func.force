@@ -1,0 +1,5 @@
+func(){
+	Infof("Hello, world")
+    Command(`echo "hello, world!"`)
+}()
+

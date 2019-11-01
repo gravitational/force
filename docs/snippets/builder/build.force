@@ -1,0 +1,34 @@
+func(){
+	tag := "latest"
+	image := Sprintf(`gcr.io/kubeadm-167321/example:%v`, tag)
+	// Build builds dockerfile and tags it in the local storage
+	builder.Build(builder.Image{
+		// Set build context to the current repository
+		Context: ".",
+		// Dockerfile is a dockerfile to build (from current dir),
+		Dockerfile: "./Dockerfile",
+		// Tag is the tag to build
+		Tag: tag,
+		// Secrets are optional build secrets that could be exposed to docker
+		// container during the run
+		Secrets: []builder.Secret{
+			{
+				ID: "logging-creds",
+				File: ExpectEnv("GOOGLE_CREDENTIALS"),
+			},
+		},
+		// Args are optional build arguments
+		Args: []builder.Arg{
+			{
+				// FORCE_ID is a force run ID, it is helfpul to propagate force run ID to
+				// docker builds for logging purposes
+				Key: "FORCE_ID",
+				Val: ID(),
+			},
+		},
+	})
+	// Push the built image
+	builder.Push(builder.Image{Tag: image})
+	// Prune the build cache
+	builder.Prune()
+}()

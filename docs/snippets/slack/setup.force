@@ -1,0 +1,15 @@
+Setup(
+	// Slack Plugin uses special chatbot Slack token:
+	//
+	// https://api.slack.com/docs/token-types
+	//
+	// these tokens start with `xoxb-`
+	//
+	// and have limited scope, here is a guide on how to set them up
+	//
+	// https://slack.com/help/articles/215770388-create-and-regenerate-api-tokens#bot-user-tokens
+	//
+	slack.Setup(slack.Config{
+		Token: ExpectEnv("SLACK_TOKEN"),
+	}),	
+)

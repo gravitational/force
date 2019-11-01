@@ -1,0 +1,7 @@
+func(){
+	Include("job.force")
+	RunBuildJob(
+		"gcr.io/kubeadm-167321/example:latest",
+		"example-docker",
+	)
+}()

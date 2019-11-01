@@ -28,6 +28,9 @@ func EvalString(ctx ExecutionContext, in Expression) (string, error) {
 
 // EvalBool evaluates bool from var
 func EvalBool(ctx ExecutionContext, in Expression) (bool, error) {
+	if in == nil {
+		return false, nil
+	}
 	out, err := in.Eval(ctx)
 	if err != nil {
 		return false, trace.Wrap(err)
@@ -41,6 +44,9 @@ func EvalBool(ctx ExecutionContext, in Expression) (bool, error) {
 
 // EvalInt evaluates int from var
 func EvalInt(ctx ExecutionContext, in Expression) (int, error) {
+	if in == nil {
+		return 0, nil
+	}
 	out, err := in.Eval(ctx)
 	if err != nil {
 		return 0, trace.Wrap(err)

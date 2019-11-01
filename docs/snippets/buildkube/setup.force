@@ -1,0 +1,7 @@
+Setup(
+	kube.Setup(kube.Config{
+		// Path is an optional path to file kubeconfig,
+		// If not set force assumes that it is running inside kubernetes
+		Path: ExpectEnv("KUBE_CREDENTIALS"),
+	}),
+)

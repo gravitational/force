@@ -1,7 +1,0 @@
-Process(Spec{
-    Run: func(){
-       dir := TempDir("", "force")
-       Defer(RemoveAll(dir))
-       Infof("Created temp dir %v, who is going to clean it up?", dir)
-    },
-})

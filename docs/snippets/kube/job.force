@@ -1,0 +1,40 @@
+func(){
+	// Run starts a job and blocks until it succeeds or fails.
+	// It is usually used as a part of CI/CD pipelines
+	kube.Run(kube.Job{
+		Name: Sprintf("hello-first-%v", ID()),
+		Namespace: "default",
+		Spec: _{
+			Template: _{
+				Spec: _{
+					Containers: []_{
+						{
+							Image: "busybox",
+							Name: "busybox",
+							Command: Strings("/bin/sh", "-c", `echo "hello, first $GOCACHE" && sleep 10;`),
+							Env: []_{
+								{
+									Name: "GOCACHE",
+									Value: "/mnt/gocache",
+								},
+							},
+							VolumeMounts: []_{
+								{
+									Name: "gocache",
+									MountPath: "/mnt/gocache",
+								},
+							},
+							SecurityContext: _{Privileged: true},
+						},
+					},
+					Volumes: []_{
+						{
+							Name: "gocache",
+							EmptyDir: _{},
+						},
+					},
+				},
+			},
+		},
+	})
+}

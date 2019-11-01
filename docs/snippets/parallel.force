@@ -1,0 +1,5 @@
+Parallel(
+	Command(`echo "hello, parallel 1!"`),
+	Command(`echo "hello, parallel 2!"`),
+)
+

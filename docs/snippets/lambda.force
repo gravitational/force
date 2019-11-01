@@ -1,0 +1,6 @@
+func(){
+	myLog := func(message string) {
+		Infof("this is a message: %v", message)
+	}
+	myLog("hello, world!")
+}()

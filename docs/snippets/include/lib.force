@@ -2,4 +2,4 @@ func() {
     GlobalLog := func(message string) {
         Infof("this is a message: %v", message)
     }
-}
+}()

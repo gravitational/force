@@ -2,36 +2,34 @@
 
 **Hello, world!**
 
-`force` is a command line tool that processes `G` files.
+`force` is a command line tool that processes `.force` files.
 
-Create your first `Hello, world!` file named `G`:
+Create your first script printing `Hello, world!` file named `hello.force`:
 
-```go
-Command(`echo "hello, world!"`)
-```
+{go * ./docs/snippets/hello.force}
 
 To process the file, run `force`:
 
 ```bash
-$ force
-INFO             Process planet-1 triggered by Oneshot(time=2019-09-15 23:37:37.181326936 +0000 UTC)
-INFO [PLANET-1]  hello, world! id:48c69283 proc:planet-1
-INFO [PLANET-1]  Process planet-1 completed successfully in 1.086956ms. id:48c69283 proc:planet-1
+$ force hello.force 
+hello, world!
 ```
 
-To exit `force`, type `Ctrl-C`.
+**Events**
 
-Every `G` file starts with a `Process(Spec{})` section that specifies one, or several `Run`
-actions. Each `Run` action is triggered by events received over various channels.
+To showcase `force's` ability to create event driven workflows, let's
+create `ticker.force` that will print a tick every second:
 
-Our example did not specify any event, so force used the default `Oneshot()` channel.
+{go * ./docs/snippets/ticker.force}
 
-The example above is equivalent to:
+The script in `ticker.force` starts with a `Process(Spec{})` section. `Watch`
+subscribes to event channel, in this case `Ticker` that generates events.
 
-```go
-Process(Spec{
-    Watch: Oneshot(),
-    Run: Command(`echo "hello, world!"`),
-})
+Every time the event is generated, one, or several `Run` actions are triggered:
+
+```bash
+# Press Ctrl-C to stop the script.
+$ force ticker.force
+Tick!
+Tick!
 ```
-

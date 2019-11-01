@@ -1,0 +1,7 @@
+// This example demonstrates how to marshal parts of force script to string
+func(){
+	code := Marshal(func(){
+		Infof("Hello, world!")
+	})
+	Infof("Code: %v", code)
+}()

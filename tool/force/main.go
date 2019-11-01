@@ -191,7 +191,7 @@ func reexec() {
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 		go func() {
 			for sig := range c {
-				log.Infof("Received %s, exiting.", sig.String())
+				log.Debugf("Received %s, exiting.", sig.String())
 				if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
 					log.Fatalf("syscall.Kill %d error: %v", pgid, err)
 					continue

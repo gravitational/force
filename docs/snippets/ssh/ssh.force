@@ -1,0 +1,38 @@
+func(){
+	// targetHost in the form of host:port
+	targetHost := ExpectEnv("FORCE_TARGET_HOST")
+
+	// standalone command:
+	out := ssh.Command(targetHost, "hostname")
+	Infof("Hostname is: %v", out)
+
+	// Copy from the remote host to local host
+	ssh.Copy(targetHost, ssh.Remote("/home/centos/prize/got"), ssh.Local("/tmp/prize"))
+
+	// Copy file from the remote host to local
+	ssh.Copy(targetHost, ssh.Local("/tmp/prize"), ssh.Remote("/home/centos/copied"))	
+
+	// ssh.Session groups command and executes
+	// them in the context of the single SSH session
+	ssh.Session(
+		// Hosts sets up hosts and environment variables to set up with the session
+		ssh.Hosts{
+			// One or several hosts to initiate, should be a list of strings
+			// initated by Strings function:
+			Hosts: Strings(targetHost),
+			// Env is an optional list of key/value pairs to send with every host
+			// Target ssh server must be configured to accept environment
+			// AcceptEnv LANG LC_* FOO BAR*
+			Env: []_{
+				{
+					Key: "LANG",
+					Val: "RU",
+				},
+			},
+		},
+		// Variable command list executed in parallel
+		ssh.Command("env"),
+		// Upload files in parallel
+		ssh.Copy(ssh.Local("/tmp/prize"), ssh.Remote("/home/centos/copied")),
+	)
+}()

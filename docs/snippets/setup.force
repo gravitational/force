@@ -1,6 +1,6 @@
-// Setup loads and configures plugins
+// Setup configures force plugins
 Setup(
-	// log sets up logging plugin
+	// Logging sets up logging plugin
 	log.Setup(log.Config{
 		Level: "debug",
 		Outputs: []log.Output{

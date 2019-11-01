@@ -1,0 +1,27 @@
+Setup(
+ 	// Logging sets up two logging outputs logging to stackdriver and stdout
+	log.Setup(log.Config{
+		Level: "info",
+		Outputs: []_{
+			{
+				Type: "stdout",
+			},
+			{
+				Type: "stackdriver",
+				// In case of stackdriver, the CredentialsFile should point to a
+				// valid service account json file
+				// with the following roles: Logs Writer, Monitoring Metric Writer 
+				//
+				// https://cloud.google.com/logging/docs/access-control
+				//
+				// https://cloud.google.com/iam/docs/creating-managing-service-accounts
+				//
+				// For example:
+				//
+				// CredentialsFile: "/var/secrets/serviceaccount.json"
+				//
+				CredentialsFile: ExpectEnv("GOOGLE_CREDENTIALS"),
+			},
+		},
+	}),
+)

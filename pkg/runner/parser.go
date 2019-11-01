@@ -271,6 +271,7 @@ func newParser(runID string, runner *Runner) (*gParser, error) {
 		force.ExpectEnv,
 		ioutil.TempDir,
 		os.RemoveAll,
+		fmt.Printf,
 	}
 	for _, fn := range importedFunctions {
 		outFn, err := force.ConvertFunctionToAST(fn)

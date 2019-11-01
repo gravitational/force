@@ -10,24 +10,26 @@ type NewIf struct {
 }
 
 // If performs conditional execution of an action
-func If(condition Expression, action Action, elseAction ...Action) (ScopeAction, error) {
+func If(condition Expression, action Action, elseActions ...Action) (ScopeAction, error) {
 	if err := ExpectBool(condition); err != nil {
 		return nil, trace.Wrap(err)
 	}
-	if len(elseAction) > 1 {
+	var elseAction Action
+	if len(elseActions) > 1 {
 		return nil, trace.BadParameter("only 1 else action is allowed")
 	}
-	if len(elseAction) == 1 {
+	if len(elseActions) == 1 {
+		elseAction = elseActions[0]
 		// TODO(klizhentas) make sure function types are compared based on the return value
 		// and the signatures
-		if err := ExpectEqualTypes(elseAction[0].Type(), action.Type()); err != nil {
+		if err := ExpectEqualTypes(elseAction.Type(), action.Type()); err != nil {
 			return nil, trace.BadParameter("if and else clauses should evaluate to the same type: %v", err)
 		}
 	}
 	return &IfAction{
 		condition:  condition,
 		action:     action,
-		elseAction: elseAction[0],
+		elseAction: elseAction,
 	}, nil
 }
 

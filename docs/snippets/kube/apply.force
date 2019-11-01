@@ -1,0 +1,54 @@
+func(){
+	// Apply creates or updates multiple resources. In this MVP release only
+	// Deployment, Service or Job type resources are supported
+	kube.Apply(kube.Deployment{
+		Name: "example",
+		Namespace: "default",
+		Spec: _{
+			Replicas: 1,
+			Selector: _{
+				MatchLabels: _{
+					run: "example",
+				},
+			},
+			Template: _{
+				Labels: _{
+					run: "example",
+				},
+				Spec: _{
+					Containers: []_{
+						{
+							Image: "busybox",
+							Name: "busybox",
+							Command: Strings("/bin/sh", "-c", `echo "hello"; sleep 10;`),
+						},
+					},											
+				},
+			},
+		},
+	},
+	// Apply accepts multiple resources and creates or updates them
+	// in sequence	
+	kube.Service{
+		Name: "example",
+		Namespace: "default",
+		Spec: _{
+			Type: "ClusterIP",
+			Selector: _{
+				run: "example",
+			},
+			Ports: []_{
+				{
+					Name: "http",
+					Port: 80,
+					Protocol: "TCP",
+				},
+				{
+					Name: "https",
+					Port: 443,
+					Protocol: "TCP",
+				},					
+			},
+		},
+	})
+}

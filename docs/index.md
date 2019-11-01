@@ -1,16 +1,15 @@
-# Force
-
-`Force` is an event processing and infrastructure automation framework.
+# Description
 
 `Makefiles` create an easy way to build targets and projects.
 
-`G` files create an easy way to create event-driven workflows with multiple services
-combined together: Github to Docker builds, Webhooks to Kubernetes Deployments.
+`.force` files define event-driven workflows: Github to Docker builds, webhooks to Kubernetes deployments.
 
+There is no server, `force` runs as a standalone binary or Kubernetes deployment
+always processing a single `.force` file.
 
 ## Installation
 
-Current version is `0.0.8`.
+Current version is `0.0.18`.
 
 *Install locally*
 
@@ -21,12 +20,10 @@ $ go install github.com/gravitational/force/tool/force
 *Docker image*
 
 ```
-docker pull gcr.io/kubeadm-167321/force:0.0.8
+docker pull gcr.io/kubeadm-167321/force:0.0.18
 ```
 
 *Local Docker Builds*
 
 To use local force's ability to run builds, install
 [runc 1.0.0-rc8](https://github.com/opencontainers/runc/releases/tag/v1.0.0-rc8)
-
-

@@ -1,0 +1,6 @@
+func(){
+	myLog := func(p struct{Message string; Count int}) {
+		Infof("this is a message: %v count: %v", p.Message, p.Count)
+	}
+	myLog(_{Message: "hello, world!", Count: 3})
+}()

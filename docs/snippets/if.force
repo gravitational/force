@@ -1,0 +1,8 @@
+func(){
+	myChoices := Strings("banana", "orange", "apple")
+	If(
+		Contains(myChoices, "banana"),
+		Infof("You have selected a banana among other things!"),
+		Infof("You have selected not a banana!"),
+	)
+}

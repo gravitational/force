@@ -1,0 +1,5 @@
+// Tick every second and print current time
+Process(Spec{
+	Watch: Ticker("1s"),
+	Run: Printf("Tick!\n"),
+})

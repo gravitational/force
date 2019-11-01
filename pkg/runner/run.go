@@ -269,7 +269,7 @@ func (r *Runner) sendEvent(event force.Event) bool {
 	for _, proc := range r.processes {
 		select {
 		case proc.Events() <- event:
-			log.Infof("%v triggered by %v", proc, event)
+			log.Debugf("%v triggered by %v", proc, event)
 		case <-r.Done():
 			return false
 		default:

@@ -13,7 +13,7 @@ Current version is not even alpha, use at your own risk (`0.0.18`).
 
 ## Documentation
 
-Read the docs at [https://force.gravitational.com](https://force.gravitational.com)
+Read the docs at [https://force.gravitational.co](https://force.gravitational.co)
 
 ## Goals
 

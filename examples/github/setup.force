@@ -43,7 +43,7 @@ Setup(
 			},
 			{
 				Type: "stackdriver",
-				CredentialsFile: ExpectEnv("LOGGING_CREDENTIALS"),
+				CredentialsFile: ExpectEnv("GOOGLE_CREDENTIALS"),
 			},
 		},
 	}),

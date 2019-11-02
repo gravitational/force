@@ -1,22 +1,25 @@
 // Process defines a set of actions triggered by a channel
 Process(Spec{
+	/*
 	Watch: github.Branches(github.Source{
 		// Repo is a repository to watch
 		Repo: "gravitational/force",
 		Path: "docs/",
 	}),
+    */
 	Run: func(){
 		Defer(Exit())
 		// Create temporary directory "repo"
 		repo := TempDir("", "")
+		branch := "master"
 		Defer(RemoveAll(repo))
 		git.Clone(git.Repo{
 			URL: "git@github.com:gravitational/force.git",
 			Into: repo,
-			Hash: event.Commit,
+			Branch: branch,
 		})		
 		// Image is an image name to build
-		image := Sprintf(`gcr.io/kubeadm-167321/force-docs:%v`, event.Branch)
+		image := Sprintf(`gcr.io/kubeadm-167321/force-docs:%v`, branch)
 		// pyVer is a python image version
 		pyVer := "3.7.4"
 		// nginxVer is nginx version
@@ -39,10 +42,31 @@ Process(Spec{
 		builder.Push(builder.Image{Tag: image})
 		// Prune the build cache
 		builder.Prune()
-		docNamespace := "docrouter"
-		branchName := kube.Name(event.Branch)
+		docNamespace := "docs"
+		branchName := kube.Name(branch)
 		// Create or update a deployment serving the docs
-		kube.Apply(kube.Deployment{
+		kube.Apply(kube.Service{
+			Name: branch,
+			Namespace: docNamespace,
+			Spec: _{
+				Type: "ClusterIP",
+				Selector: _{
+					branch: branchName,
+				},
+				Ports: []_{
+					{
+						Name: "http",
+						Port: 80,
+						Protocol: "TCP",
+					},
+					{
+						Name: "https",
+						Port: 443,
+						Protocol: "TCP",
+					},					
+				},
+			},
+		},kube.Deployment{
 			Name: branchName,
 			Namespace: docNamespace,
 			Spec: _{
@@ -61,8 +85,9 @@ Process(Spec{
 							{
 								Image: image,
 								Name: branchName,
+								ImagePullPolicy: "Always",
 							},
-						},											
+						},
 					},
 				},
 			},

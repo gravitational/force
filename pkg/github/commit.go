@@ -20,7 +20,7 @@ func (n *NewBranchWatch) NewInstance(group force.Group) (force.Group, interface{
 	return group, func(srci interface{}) (force.Channel, error) {
 		pluginI, ok := group.GetPlugin(Key)
 		if !ok {
-			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it", pluginI)
+			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
 		}
 		var src Source
 		if err := force.EvalInto(force.EmptyContext(), srci, &src); err != nil {

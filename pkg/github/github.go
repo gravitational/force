@@ -80,7 +80,7 @@ func (a *Approval) Regexp() (*regexp.Regexp, error) {
 	}
 	re, err := regexp.Compile(a.Pattern)
 	if err != nil {
-		return nil, trace.BadParameter("failed to parse Pattern: %v, must be valid regular expression, e.g. `.*ok to test.*`")
+		return nil, trace.BadParameter("failed to parse Pattern: %q, must be valid regular expression, e.g. `.*ok to test.*`", a.Pattern)
 	}
 	return re, nil
 }
@@ -101,19 +101,19 @@ func (a *Trigger) RetestRegexp() (*regexp.Regexp, error) {
 	}
 	re, err := regexp.Compile(a.RetestPattern)
 	if err != nil {
-		return nil, trace.BadParameter("failed to parse RetestPattern: %v, must be valid regular expression, e.g. `.*ok to test.*`")
+		return nil, trace.BadParameter("failed to parse RetestPattern: %q, must be valid regular expression, e.g. `.*ok to test.*`", a.RetestPattern)
 	}
 	return re, nil
 }
 
 // SkipRegexp returns skip match regexp
 func (a *Trigger) SkipRegexp() (*regexp.Regexp, error) {
-	if a.RetestPattern == "" {
-		a.RetestPattern = ".*skip ci.*"
+	if a.SkipPattern == "" {
+		a.SkipPattern = ".*skip ci.*"
 	}
-	re, err := regexp.Compile(a.RetestPattern)
+	re, err := regexp.Compile(a.SkipPattern)
 	if err != nil {
-		return nil, trace.BadParameter("failed to parse SkipPattern: %v, must be valid regular expression, e.g. `.*skip ci.*`")
+		return nil, trace.BadParameter("failed to parse SkipPattern: %q, must be valid regular expression, e.g. `.*skip ci.*`", a.SkipPattern)
 	}
 	return re, nil
 }

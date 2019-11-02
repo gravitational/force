@@ -1,7 +1,6 @@
 package force
 
 import (
-	"fmt"
 	"reflect"
 
 	"github.com/gravitational/trace"
@@ -79,8 +78,6 @@ func EvalInto(ctx ExecutionContext, inRaw, out interface{}) error {
 	switch inType.Kind() {
 	case reflect.Struct:
 		if outType.Elem().Kind() != reflect.Struct {
-			_, ok := inRaw.(Expression)
-			fmt.Printf("Eval %v %v into %v\n", inRaw, ok)
 			return trace.BadParameter("in is %v then out should be pointer to struct, got %T", inType, out)
 		}
 		inVal := reflect.ValueOf(in)

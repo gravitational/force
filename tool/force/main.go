@@ -48,12 +48,18 @@ func main() {
 	}
 
 	if err := cfg.CheckAndSetDefaults(); err != nil {
-		fmt.Printf("%v\n", err)
+		// default file not found, print nicer help
+		if trace.IsNotFound(err) && cfg.setup.Filename == "" {
+			fmt.Printf(noArgsHelpMessage)
+		} else {
+			fmt.Printf("%v\n", err)
+		}
 		os.Exit(1)
 	}
 
 	run, err := generateAndStart(ctx, cfg)
 	if err != nil {
+
 		if trace.IsDebug() {
 			fmt.Fprintln(os.Stderr, trace.DebugReport(err))
 		} else {
@@ -74,6 +80,20 @@ func main() {
 		}
 	}
 }
+
+const noArgsHelpMessage = `no script specified, create the following "g.force" file:
+
+Printf("hello, world!\n")
+
+And run it with this command:
+
+$ force g.force
+
+Check out the quickstart guide for next steps:
+
+https://force.gravitational.co/master/quickstart/
+
+`
 
 func generateAndStart(ctx context.Context, cfg config) (*runner.Runner, error) {
 	run, err := runner.Parse(runner.Input{

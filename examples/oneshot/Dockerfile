@@ -1,4 +1,4 @@
-FROM quay.io/gravitational/debian-tall:latest
+FROM quay.io/gravitational/debian-tall:buster
 
 RUN echo "Hello, world!"
 

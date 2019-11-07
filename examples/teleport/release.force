@@ -20,7 +20,7 @@ func(){
 				ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "386"}),
 				
 				// arm amd64 oss/ent
-				//ReleaseTeleportRemote(_{Host: armBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "arm"}),
+				ReleaseTeleportRemote(_{Host: armBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "arm"}),
 				
 				// mac amd64 oss/ent
 				ReleaseTeleportRemote(_{Host: macBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "darwin", Arch: "amd64"}),
@@ -29,7 +29,6 @@ func(){
 				ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "windows", Arch: "amd64"}),
 
 				// oss docker container
-				//BuildTeleportDockerContainer(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git"}),
 				BuildTeleportDockerContainer(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git"}),
 				// enterprise docker container
 				BuildTeleportDockerContainer(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", Enterprise: "enterprise"}),
@@ -49,26 +48,22 @@ func(){
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "i386"}),
 				// linux i386 enterprise rpm
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "i386"}),
+				// mac amd64 oss pkg
+				BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
 			)
-				
-			Parallel(	
+			Parallel(
 				// linux amd64 oss deb 
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64"}),
 				// linux amd64 enterprise deb 
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64"}),
 				// linux amd64 oss fips deb
-				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64"}),
+				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64", FIPS: "fips"}),
 				// linux amd64 enterprise fips deb
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64", FIPS: "fips"}),
 				// linux i386 oss deb
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "i386"}),
 				// linux i386 enterprise deb
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "i386"}),
-			)
-
-			Parallel(
-				// mac amd64 oss pkg
-				BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
 				// mac amd64 enterprise pkg
 				BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "ent", TeleportVersion: teleportVersion}),
 			)

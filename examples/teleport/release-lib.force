@@ -111,6 +111,12 @@ func(){
 									{Name: "aws-creds", MountPath: "/root/.aws"},
 								},
 								SecurityContext: _{Privileged: true},
+								Resources: _{
+									Limits: _{
+										cpu: kube.ParseQuantity("2000m"),
+										memory: kube.ParseQuantity("2Gi"),
+									},
+								},
 							},
 						},
 					},
@@ -165,6 +171,12 @@ func(){
 									{Name: "scripts", MountPath: "/mnt/scripts"},
 								},
 								SecurityContext: _{Privileged: true},
+								Resources: _{
+									Limits: _{
+										cpu: kube.ParseQuantity("2000m"),
+										memory: kube.ParseQuantity("2Gi"),
+									},
+								},
 							},
 						},
 					},
@@ -222,6 +234,12 @@ func(){
 									{Name: "aws-creds", MountPath: "/root/.aws"},
 								},
 								SecurityContext: _{Privileged: true},
+								Resources: _{
+									Limits: _{
+										cpu: kube.ParseQuantity("2000m"),
+										memory: kube.ParseQuantity("2Gi"),
+									},
+								},
 							},
 						},
 					},

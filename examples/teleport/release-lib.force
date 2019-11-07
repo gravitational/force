@@ -1,7 +1,7 @@
-// TODO(gus): switch to using named/optional arguments for all functions
 // TODO(gus): allow teleport to be cloned/built from branches for CI release process testing
 func(){
-	forceImage := "gcr.io/kubeadm-167321/force:0.0.18"
+	//forceImage := "gcr.io/kubeadm-167321/force:0.0.18"
+	forceImage := "gcr.io/kubeadm-167321/force:0.0.20"
 	// known good commit hash for an ops branch that works
 	// TODO(gus): provide a way to specify this using tag
 	opsCommitHash := "804fa60e67ba04403c8ac24c6f7b06ef4c39cade"
@@ -59,10 +59,11 @@ func(){
 	)
 
 	// Runs the Kubernetes job which orchestrates a Teleport release build inside a container
-	RunTeleportReleaseJob := func(script string, teleportVersion string, gitRepo string, os string, arch string) {
-		containerLabel := Sprintf("%s-%s", os, arch)
+	//RunTeleportReleaseJob := func(script string, teleportVersion string, gitRepo string, os string, arch string) {
+	RunTeleportReleaseJob := func(rtrj struct{Script string; TeleportVersion string; GitRepo string; OS string; Arch string}) {
+		containerLabel := Sprintf("%s-%s", rtrj.OS, rtrj.Arch)
 		kube.Run(kube.Job{
-			Name: Sprintf("tele-release-%v-%s-%s", ID(), os, arch),
+			Name: Sprintf("tele-release-%v-%s-%s", ID(), rtrj.OS, rtrj.Arch),
 			Spec: _{
 				Template: _{
 					Spec: _{
@@ -86,7 +87,7 @@ func(){
 									// Script is passed as an environment variable,
 									// thanks to Marshal the script is inline,
 									// can reference outside variables
-									{Name: "FORCE_SCRIPT", Value: script},
+									{Name: "FORCE_SCRIPT", Value: rtrj.Script},
 									// Setup is passed as an environment variable
 									{Name: "FORCE_SETUP", Value: containerSetupScript},
 									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
@@ -119,9 +120,9 @@ func(){
 	}
 
 	// Runs the Kubernetes job which orchestrates a Teleport container build
-	RunTeleportDockerContainerBuildJob := func(script string, teleportVersion string, gitRepo string, buildContainerLabel string) {
+	RunTeleportDockerContainerBuildJob := func(rtdcbj struct{Script string; TeleportVersion string; GitRepo string; BuildContainerLabel string}) {
 		kube.Run(kube.Job{
-			Name: Sprintf("tele-container-%v-%s", ID(), buildContainerLabel),
+			Name: Sprintf("tele-container-%v-%s", ID(), rtdcbj.BuildContainerLabel),
 			Spec: _{
 				Template: _{
 					Spec: _{
@@ -134,7 +135,7 @@ func(){
 						},
 						Containers: []_{
 							{
-								Name: buildContainerLabel,
+								Name: rtdcbj.BuildContainerLabel,
 								Image: forceImage,
 								Command: Strings("force", "-d"),
 								Env: []_{
@@ -144,7 +145,7 @@ func(){
 									// Script is passed as an environment variable,
 									// thanks to Marshal the script is inline,
 									// can reference outside variables
-									{Name: "FORCE_SCRIPT", Value: script},
+									{Name: "FORCE_SCRIPT", Value: rtdcbj.Script},
 									// Setup is passed as an environment variable
 									{Name: "FORCE_SETUP", Value: containerSetupScript},
 									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
@@ -173,9 +174,9 @@ func(){
 	}
 
 	// Runs the Kubernetes job which orchestrates a Linux package build
-	RunTeleportPackageBuildJob := func(script string, teleportVersion string, buildContainerLabel string) {
+	RunTeleportPackageBuildJob := func(rtpbj struct{Script string; TeleportVersion string; BuildContainerLabel string}) {
 		kube.Run(kube.Job{
-			Name: Sprintf("tele-package-%v-%s", ID(), buildContainerLabel),
+			Name: Sprintf("tele-package-%v-%s", ID(), rtpbj.BuildContainerLabel),
 			Spec: _{
 				Template: _{
 					Spec: _{
@@ -189,7 +190,7 @@ func(){
 						},
 						Containers: []_{
 							{
-								Name: buildContainerLabel,
+								Name: rtpbj.BuildContainerLabel,
 								Image: forceImage,
 								Command: Strings("force", "-d"),
 								Env: []_{
@@ -199,7 +200,7 @@ func(){
 									// Script is passed as an environment variable,
 									// thanks to Marshal the script is inline,
 									// can reference outside variables
-									{Name: "FORCE_SCRIPT", Value: script},
+									{Name: "FORCE_SCRIPT", Value: rtpbj.Script},
 									// Setup is passed as an environment variable
 									{Name: "FORCE_SETUP", Value: containerSetupScript},
 									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
@@ -234,7 +235,7 @@ func(){
 	**********************************/
 
 	// runs Teleport release inside a buildbox container
-	ReleaseTeleport := func(teleportVersion string, gitRepo string, os string, arch string) {
+	ReleaseTeleport := func(rt struct{TeleportVersion string; GitRepo string; OS string; Arch string}) {
 		// buildbox is a version of the buildbox
 		// TODO(gus): maybe dynamically put buildbox name together from go runtime version set somewhere
 		buildbox := "gcr.io/kubeadm-167321/buildbox:1.13.2"
@@ -244,21 +245,21 @@ func(){
 		// GID is the gid to run the jobs (must be a string and not an int)
 		gid := "1000" 
 		// imageTag is the tag of the container we build and output
-		imageTag := Sprintf("teleport-build-%s", teleportVersion)
+		imageTag := Sprintf("teleport-build-%s", rt.TeleportVersion)
 		// gitRepoURL is the expanded form of the gitRepo which is passed to git
-		gitRepoURL := Sprintf("git@github.com:gravitational/%s", gitRepo)
-		gitRepoTag := Sprintf("v%s", teleportVersion)
+		gitRepoURL := Sprintf("git@github.com:gravitational/%s", rt.GitRepo)
+		gitRepoTag := Sprintf("v%s", rt.TeleportVersion)
 
 		// artefactExtension is the extension of the built artefact, used to conditionally copy and upload
 		artefactExtension:= If(
-			Contains(Strings(os), "windows"),
+			Contains(Strings(rt.OS), "windows"),
 			".zip",
 			".tar.gz",
 		)
 
 		// windowsExtraBuildStanzaKey defines whether we run the optional extra step of copying the binary on Windows builds
 		windowsExtraBuildStanzaKey := If(
-			Contains(Strings(os), "windows"),
+			Contains(Strings(rt.OS), "windows"),
 			"WINDOWS_EXTRA_BUILD_STANZA",
 			"WINDOWS_EXTRA_BUILD_STANZA_UNSET",
 		)
@@ -291,10 +292,10 @@ func(){
 							{Key: "BUILDBOX", Val: Unquote(buildbox)},
 							{Key: "UID", Val: Sprintf("%s", Unquote(uid))},
 							{Key: "GID", Val: Sprintf("%s", Unquote(gid))},
-							{Key: "OS", Val: Unquote(os)},
-							{Key: "ARCH", Val: Unquote(arch)},
+							{Key: "OS", Val: Unquote(rt.OS)},
+							{Key: "ARCH", Val: Unquote(rt.Arch)},
 							{Key: "FORCE_IMAGE_NAME", Val: Unquote(forceImage)},
-							{Key: "TELEPORT_VERSION", Val: Unquote(teleportVersion)},
+							{Key: "TELEPORT_VERSION", Val: Unquote(rt.TeleportVersion)},
 							{Key: "TARGET_S3_BUCKET", Val: Unquote(s3Bucket)},
 							{Key: "ARTEFACT_EXTENSION", Val: Unquote(artefactExtension)},
 							{
@@ -303,15 +304,15 @@ func(){
 								Key: Unquote(windowsExtraBuildStanzaKey),
 								Val: Sprintf(
 										"cp teleport-v%s-windows-%s-bin.zip e/teleport-ent-v%s-windows-%s-bin.zip",
-										Unquote(teleportVersion),
-										Unquote(arch),
-										Unquote(teleportVersion),
-										Unquote(arch),
+										Unquote(rt.TeleportVersion),
+										Unquote(rt.Arch),
+										Unquote(rt.TeleportVersion),
+										Unquote(rt.Arch),
 									),
 							},
 						},
 						// Secrets are build secrets exposed to docker container during the run
-						Secrets: []builder.Secret{
+						Secrets: []_{
 							{
 								ID: "aws-creds",
 								File: "/root/.aws/credentials",
@@ -322,12 +323,18 @@ func(){
 			}),
 		)
 		// call Kubernetes helper function to run job
-		RunTeleportReleaseJob(buildScript, teleportVersion, gitRepo, os, arch)
+		RunTeleportReleaseJob(_{
+			Script: buildScript,
+			TeleportVersion: rt.TeleportVersion,
+			GitRepo: rt.GitRepo,
+			OS: rt.OS,
+			Arch: rt.Arch,
+		})
 	}
 
 	// runs Teleport release remotely by SSHing to a (preconfigured) remote host, copying build script from ops repo, running
 	// and copying results back
-	ReleaseTeleportRemote := func(host string, teleportVersion string, gitRepo string, os string, arch string, runtime string, fips string) {
+	ReleaseTeleportRemote := func(rtr struct{Host string; TeleportVersion string; GitRepo string; OS string; Arch string; Runtime string; FIPS string}) {
 		// local temp dir for ops repo, deletes when done
 		localOpsDir := TempDir("", "")
 		Defer(RemoveAll(localOpsDir))
@@ -344,8 +351,8 @@ func(){
 		Defer(RemoveAll(localTempBuildDir))
 
 		// remote temp dir on the host, deletes when done
-		remoteTempDir := ssh.Command(host, "mktemp -d")
-		Defer(ssh.Command(host, Sprintf("rm -rf %s", remoteTempDir)))
+		remoteTempDir := ssh.Command(rtr.Host, "mktemp -d")
+		Defer(ssh.Command(rtr.Host, Sprintf("rm -rf %s", remoteTempDir)))
 
 		// this is a weird thing where setting FIPS="" doesn't stop FIPS mode being enabled
 		// you can't unset the variable in the shell either as it's forced to be set for every single shell command
@@ -354,7 +361,7 @@ func(){
 		// must be configured to accept the "FIPS_UNSET" variable too
 		// the real way to fix this is to change the build scripts/Makefile so that they check the FIPS variable properly
 		fipsKey := If(
-			Contains(Strings(fips), "yes"),
+			Contains(Strings(rtr.FIPS), "yes"),
 			"FIPS",
 			"FIPS_UNSET",
 		)
@@ -362,17 +369,17 @@ func(){
 		// run the build script on the remote host and copy the built files back to localTempBuildDir
 		ssh.Session(
 			ssh.Hosts{
-				Hosts: Strings(host),
+				Hosts: Strings(rtr.Host),
 				// any environment variable you set here is PERMANENTLY set for every command run inside the block
 				// you can't unset() these or even alter them from inside the shell - they're immutable/static
 				Env: []_{
 					{Key: "BUILD_IN_CONTAINER", Val: "no"},
-					{Key: "TELEPORT_TAG", Val: Sprintf("v%s", teleportVersion)},
-					{Key: "GIT_REPO", Val: gitRepo},
-					{Key: "OS", Val: os},
-					{Key: "ARCH", Val: arch},
-					{Key: "RUNTIME", Val: runtime},
-					{Key: Sprintf("%s", fipsKey), Val: fips},
+					{Key: "TELEPORT_TAG", Val: Sprintf("v%s", rtr.TeleportVersion)},
+					{Key: "GIT_REPO", Val: rtr.GitRepo},
+					{Key: "OS", Val: rtr.OS},
+					{Key: "ARCH", Val: rtr.Arch},
+					{Key: "RUNTIME", Val: rtr.Runtime},
+					{Key: Sprintf("%s", fipsKey), Val: rtr.FIPS},
 					{Key: "OUT_DIR", Val: Sprintf("%s/build", remoteTempDir)},
 				},
 			},
@@ -390,12 +397,12 @@ func(){
 		// recursive upload to S3
 		aws.RecursiveCopy(
 			aws.Local{Path: Sprintf("%s/", localTempBuildDir)},
-			aws.S3{Bucket: s3Bucket, Key: Sprintf("%s/", teleportVersion)},
+			aws.S3{Bucket: s3Bucket, Key: Sprintf("%s/", rtr.TeleportVersion)},
 		)
 	}
 
 	// builds and pushes a Docker container with Teleport inside
-	BuildTeleportDockerContainer := func(teleportVersion string, gitRepo string, enterprise string, fips string) {
+	BuildTeleportDockerContainer := func(btdc struct{TeleportVersion string; GitRepo string; Enterprise string; FIPS string}) {
 		// UID is the uid to run the jobs (must be a string and not an int)
 		uid := "1000"
 		// GID is the gid to run the jobs (must be a string and not an int)
@@ -403,36 +410,36 @@ func(){
 
 		// buildbox is a pre-built version of the Docker buildbox container, conditionally set by FIPS status
 		buildbox := If(
-			Contains(Strings(fips), "fips"),
+			Contains(Strings(btdc.FIPS), "fips"),
 			"gcr.io/kubeadm-167321/buildbox-fips:1.13.2",
 			"gcr.io/kubeadm-167321/buildbox:1.13.2",
 		)
 
 		// goBuildPath is the path where the appropriate teleport binaries will be outputted inside the build container
 		goBuildPath := If(
-			Contains(Strings(enterprise), "enterprise"),
+			Contains(Strings(btdc.Enterprise), "enterprise"),
 			"/gopath/src/github.com/gravitational/teleport/e/build",
 			"/gopath/src/github.com/gravitational/teleport/build",
 		)
 		
 		// imageRoot is the container's root name
 		imageRoot := If(
-			Contains(Strings(enterprise), "enterprise"),
+			Contains(Strings(btdc.Enterprise), "enterprise"),
 			"teleport-gus-ent",
 			"teleport-gus",
 		)
 		
 		// imageTag is the container's tag containing its version and FIPS status
 		imageTag := If(
-			Contains(Strings(fips), "fips"),
-			Sprintf("%s-fips", teleportVersion),
-			Sprintf("%s", teleportVersion),
+			Contains(Strings(btdc.FIPS), "fips"),
+			Sprintf("%s-fips", btdc.TeleportVersion),
+			Sprintf("%s", btdc.TeleportVersion),
 		)
 
 		// fipsBuild educates the build process on whether to use FIPS mode or not
 		// all arguments passed to the builder must contain something, even an empty string
 		fipsBuild := If(
-			Contains(Strings(fips), "fips"),
+			Contains(Strings(btdc.FIPS), "fips"),
 			"fips",
 			"no",
 		)
@@ -440,7 +447,7 @@ func(){
 		// fipsKey is used to be able to pass a blank FIPS argument to the container build
 		// (as it doesn't allow blank values for a given key)
 		fipsKey := If(
-			Contains(Strings(fips), "fips"),
+			Contains(Strings(btdc.FIPS), "fips"),
 			"FIPS",
 			"FIPS_UNSET",
 		)
@@ -450,8 +457,8 @@ func(){
 		Infof("Image name: %s", imageName)
 		
 		// gitRepoURL is the expanded form of the gitRepo which is passed to git
-		gitRepoURL := Sprintf("git@github.com:gravitational/%s", gitRepo)
-		gitRepoTag := Sprintf("v%s", teleportVersion)
+		gitRepoURL := Sprintf("git@github.com:gravitational/%s", btdc.GitRepo)
+		gitRepoTag := Sprintf("v%s", btdc.TeleportVersion)
 		
 		// build script is a build script to run
 		buildScript := Marshal(
@@ -496,14 +503,22 @@ func(){
 			}),
 		)
 		// call Kubernetes helper function to run job
-		RunTeleportDockerContainerBuildJob(buildScript, teleportVersion, gitRepo, Sprintf("%s%sbuild", imageRoot, fips))
+		buildContainerLabel := Sprintf("%s%sbuild", imageRoot, btdc.FIPS)
+		RunTeleportDockerContainerBuildJob(_{
+			Script: buildScript,
+			TeleportVersion: btdc.TeleportVersion,
+			GitRepo: btdc.GitRepo,
+			// TODO(gus): doing this inline doesn't work due to https://github.com/gravitational/force/issues/84
+			BuildContainerLabel: Sprintf("%s%sbuild", imageRoot, btdc.FIPS),
+			//BuildContainerLabel: buildContainerLabel,
+		})
 	}
 
 	// builds a .pkg containing the specified Teleport version by SSHing to a (preconfigured) remote Mac host,
 	// copying the package build script from the ops repo, running it and copying the results back
 	// arch is always x64 here (MacOS doesn't support 32-bit any more)
 	// runtime is also ignored as we don't build FIPS or go-1.9.7 binaries on OS X
-	BuildTeleportPackageMac := func(host string,  teleportType string, teleportVersion string) {
+	BuildTeleportPackageMac := func(btpm struct{Host string; TeleportType string; TeleportVersion string}) {
 		// local temp dir for ops repo, deletes when done
 		localOpsDir := TempDir("", "")
 		Defer(RemoveAll(localOpsDir))
@@ -520,17 +535,17 @@ func(){
 		Defer(RemoveAll(localTempBuildDir))
 
 		// remote temp dir on the host, deletes when done
-		remoteTempDir := ssh.Command(host, "mktemp -d")
-		Defer(ssh.Command(host, Sprintf("rm -rf %s", remoteTempDir)))
+		remoteTempDir := ssh.Command(btpm.Host, "mktemp -d")
+		Defer(ssh.Command(btpm.Host, Sprintf("rm -rf %s", remoteTempDir)))
 			
 		// run the build script on the remote host and copy the built files back to localTempBuildDir
 		ssh.Session(
 				ssh.Hosts{
-					Hosts: Strings(host),
+					Hosts: Strings(btpm.Host),
 				},
 				ssh.Copy(ssh.Local(Sprintf("%s/xcloud/force/build-teleport-package-osx.sh", localOpsDir)), ssh.Remote(Sprintf("%s", remoteTempDir))),
 				ssh.Command(Sprintf("ls -l %s", remoteTempDir)),
-				ssh.Command(Sprintf("cd %s && bash ./build-teleport-package-osx.sh -t %s -v %s", remoteTempDir, teleportType, teleportVersion)),
+				ssh.Command(Sprintf("cd %s && bash ./build-teleport-package-osx.sh -t %s -v %s", remoteTempDir, btpm.TeleportType, btpm.TeleportVersion)),
 				ssh.Command(Sprintf("ls -lR %s/", remoteTempDir)),
 				ssh.Copy(ssh.Remote(Sprintf("%s/*.pkg", remoteTempDir)), ssh.Local(Sprintf("%s", localTempBuildDir))),
 				ssh.Copy(ssh.Remote(Sprintf("%s/*.pkg.sha256", remoteTempDir)), ssh.Local(Sprintf("%s", localTempBuildDir))),
@@ -542,12 +557,12 @@ func(){
 		// recursive upload to S3
 		aws.RecursiveCopy(
 			aws.Local{Path: Sprintf("%s/", localTempBuildDir)},
-			aws.S3{Bucket: s3Bucket, Key: Sprintf("%s/", teleportVersion)},
+			aws.S3{Bucket: s3Bucket, Key: Sprintf("%s/", btpm.TeleportVersion)},
 		)
 	}
 
 	// builds a Teleport package for Linux inside a Docker container
-	BuildTeleportPackageLinux := func(teleportType string, teleportVersion string, packageType string, arch string, fips string) {
+	BuildTeleportPackageLinux := func(btpl struct{TeleportType string; TeleportVersion string; PackageType string; Arch string; FIPS string}) {
 		// buildbox is a version of the buildbox
 		buildbox := "gcr.io/kubeadm-167321/buildbox:1.13.2"
 		// UID is the uid to run the jobs (must be a string and not an int)
@@ -562,21 +577,21 @@ func(){
 		// fpmContainerImage is the name of a pre-built FPM base container
 		// see https://github.com/gravitational/ops/tree/master/xcloud/force/docker
 		fpmContainerImage := If(
-			Contains(Strings(packageType), "deb"),
+			Contains(Strings(btpl.PackageType), "deb"),
 			"gcr.io/kubeadm-167321/fpm-debian:buster",
 			"gcr.io/kubeadm-167321/fpm-centos:7",
 		)
 
 		// buildContainerTag is used to create a unique name for the build container based on arch, type and FIPS status
 		buildContainerTag := If(
-			Contains(Strings(fips), "fips"),
-			Sprintf("%s-%s-%s-fips", teleportType, packageType, arch),
-			Sprintf("%s-%s-%s", teleportType, packageType, arch),
+			Contains(Strings(btpl.FIPS), "fips"),
+			Sprintf("%s-%s-%s-fips", btpl.TeleportType, btpl.PackageType, btpl.Arch),
+			Sprintf("%s-%s-%s", btpl.TeleportType, btpl.PackageType, btpl.Arch),
 		)
 
 		// runtimeKey is used to dynamically unset the RUNTIME build argument if it's not needed
 		runtimeStanzaKey := If(
-			Contains(Strings(fips), "fips"),
+			Contains(Strings(btpl.FIPS), "fips"),
 			"RUNTIME_STANZA",
 			"RUNTIME_STANZA_UNSET",
 		)
@@ -609,19 +624,19 @@ func(){
 						Args: []_{
 							{Key: "FPM_CONTAINER_IMAGE", Val: Unquote(fpmContainerImage)},
 							{Key: "OS", Val: "linux"},
-							{Key: "ARCH", Val: Unquote(arch)},
+							{Key: "ARCH", Val: Unquote(btpl.Arch)},
 							// as build arguments can't be blank and we can't conditionally unset them, instead we always
 							// just change the key so that it isn't read or used if not needed
 							{Key: Unquote(runtimeStanzaKey), Val: Sprintf(" -r fips")},
 							{Key: "FORCE_IMAGE_NAME", Val: Unquote(forceImage)},
-							{Key: "TELEPORT_VERSION", Val: Unquote(teleportVersion)},
-							{Key: "TELEPORT_TYPE", Val: Unquote(teleportType)},
+							{Key: "TELEPORT_VERSION", Val: Unquote(btpl.TeleportVersion)},
+							{Key: "TELEPORT_TYPE", Val: Unquote(btpl.TeleportType)},
 							{Key: "TARGET_S3_BUCKET", Val: Unquote(s3Bucket)},
-							{Key: "PACKAGE_TYPE", Val: Sprintf("%s", Unquote(packageType))},
+							{Key: "PACKAGE_TYPE", Val: Sprintf("%s", Unquote(btpl.PackageType))},
 						},
 						// Secrets are build secrets exposed to docker
 						// container during the run
-						Secrets: []builder.Secret{
+						Secrets: []_{
 							{
 								ID: "aws-creds",
 								File: "/root/.aws/credentials",
@@ -632,7 +647,11 @@ func(){
 			}),
 		)
 		// call Kubernetes helper function to run job
-		RunTeleportPackageBuildJob(buildScript, teleportVersion, buildContainerTag)
+		RunTeleportPackageBuildJob(_{
+			Script: buildScript,
+			TeleportVersion: btpl.TeleportVersion,
+			BuildContainerLabel: buildContainerTag,
+		})
 	}
 
 }()

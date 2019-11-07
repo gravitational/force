@@ -5,6 +5,7 @@ func() {
 		Name: "teleport-ci",
 		Watch: github.PullRequests(github.Source{
 			Repo: "gravitational/teleport",
+			BranchPattern: "^master|branch/.*$",
 		}),
 		Run: github.PostStatusOf(func(){
 			image := Sprintf(`gcr.io/kubeadm-167321/teleport-tests:%v`, event.Commit)

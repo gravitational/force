@@ -6,6 +6,56 @@ import (
 	"github.com/gravitational/trace"
 )
 
+// NewTypeConverter returns a new type conveter
+func NewTypeConverter(t reflect.Type) *TypeConverter {
+	converter, ok := reflect.Zero(t).Interface().(Converter)
+	if ok {
+		return &TypeConverter{Converter: converter}
+	}
+	return &TypeConverter{}
+}
+
+// TypeConverter is a helper that converts types
+type TypeConverter struct {
+	// Converter is an internal converter
+	// type, if present will be used
+	Converter Converter
+}
+
+func (c *TypeConverter) Convert(in reflect.Value, t reflect.Type) (reflect.Value, error) {
+	if c.Converter != nil {
+		out, err := c.Converter.Convert(in.Interface())
+		if err != nil {
+			return reflect.Value{}, trace.Wrap(err)
+		}
+		in = reflect.ValueOf(out)
+	}
+	if in.Type().AssignableTo(t) {
+		return in, nil
+	}
+	if in.Type().ConvertibleTo(t) {
+		return in.Convert(t), nil
+	}
+	// this heuristics for special case with embedded struct types,
+	// when there is a struct Type{Format}, where Format is string
+	// and there is an attempt to assign var b Type{} = "value"
+	if t.Kind() == reflect.Struct {
+		for i := 0; i < t.NumField(); i++ {
+			fieldType := t.Field(i)
+			if fieldType.Anonymous {
+				out, err := c.Convert(in, fieldType.Type)
+				if err == nil {
+					st := reflect.New(t)
+					field := st.Elem().Field(i)
+					field.Set(out)
+					return st.Elem(), nil
+				}
+			}
+		}
+	}
+	return reflect.Value{}, trace.BadParameter("can not convert type %v to %v", in.Type(), t)
+}
+
 // EmptyContext returns empty execution context
 func EmptyContext() ExecutionContext {
 	return WithRuntimeScope(nil)
@@ -141,6 +191,10 @@ func EvalInto(ctx ExecutionContext, inRaw, out interface{}) error {
 	case reflect.Map:
 		inVal := reflect.ValueOf(in)
 		outMap := reflect.MakeMapWithSize(outType.Elem(), inVal.Len())
+
+		keyConverter := &TypeConverter{}
+		elemConverter := &TypeConverter{}
+
 		for _, key := range inVal.MapKeys() {
 			elem := inVal.MapIndex(key).Interface()
 			evalVal, err := Eval(ctx, elem)
@@ -157,7 +211,15 @@ func EvalInto(ctx ExecutionContext, inRaw, out interface{}) error {
 			if evalKey == nil {
 				continue
 			}
-			outMap.SetMapIndex(reflect.ValueOf(evalKey), reflect.ValueOf(evalVal))
+			outKey, err := keyConverter.Convert(reflect.ValueOf(evalKey), outMap.Type().Key())
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			outElem, err := elemConverter.Convert(reflect.ValueOf(evalVal), outMap.Type().Elem())
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			outMap.SetMapIndex(outKey, outElem)
 		}
 		outVal.Elem().Set(outMap)
 		return nil

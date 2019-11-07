@@ -270,9 +270,18 @@ func (r *PullRequestWatcher) updatedPullRequests(ctx context.Context, afterDate 
 		return nil, trace.Wrap(err)
 	}
 
+	log := force.Log(ctx)
+
 	for i := range pulls {
 		pr := pulls[i]
-		if pr.PullRequestObject.BaseRefName != r.source.Branch {
+		re, err := r.source.BranchRegexp()
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if !re.MatchString(pr.PullRequestObject.BaseRefName) {
+			log.Debugf(
+				"PR %v branch %v did not match %v", pr.Number, pr.PullRequestObject.BaseRefName,
+			)
 			continue
 		}
 		if !pr.LastUpdated().After(afterDate) {

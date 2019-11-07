@@ -528,17 +528,18 @@ func (g *gParser) parseExpr(f *token.FileSet, scope force.Group, n ast.Node) (in
 				return st, nil
 			case reflect.Map:
 				m := reflect.MakeMapWithSize(protoType, len(fields))
-				converter, ok := reflect.Zero(protoType.Elem()).Interface().(force.Converter)
+				keyConverter := force.NewTypeConverter(protoType.Key())
+				elemConverter := force.NewTypeConverter(protoType.Elem())
 				for key := range fields {
-					if ok {
-						out, err := converter.Convert(fields[key])
-						if err != nil {
-							return nil, wrap(f, n, trace.Wrap(err))
-						}
-						m.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(out))
-					} else {
-						m.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(fields[key]))
+					keyVal, err := keyConverter.Convert(reflect.ValueOf(key), protoType.Key())
+					if err != nil {
+						return nil, wrap(f, n, err)
 					}
+					valVal, err := elemConverter.Convert(reflect.ValueOf(fields[key]), protoType.Elem())
+					if err != nil {
+						return nil, wrap(f, n, err)
+					}
+					m.SetMapIndex(keyVal, valVal)
 				}
 				return m.Interface(), nil
 			default:
@@ -1073,7 +1074,7 @@ func fieldTypeByName(st reflect.Type, name string) (*reflect.StructField, error)
 		}
 	}
 
-	return nil, trace.NotFound("field type %v is not found in struct %v", name, force.StructName(st))
+	return nil, trace.NotFound("field name %v is not found in struct %v", name, force.StructName(st))
 }
 
 func fieldByName(st reflect.Value, name string) (reflect.Value, error) {

@@ -11,6 +11,14 @@ func(){
 							Image: "busybox",
 							Name: "busybox",
 							Command: Strings("/bin/sh", "-c", `echo "hello, first $GOCACHE" && sleep 10;`),
+							Resources: _{
+								Requests: _{
+									cpu: kube.ParseQuantity("300m"),
+								},
+								Limits: _{
+									cpu: kube.ParseQuantity("400m"),
+								},
+							},
 							Env: []_{
 								{
 									Name: "GOCACHE",
@@ -33,53 +41,6 @@ func(){
 						},
 					},
 				},
-			},
-		},
-	})
-	kube.Apply(kube.Deployment{
-		Name: "howdy",
-		Namespace: "default",
-		Spec: _{
-			Replicas: 1,
-			Selector: _{
-				MatchLabels: _{
-					run: "doc-router",
-				},
-			},
-			Template: _{
-				Labels: _{
-					run: "doc-router",
-				},
-				Spec: _{
-					Containers: []_{
-						{
-							Image: "busybox",
-							Name: "busybox",
-							Command: Strings("/bin/sh", "-c", `echo "hello"; sleep 10;`),
-						},
-					},											
-				},
-			},
-		},
-	},kube.Service{
-		Name: "howdy",
-		Namespace: "default",
-		Spec: _{
-			Type: "ClusterIP",
-			Selector: _{
-				run: "doc-router",
-			},
-			Ports: []_{
-				{
-					Name: "http",
-					Port: 80,
-					Protocol: "TCP",
-				},
-				{
-					Name: "https",
-					Port: 443,
-					Protocol: "TCP",
-				},					
 			},
 		},
 	})

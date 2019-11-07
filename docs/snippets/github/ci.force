@@ -4,8 +4,9 @@ Process(Spec{
 	Watch: github.PullRequests(github.Source{
 		// Repo is a repository to watch
 		Repo: "gravitational/force",
-		// Default branch is master
-		Branch: "master",
+		// Default branch pattern is master, in this example
+		// PRs against master or any branch that looks like "branch/4.x"
+		BranchPattern: "^master|branch/.*$",
 		// Approval optinally configures an approval flow
 		Approval: github.Approval{
 			// Requies sets the approval as required

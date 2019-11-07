@@ -122,14 +122,23 @@ func (a *Trigger) SkipRegexp() (*regexp.Regexp, error) {
 type Source struct {
 	// Repo is a repository name to watch
 	Repo string
-	// Branch is a branch to watch PRs against
-	Branch string
+	// BranchPattern is a branch regexp pattern to watch PRs against
+	BranchPattern string
 	// Approval sets up approval process
 	Approval Approval
 	// Trigger configures trigger
 	Trigger Trigger
 	// Path filters out commits without changes matching the path (directory)
 	Path string
+}
+
+// BranchRegexp returns branch match regexp
+func (s *Source) BranchRegexp() (*regexp.Regexp, error) {
+	re, err := regexp.Compile(s.BranchPattern)
+	if err != nil {
+		return nil, trace.BadParameter("failed to parse BranchPattern: %q, must be valid regular expression, e.g. `.*`", s.BranchPattern)
+	}
+	return re, nil
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -140,8 +149,11 @@ func (s *Source) CheckAndSetDefaults() error {
 	if _, err := s.Repository(); err != nil {
 		return trace.Wrap(err)
 	}
-	if s.Branch == "" {
-		s.Branch = MasterBranch
+	if s.BranchPattern == "" {
+		s.BranchPattern = MasterBranch
+	}
+	if _, err := s.BranchRegexp(); err != nil {
+		return trace.Wrap(err)
 	}
 	if _, err := s.Approval.Regexp(); err != nil {
 		return trace.Wrap(err)

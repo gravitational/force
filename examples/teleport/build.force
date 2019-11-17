@@ -49,6 +49,14 @@ func(){
 								Name: "kbuild",
 								Image: forceImage,
 								Command: Strings("force", "-d"),
+								Resources: _{
+									Requests: _{
+										cpu: kube.ParseQuantity("1000m"),
+									},
+									Limits: _{
+										cpu: kube.ParseQuantity("2000m"),
+									},
+								},
 								Env: []_{
 									// ID is passed so the job spawned in k8s
 									// will have the same job id, having the same logs
@@ -156,6 +164,7 @@ func(){
 		kube.Run(kube.Job{
 			Name: name,
 			Spec: _{
+				TTLSecondsAfterFinished: 120,
 				Template: _{
 					Spec: _{
 						Containers: []_{
@@ -164,6 +173,14 @@ func(){
 								Name: "test",
 								Command: command,
 								WorkingDir: "/gopath/src/github.com/gravitational/teleport/",
+								Resources: _{
+									Requests: _{
+										cpu: kube.ParseQuantity("1000m"),
+									},
+									Limits: _{
+										cpu: kube.ParseQuantity("2000m"),
+									},
+								},
 								Env: []_{{Name: "GOCACHE", Value: "/mnt/gocache"}},
 								VolumeMounts: []_{
 									{Name: "gocache", MountPath: "/mnt/gocache"},

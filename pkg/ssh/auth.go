@@ -8,17 +8,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func checkHostCertificate(certs []ssh.PublicKey, key ssh.PublicKey, addr string) bool {
-	for _, cert := range certs {
-		if _, ok := cert.(*ssh.Certificate); ok {
-			if KeysEqual(key, cert) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func checkHostKey(entries []ssh.PublicKey, inkey ssh.PublicKey, addr string) bool {
 	for _, key := range entries {
 		if _, ok := key.(*ssh.Certificate); !ok {

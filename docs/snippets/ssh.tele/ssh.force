@@ -1,0 +1,30 @@
+func(){
+	// targetHost in the form of host:port
+	targetHost := ExpectEnv("FORCE_TELEPORT_TARGET_HOST")
+	user := ExpectEnv("FORCE_TELEPORT_SSH_USER")
+
+	// standalone command:
+	out := ssh.Command(targetHost, "hostname")
+	Infof("Hostname is: %v", out)
+
+	// Copy from the remote host to local host
+	ssh.Copy(targetHost, ssh.Remote(Sprintf("/home/%v/prize/got", user)), ssh.Local("/tmp/prize"))
+
+	// Copy file from the remote host to local
+	ssh.Copy(targetHost, ssh.Local("/tmp/prize"), ssh.Remote(Sprintf("/home/%v/copied", user)))
+
+	// ssh.Session groups command and executes
+	// them in the context of the single SSH session
+	ssh.Session(
+		// Hosts sets up hosts and environment variables to set up with the session
+		ssh.Hosts{
+			// One or several hosts to initiate, should be a list of strings
+			// initated by Strings function:
+			Hosts: Strings(targetHost),
+		},
+		// Variable command list executed in parallel
+		ssh.Command("env"),
+		// Upload files in parallel
+		ssh.Copy(ssh.Local("/tmp/prize"), ssh.Remote(Sprintf("/home/%v/copied", user))),
+	)
+}()

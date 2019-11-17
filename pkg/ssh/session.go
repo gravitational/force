@@ -1,8 +1,10 @@
 package ssh
 
 import (
+	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/gravitational/force"
 
@@ -11,7 +13,7 @@ import (
 )
 
 type Action interface {
-	BindClient(client *ssh.Client, config *ssh.ClientConfig, env []Env) (Action, error)
+	BindClient(client *Client, env []Env) (Action, error)
 	force.Action
 }
 
@@ -22,8 +24,11 @@ type Env struct {
 
 // Hosts enumerates hosts and helps to set environment
 type Hosts struct {
+	// Hosts is a list of hosts to target
 	Hosts []string
 	Env   []Env
+	// ProxyJump is a proxy jump address (similar to ssh -J)
+	ProxyJump string
 }
 
 // NewSession
@@ -85,7 +90,12 @@ func (s *SessionAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	}
 	actions := make([]force.Action, len(hosts.Hosts))
 	for i, h := range hosts.Hosts {
-		actions[i] = &HostSequence{host: h, actions: s.actions, env: hosts.Env}
+		actions[i] = &HostSequence{
+			host:      h,
+			actions:   s.actions,
+			env:       hosts.Env,
+			proxyJump: hosts.ProxyJump,
+		}
 	}
 	p, err := force.Parallel(actions...)
 	if err != nil {
@@ -96,9 +106,10 @@ func (s *SessionAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 
 // HostSequence executes a series of commands in a sequence
 type HostSequence struct {
-	host    string
-	actions []Action
-	env     []Env
+	host      string
+	actions   []Action
+	env       []Env
+	proxyJump string
 }
 
 // Type returns type of the sequence
@@ -114,7 +125,10 @@ func (s *HostSequence) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	}
 	plugin := pluginI.(*Plugin)
 
-	client, config, err := dial(s.host, *plugin.clientConfig)
+	if s.proxyJump == "" {
+		s.proxyJump = plugin.cfg.ProxyJump
+	}
+	client, err := dial(ctx, s.host, s.proxyJump, *plugin.clientConfig)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -122,7 +136,7 @@ func (s *HostSequence) Eval(ctx force.ExecutionContext) (interface{}, error) {
 
 	forceActions := make([]force.Action, len(s.actions))
 	for i := range s.actions {
-		action, err := s.actions[i].BindClient(client, config, s.env)
+		action, err := s.actions[i].BindClient(client, s.env)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -148,16 +162,65 @@ func (p *HostSequence) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
 	return call.MarshalCode(ctx)
 }
 
-func dial(host string, config ssh.ClientConfig) (*ssh.Client, *ssh.ClientConfig, error) {
+// Client wraps ssh client and optional proxy client
+type Client struct {
+	client      *ssh.Client
+	proxyClient *ssh.Client
+	config      *ssh.ClientConfig
+}
+
+func (c *Client) Close() error {
+	var errors []error
+	if c.proxyClient != nil {
+		errors = append(errors, c.proxyClient.Close())
+	}
+	if c.client != nil {
+		errors = append(errors, c.client.Close())
+	}
+	return trace.NewAggregate(errors...)
+}
+
+func dial(ctx context.Context, host string, proxyJump string, config ssh.ClientConfig) (*Client, error) {
 	username, host := parseHost(host)
 	if username != "" {
 		config.User = username
 	}
 
 	d := &Dialer{}
-	client, err := d.Dial("tcp", host, &config)
-	if err != nil {
-		return nil, nil, trace.ConnectionProblem(err, fmt.Sprintf("could not connect to %v", host))
+	if proxyJump == "" {
+		clt, err := d.Dial("tcp", host, &config)
+		if err != nil {
+			return nil, trace.ConnectionProblem(err, fmt.Sprintf("could not connect to %v", host))
+		}
+		return &Client{client: clt, config: &config}, nil
 	}
-	return client, &config, nil
+	proxyClient, err := d.Dial("tcp", proxyJump, &config)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	proxyConn, err := proxyClient.Dial("tcp", host)
+	if err != nil {
+		defer proxyClient.Close()
+		return nil, trace.ConnectionProblem(err, "failed connecting to node %v. %s", host, err)
+	}
+
+	conn, chans, _, err := newClientConn(ctx, proxyConn, host, &config)
+	if err != nil {
+		if strings.Contains(trace.Unwrap(err).Error(), "ssh: handshake failed") {
+			proxyConn.Close()
+			return nil, trace.AccessDenied(`access denied to %v connecting to %v`, config.User, host)
+		}
+		return nil, trace.Wrap(err)
+	}
+
+	// We pass an empty channel which we close right away to ssh.NewClient
+	// because the client need to handle requests itself.
+	emptyCh := make(chan *ssh.Request)
+	close(emptyCh)
+
+	return &Client{
+		proxyClient: proxyClient,
+		client:      ssh.NewClient(conn, chans, emptyCh),
+		config:      &config,
+	}, nil
 }

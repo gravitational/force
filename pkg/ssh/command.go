@@ -8,7 +8,6 @@ import (
 	"github.com/gravitational/force"
 
 	"github.com/gravitational/trace"
-	"golang.org/x/crypto/ssh"
 )
 
 // Command runs SSH command on a remote server
@@ -32,23 +31,21 @@ func Command(args ...force.Expression) (force.Action, error) {
 }
 
 type CommandAction struct {
-	command      force.Expression
-	host         force.Expression
-	client       *ssh.Client
-	clientConfig *ssh.ClientConfig
-	env          []Env
+	command force.Expression
+	host    force.Expression
+	client  *Client
+	env     []Env
 }
 
-func (s *CommandAction) BindClient(client *ssh.Client, config *ssh.ClientConfig, env []Env) (Action, error) {
+func (s *CommandAction) BindClient(client *Client, env []Env) (Action, error) {
 	if s.client != nil {
 		return nil, trace.AlreadyExists("client already set")
 	}
 	return &CommandAction{
-		host:         s.host,
-		command:      s.command,
-		client:       client,
-		clientConfig: config,
-		env:          env,
+		host:    s.host,
+		command: s.command,
+		client:  client,
+		env:     env,
 	}, nil
 }
 
@@ -77,13 +74,13 @@ func (s *CommandAction) run(ctx force.ExecutionContext, writer io.Writer) error 
 		return trace.Wrap(err)
 	}
 
-	var client *ssh.Client
+	var client *Client
 	host, err := force.EvalString(ctx, s.host)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	if host != "" {
-		client, _, err = dial(host, *plugin.clientConfig)
+		client, err = dial(ctx, host, plugin.cfg.ProxyJump, *plugin.clientConfig)
 		if err != nil {
 			return trace.Wrap(err)
 		}
@@ -95,7 +92,7 @@ func (s *CommandAction) run(ctx force.ExecutionContext, writer io.Writer) error 
 		client = s.client
 	}
 
-	session, err := client.NewSession()
+	session, err := client.client.NewSession()
 	if err != nil {
 		return trace.ConnectionProblem(err, "could not start session")
 	}

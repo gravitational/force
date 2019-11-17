@@ -92,12 +92,12 @@ func (k *KeyPair) Signer() (ssh.Signer, error) {
 type Config struct {
 	// User is a linux login to try
 	User string
-
 	// KnownHostsFile is a list of hosts or certificates
 	KnownHostsFile string
-
 	// KeyPairs is a list of key pairs
 	KeyPairs []KeyPair
+	// ProxyJump is a proxy jump address (similar to ssh -J)
+	ProxyJump string
 }
 
 // CheckAndSetDefaults checks and sets default values
@@ -143,7 +143,7 @@ func (cfg *Config) CheckAndSetDefaults() (*ssh.ClientConfig, error) {
 
 		certChecker := ssh.CertChecker{
 			IsHostAuthority: func(key ssh.PublicKey, addr string) bool {
-				return checkHostCertificate(knownHosts, key, addr)
+				return checkHostKey(knownHosts, key, addr)
 			},
 			HostKeyFallback: func(addr string, remote net.Addr, key ssh.PublicKey) error {
 				if !checkHostKey(knownHosts, key, addr) {

@@ -46,6 +46,30 @@ To set it up, use the `ssh.Setup` function:
 
 {go * ./docs/snippets/ssh/setup.force}
 
+**Setting it up with Teleport**
+
+To set up the SSH plugin with [Teleport](https://gravitational.com/teleport),
+use the `ProxyJump` command with a combination of client SSH certificates:
+
+1. Generate private key pair and certificate
+
+```bash
+$ mkdir ./credentials
+$ tctl auth sign --user=username --format=openssh -o ./credentials/user
+$ ls -l ./credentials
+user user-cert.pub
+```
+
+2. Export Teleport's host CA public key in known_hosts format:
+
+```bash
+$ tctl auth export --type=host > ./credentials/known_hosts
+```
+
+3. Provide paths to key pair, certificate and known_hosts file and ProxyJump:
+
+{go * ./docs/snippets/ssh.tele/setup.force}
+
 **Parallel copying and executing commands**
 
 Once setup, use the `ssh.Copy` to copy files between machines, `ssh.Command` to run

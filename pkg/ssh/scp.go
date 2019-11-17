@@ -68,23 +68,21 @@ func Copy(args ...interface{}) (force.Action, error) {
 }
 
 type CopyAction struct {
-	host         force.Expression
-	source       Target
-	destination  Target
-	client       *ssh.Client
-	clientConfig *ssh.ClientConfig
+	host        force.Expression
+	source      Target
+	destination Target
+	client      *Client
 }
 
-func (s *CopyAction) BindClient(client *ssh.Client, config *ssh.ClientConfig, _ []Env) (Action, error) {
+func (s *CopyAction) BindClient(client *Client, _ []Env) (Action, error) {
 	if s.client != nil {
 		return nil, trace.AlreadyExists("client already set")
 	}
 	return &CopyAction{
-		host:         s.host,
-		source:       s.source,
-		destination:  s.destination,
-		client:       client,
-		clientConfig: config,
+		host:        s.host,
+		source:      s.source,
+		destination: s.destination,
+		client:      client,
 	}, nil
 }
 
@@ -101,14 +99,13 @@ func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	}
 	plugin := pluginI.(*Plugin)
 
-	var client *ssh.Client
-	var clientConfig *ssh.ClientConfig
+	var client *Client
 	host, err := force.EvalString(ctx, s.host)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	if host != "" {
-		client, clientConfig, err = dial(host, *plugin.clientConfig)
+		client, err = dial(ctx, host, plugin.cfg.ProxyJump, *plugin.clientConfig)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -118,7 +115,6 @@ func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 			return nil, trace.BadParameter("ssh.Command does not have host, it has to be used within ssh.Session")
 		}
 		client = s.client
-		clientConfig = s.clientConfig
 	}
 
 	sourcePath, err := force.EvalString(ctx, s.source.Path)
@@ -142,7 +138,7 @@ func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	var cmd scp.Command
 	if !s.destination.Local {
 		scpConfig := scp.Config{
-			User:           clientConfig.User,
+			User:           client.config.User,
 			ProgressWriter: w,
 			RemoteLocation: destPath,
 			Flags: scp.Flags{
@@ -158,7 +154,7 @@ func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	} else {
 		// download
 		scpConfig := scp.Config{
-			User:           clientConfig.User,
+			User:           client.config.User,
 			ProgressWriter: w,
 			RemoteLocation: sourcePath,
 			Flags: scp.Flags{
@@ -174,7 +170,7 @@ func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 
 	log.Infof("Copy: from %v to %v.", sourcePath, destPath)
 
-	if err := ExecuteSCP(log, client, cmd); err != nil {
+	if err := ExecuteSCP(log, client.client, cmd); err != nil {
 		return nil, trace.Wrap(err)
 	}
 	return 0, nil

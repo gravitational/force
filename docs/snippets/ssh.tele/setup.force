@@ -1,0 +1,22 @@
+Setup(
+	ssh.Setup(ssh.Config{
+		// KeyPairs is a list of private/public key pairs or SSH certificates to use		
+		KeyPairs: []ssh.KeyPair{
+			{
+				// PrivateKeyFile is a path to SSH private key
+				// by default, Force will generate a public key from it
+				// and use public key auth				
+				PrivateKeyFile: ExpectEnv("FORCE_TELEPORT_PRIVATE_KEY_FILE"),
+				// CertFile is an optional path to accompanying SSH certificate				
+				CertFile: ExpectEnv("FORCE_TELEPORT_CERT_FILE"),
+			},
+		},
+		// ProxyJump is a bastion address in a host:port 
+		ProxyJump: ExpectEnv("FORCE_TELEPORT_PROXY_JUMP"),
+		// KnownHostsFile is a path to file with SSH known_hosts format:
+		// https://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#~/.ssh/known_hosts		
+		KnownHostsFile: ExpectEnv("FORCE_TELEPORT_KNOWN_HOSTS_FILE"),
+		// User is a default SSH user
+		User: ExpectEnv("FORCE_TELEPORT_SSH_USER"),
+	}),	
+)

@@ -3,9 +3,10 @@ Setup(
 		KeyPairs: []ssh.KeyPair{
 			{
 				PrivateKeyFile: ExpectEnv("FORCE_TELEPORT_PRIVATE_KEY_FILE"),
-				CertificateFile: ExpectEnv("FORCE_TELEPORT_CERT_FILE")
+				CertificateFile: ExpectEnv("FORCE_TELEPORT_CERT_FILE"),
 			},
 		},
+		ProxyJump: "127.0.0.1:3023",
 		KnownHostsFile: ExpectEnv("FORCE_TELEPORT_KNOWN_HOSTS_FILE"),
 		User: ExpectEnv("FORCE_TELEPORT_USER"),
 	}),	

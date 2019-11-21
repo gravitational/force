@@ -59,7 +59,6 @@ func main() {
 
 	run, err := generateAndStart(ctx, cfg)
 	if err != nil {
-
 		if trace.IsDebug() {
 			fmt.Fprintln(os.Stderr, trace.DebugReport(err))
 		} else {

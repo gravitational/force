@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/gravitational/trace"
 )
 
 // Exit exits, if the exit code has been supplied
@@ -24,8 +26,7 @@ func GetExitEventFromContext(ctx ExecutionContext) Event {
 	if err == nil {
 		return event
 	}
-
-	exitErr, ok := err.(*exec.ExitError)
+	exitErr, ok := trace.Unwrap(err).(*exec.ExitError)
 	if ok && exitErr.ProcessState != nil {
 		event.Code = exitErr.ProcessState.ExitCode()
 	} else {

@@ -9,7 +9,7 @@ always processing a single `.force` file.
 
 ## Installation
 
-Current version is `0.0.18`.
+Current version is `0.0.21`.
 
 *Install locally*
 
@@ -20,7 +20,7 @@ $ go install github.com/gravitational/force/tool/force
 *Docker image*
 
 ```
-docker pull gcr.io/kubeadm-167321/force:0.0.18
+docker pull gcr.io/kubeadm-167321/force:0.0.21
 ```
 
 *Local Docker Builds*

@@ -214,6 +214,7 @@ func newParser(runID string, runner *Runner) (*gParser, error) {
 		// Helper functions
 		"Shell":    &force.NopScope{Func: force.Shell},
 		"Command":  &force.NopScope{Func: force.Command},
+		"Run":      &force.NopScope{Func: force.Run},
 		"ID":       &force.NopScope{Func: force.ID},
 		"Strings":  &force.NopScope{Func: force.Strings},
 		"Marshal":  &force.NopScope{Func: force.Marshal},

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"strings"
 
 	"github.com/gravitational/trace"
 )
@@ -216,6 +217,8 @@ func Strings(args ...Expression) (Expression, error) {
 type Script struct {
 	// ExportEnv exports all variables from host environment
 	ExportEnv Expression
+	// EchoArgs logs arguments
+	EchoArgs Expression
 	// Command is an inline script, shortcut for
 	// /bin/sh -c args...
 	Command Expression
@@ -249,6 +252,24 @@ func (s *Script) CheckAndSetDefaults(ctx ExecutionContext) error {
 		return trace.Wrap(err)
 	}
 	return nil
+}
+
+// Run is a shortcut for deer Exit(), Command
+func Run(cmd Expression) (Action, error) {
+	if err := ExpectString(cmd); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return Sequence(
+		Defer(Exit()),
+		&ShellAction{
+			script: Script{
+				Command: cmd,
+				// TODO(klizhentas) consider other routes as this is a potential
+				// security risk
+				ExportEnv: Bool(true),
+				EchoArgs:  Bool(true),
+			},
+		})
 }
 
 // Command is a shortcut for shell action
@@ -317,6 +338,10 @@ func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	echoArgs, err := EvalBool(ctx, s.script.EchoArgs)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	command, err := EvalString(ctx, s.script.Command)
 	if err != nil {
 		return trace.Wrap(err)
@@ -327,6 +352,9 @@ func (s *ShellAction) run(ctx ExecutionContext, w io.Writer) error {
 	workingDir, err := EvalString(ctx, s.script.WorkingDir)
 	if err != nil {
 		return trace.Wrap(err)
+	}
+	if echoArgs {
+		fmt.Fprintln(w, strings.Join(args, " "))
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout = w

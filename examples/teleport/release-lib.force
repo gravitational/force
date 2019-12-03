@@ -1,10 +1,12 @@
 // TODO(gus): allow teleport to be cloned/built from branches for CI release process testing
 func(){
-	//forceImage := "gcr.io/kubeadm-167321/force:0.0.18"
-	forceImage := "gcr.io/kubeadm-167321/force:0.0.20"
+	//forceImage := "gcr.io/kubeadm-167321/force:0.0.20"
+	forceImage := "gcr.io/kubeadm-167321/force:0.0.21"
 	// known good commit hash for an ops branch that works
 	// TODO(gus): provide a way to specify this using tag
-	opsCommitHash := "804fa60e67ba04403c8ac24c6f7b06ef4c39cade"
+	//opsCommitHash := "ebbe118678ff0e6717176289bece5db1ecd78ca9" // old
+	//opsCommitHash := "72a3a74bb0bedcaee75ee404055af98e0d55c565" // master
+	opsCommitHash := "ebbe118678ff0e6717176289bece5db1ecd78ca9" // force-mac-builds
 	// TODO(gus): update to real S3 bucket
 	// target S3 bucket for built artifacts
 	s3Bucket := "gusteleport.gravitational.io"
@@ -253,7 +255,7 @@ func(){
 	**********************************/
 
 	// runs Teleport release inside a buildbox container
-	ReleaseTeleport := func(rt struct{TeleportVersion string; GitRepo string; OS string; Arch string}) {
+	ReleaseTeleport := func(rt struct{TeleportVersion string; BranchToBuild string; GitRepo string; OS string; Arch string}) {
 		// buildbox is a version of the buildbox
 		// TODO(gus): maybe dynamically put buildbox name together from go runtime version set somewhere
 		buildbox := "gcr.io/kubeadm-167321/buildbox:1.13.2"
@@ -266,10 +268,38 @@ func(){
 		imageTag := Sprintf("teleport-build-%s", rt.TeleportVersion)
 		// gitRepoURL is the expanded form of the gitRepo which is passed to git
 		gitRepoURL := Sprintf("git@github.com:gravitational/%s", rt.GitRepo)
+		// TODO(gus): implement this
 		gitRepoTag := Sprintf("v%s", rt.TeleportVersion)
 
+		// TODO(gus): implement this
+		// if TeleportVersion is set (basically if it contains a .) then check out the tag from git
+		// if it isn't set, assume that BranchToBuild is set and create a function to check out that branch
+		/* gitCheckoutFunction := If(
+			Contains(Strings(rt.TeleportVersion), "."),
+			func(){
+				tempDir := TempDir("", "")
+				Defer(RemoveAll(tempDir))
+				git.Clone(git.Repo{
+					URL: Unquote(gitRepoURL),
+					Into: tempDir,
+					Tag: Sprintf("v%s", rt.TeleportVersion),
+					Submodules: Strings("e"),
+				})
+			},
+			func(){
+				tempDir := TempDir("", "")
+				Defer(RemoveAll(tempDir))
+				git.Clone(git.Repo{
+					URL: Unquote(gitRepoURL),
+					Into: tempDir,
+					Branch: Sprintf("%s", rt.BranchToBuild),
+					Submodules: Strings("e"),
+				})
+			},		
+		) */
+
 		// artefactExtension is the extension of the built artefact, used to conditionally copy and upload
-		artefactExtension:= If(
+		artefactExtension := If(
 			Contains(Strings(rt.OS), "windows"),
 			".zip",
 			".tar.gz",
@@ -290,14 +320,16 @@ func(){
 					Defer(Exit())
 					// Create temporary directory for ops and remove at the end of the sequence
 					tempDir := TempDir("", "")
-					Defer(RemoveAll(tempDir))
+					
 					// Clone repo into a temporary directory
+					//TODO(gus): implement a checkout function that can replace the arguments
+					//gitCheckoutFunction()
 					git.Clone(git.Repo{
 						URL: Unquote(gitRepoURL),
-						Into: tempDir,
-						Tag: Unquote(gitRepoTag),
-						Submodules: Strings("e"),
-					})
+					 	Into: tempDir,
+					 	Tag: Unquote(gitRepoTag),
+					 	Submodules: Strings("e"),
+					})					
 					builder.Build(builder.Image{
 						// Set build context to the cloned repository
 						Context: tempDir,
@@ -352,7 +384,7 @@ func(){
 
 	// runs Teleport release remotely by SSHing to a (preconfigured) remote host, copying build script from ops repo, running
 	// and copying results back
-	ReleaseTeleportRemote := func(rtr struct{Host string; TeleportVersion string; GitRepo string; OS string; Arch string; Runtime string; FIPS string}) {
+	ReleaseTeleportRemote := func(rtr struct{Host string; TeleportVersion string; GitRepo string; OS string; Arch string; Runtime string; FIPS string; UseTmpFS string}) {
 		// local temp dir for ops repo, deletes when done
 		localOpsDir := TempDir("", "")
 		Defer(RemoveAll(localOpsDir))
@@ -362,18 +394,38 @@ func(){
 			URL: "git@github.com:gravitational/ops.git",
 			Into: localOpsDir,
 			Hash: opsCommitHash,
-		})		
+		})
+
+		// TODO(gus): remove
+		ssh.Command(rtr.Host, "hostname")
 		
 		// separate local dir for storage before artefact upload, deletes when done
 		localTempBuildDir := TempDir("", "")
 		Defer(RemoveAll(localTempBuildDir))
 
+		// use tmpfs when UseTmpFS is set to "true"
+		// this is useful for builds on Raspberry Pi so that we don't wear out the SD card
+		tempDirCommand := If(
+			Contains(Strings(rtr.UseTmpFS), "true"),
+			"mktemp -d --tmpdir=/dev/shm",
+			"mktemp -d",
+		)
+
+		// we also need to set the TMPDIR environment variable when using tmpfs so that go will put its
+		// temporary build directories on tmpfs too
+		tmpdirKey := If(
+			Contains(Strings(rtr.UseTmpFS), "true"),
+			"TMPDIR",
+			"TMPDIR_UNSET",
+		)
+
 		// remote temp dir on the host, deletes when done
-		remoteTempDir := ssh.Command(rtr.Host, "mktemp -d")
+		remoteTempDir := ssh.Command(rtr.Host, tempDirCommand)
 		Defer(ssh.Command(rtr.Host, Sprintf("rm -rf %s", remoteTempDir)))
 
 		// this is a weird thing where setting FIPS="" doesn't stop FIPS mode being enabled
 		// you can't unset the variable in the shell either as it's forced to be set for every single shell command
+		// when using Env[] under ssh.Session
 		// the variable cannot ever be set for the build script to work as expected, so we just change
 		// the key to something unrelated when not in FIPS mode. the downside is AcceptEnv on the remote server
 		// must be configured to accept the "FIPS_UNSET" variable too
@@ -398,10 +450,12 @@ func(){
 					{Key: "ARCH", Val: rtr.Arch},
 					{Key: "RUNTIME", Val: rtr.Runtime},
 					{Key: Sprintf("%s", fipsKey), Val: rtr.FIPS},
+					{Key: Sprintf("%s", tmpdirKey), Val: Sprintf("%s/gotmp", remoteTempDir)},
 					{Key: "OUT_DIR", Val: Sprintf("%s/build", remoteTempDir)},
 				},
 			},
 			ssh.Copy(ssh.Local(Sprintf("%s/xcloud/release-teleport.sh", localOpsDir)), ssh.Remote(Sprintf("%s", remoteTempDir))),
+			ssh.Command(Sprintf("mkdir -p %s/gotmp/", remoteTempDir)),
 			ssh.Command(Sprintf("ls -l %s", remoteTempDir)),
 			ssh.Command("env"),
 			ssh.Command(Sprintf("cd %s && mkdir -p build && pwd && ls -lR %s && ./release-teleport.sh", remoteTempDir, remoteTempDir)),
@@ -536,7 +590,7 @@ func(){
 	// copying the package build script from the ops repo, running it and copying the results back
 	// arch is always x64 here (MacOS doesn't support 32-bit any more)
 	// runtime is also ignored as we don't build FIPS or go-1.9.7 binaries on OS X
-	BuildTeleportPackageMac := func(btpm struct{Host string; TeleportType string; TeleportVersion string}) {
+	BuildTeleportPackageMac := func(btpm struct{Host string; TeleportType string; TeleportVersion string; BuildTypeModifier string; KeychainPassword string; AppleIDUsername string; AppleIDPassword string;}) {
 		// local temp dir for ops repo, deletes when done
 		localOpsDir := TempDir("", "")
 		Defer(RemoveAll(localOpsDir))
@@ -552,21 +606,39 @@ func(){
 		localTempBuildDir := TempDir("", "")
 		Defer(RemoveAll(localTempBuildDir))
 
+		// TODO(gus): remove
+		ssh.Command(btpm.Host, "hostname")
+
 		// remote temp dir on the host, deletes when done
 		remoteTempDir := ssh.Command(btpm.Host, "mktemp -d")
 		Defer(ssh.Command(btpm.Host, Sprintf("rm -rf %s", remoteTempDir)))
-			
+
+		// set up the build command that we run on the remote host (depending on whether we're building a client-only package or not)
+		// this also unlocks the mac keychain with the provided password when necessary
+		PackageBuildCommand := If(
+			Contains(Strings(btpm.BuildTypeModifier), "tsh"),
+			Sprintf("cd %s && security unlock-keychain -p %s login.keychain && security find-identity -v && bash ./build-teleport-package-osx.sh -t %s -v %s -m %s", remoteTempDir, btpm.KeychainPassword, btpm.TeleportType, btpm.TeleportVersion, btpm.BuildTypeModifier),
+			Sprintf("cd %s && bash ./build-teleport-package-osx.sh -t %s -v %s", remoteTempDir, btpm.TeleportType, btpm.TeleportVersion),
+		)
+
 		// run the build script on the remote host and copy the built files back to localTempBuildDir
 		ssh.Session(
-				ssh.Hosts{
-					Hosts: Strings(btpm.Host),
+			ssh.Hosts{
+				Hosts: Strings(btpm.Host),
+				// any environment variable you set here is PERMANENTLY set for every command run inside the block
+				// you can't unset() these or even alter them from inside the shell - they're immutable/static
+				Env: []_{
+					{Key: "APPLE_USERNAME", Val: Sprintf("%s", btpm.AppleIDUsername)},
+					{Key: "APPLE_PASSWORD", Val: Sprintf("%s", btpm.AppleIDPassword)},
 				},
-				ssh.Copy(ssh.Local(Sprintf("%s/xcloud/force/build-teleport-package-osx.sh", localOpsDir)), ssh.Remote(Sprintf("%s", remoteTempDir))),
-				ssh.Command(Sprintf("ls -l %s", remoteTempDir)),
-				ssh.Command(Sprintf("cd %s && bash ./build-teleport-package-osx.sh -t %s -v %s", remoteTempDir, btpm.TeleportType, btpm.TeleportVersion)),
-				ssh.Command(Sprintf("ls -lR %s/", remoteTempDir)),
-				ssh.Copy(ssh.Remote(Sprintf("%s/*.pkg", remoteTempDir)), ssh.Local(Sprintf("%s", localTempBuildDir))),
-				ssh.Copy(ssh.Remote(Sprintf("%s/*.pkg.sha256", remoteTempDir)), ssh.Local(Sprintf("%s", localTempBuildDir))),
+			},
+			ssh.Copy(ssh.Local(Sprintf("%s/xcloud/force/build-teleport-package-osx.sh", localOpsDir)), ssh.Remote(Sprintf("%s", remoteTempDir))),
+			ssh.Command(Sprintf("ls -l %s", remoteTempDir)),
+			//ssh.Command(Sprintf("cd %s && bash ./build-teleport-package-osx.sh -t %s -v %s", remoteTempDir, btpm.TeleportType, btpm.TeleportVersion)),
+			ssh.Command(PackageBuildCommand),
+			ssh.Command(Sprintf("ls -lR %s/", remoteTempDir)),
+			ssh.Copy(ssh.Remote(Sprintf("%s/*.pkg", remoteTempDir)), ssh.Local(Sprintf("%s", localTempBuildDir))),
+			ssh.Copy(ssh.Remote(Sprintf("%s/*.pkg.sha256", remoteTempDir)), ssh.Local(Sprintf("%s", localTempBuildDir))),
 		)
 
 		// list local temp dir contents

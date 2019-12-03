@@ -6,10 +6,40 @@ func(){
 			Defer(Exit())
 			armBuildHost := ExpectEnv("FORCE_ARM_BUILD_HOST")
 			fipsBuildHost := ExpectEnv("FORCE_FIPS_BUILD_HOST")
-			macBuildHost := ExpectEnv("FORCE_MAC_BUILD_HOST")			
+			macBuildHost := ExpectEnv("FORCE_MAC_BUILD_HOST")
+			// mac extras
+			macTeleportBuildHost := ExpectEnv("FORCE_MAC_BUILD_HOST_TELEPORT")
+			armTeleportBuildHost := ExpectEnv("FORCE_ARM_BUILD_HOST_TELEPORT")
+			keychainPassword := ExpectEnv("MAC_KEYCHAIN_PASSWORD")
+			appleIDUsername := ExpectEnv("MAC_APPLE_ID_USERNAME")
+			appleIDPassword := ExpectEnv("MAC_APPLE_ID_PASSWORD")
 			// version does not include v
 			teleportVersion := "4.1.4"
+			// branch to build
+			branchToBuild := "gus/teleport-release"
+			/* Parallel(
+				// mac amd64 oss pkg via teleport cluster
+				//BuildTeleportPackageMac(_{Host: macTeleportBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
+				//BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
+				//ReleaseTeleportRemote(_{Host: armTeleportBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "arm", UseTmpFS: "true"}), // works
+			) */
 			Parallel(
+				// linux amd64 oss/ent
+				//ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64"}),
+				//ReleaseTeleport(_{BranchToBuild: branchToBuild, GitRepo: "teleport.git", OS: "linux", Arch: "amd64"}),
+
+				// mac amd64 oss pkg via teleport cluster (tsh-only, signed, notarized)
+				BuildTeleportPackageMac(_{
+					Host: macTeleportBuildHost,
+					TeleportType: "oss",
+					TeleportVersion: teleportVersion,
+					BuildTypeModifier: "tsh",
+					KeychainPassword: keychainPassword,
+					AppleIDUsername: appleIDUsername,
+					AppleIDPassword: appleIDPassword,
+				}),
+			)
+			/* Parallel(
 				// linux amd64 oss/ent
 				ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64"}),
 				// linux amd64 fips oss/ent
@@ -66,7 +96,7 @@ func(){
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "i386"}),
 				// mac amd64 enterprise pkg
 				BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "ent", TeleportVersion: teleportVersion}),
-			)
+			) */
 		},
 	})
 }()

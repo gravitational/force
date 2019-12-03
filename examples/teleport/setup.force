@@ -37,7 +37,7 @@ Setup(
 		Path: ExpectEnv("KUBE_CREDENTIALS"),
 	}),
 	// configure SSH to be able to log into hosts locally
-	ssh.Setup(ssh.Config{
+	/* ssh.Setup(ssh.Config{
 		KeyPairs: []ssh.KeyPair{
 			{
 				PrivateKeyFile: ExpectEnv("FORCE_SSH_PRIVATE_KEY_FILE_JENKINS"),
@@ -48,6 +48,18 @@ Setup(
 		},
 		KnownHostsFile: ExpectEnv("FORCE_SSH_KNOWN_HOSTS_FILE"),
 		User:           ExpectEnv("FORCE_SSH_USER"),
+	}), */
+	// configure Teleport to be able to log into hosts (via bastion)
+	ssh.Setup(ssh.Config{
+		KeyPairs: []ssh.KeyPair{
+			{
+				PrivateKeyFile: ExpectEnv("FORCE_TELEPORT_PRIVATE_KEY_FILE"),
+				CertFile:       ExpectEnv("FORCE_TELEPORT_CERT_FILE"),
+			},
+		},
+		ProxyJump:      ExpectEnv("FORCE_TELEPORT_PROXY_JUMP"),
+		KnownHostsFile: ExpectEnv("FORCE_TELEPORT_KNOWN_HOSTS_FILE"),
+		User:           ExpectEnv("FORCE_TELEPORT_SSH_USER"),
 	}),
 	// configure AWS plugin locally
 	aws.Setup(aws.Config{

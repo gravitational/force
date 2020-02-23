@@ -1,0 +1,5 @@
+Setup(
+	// Builder configures docker builder
+	builder.Setup(builder.Config{
+	}),
+)

@@ -29,14 +29,21 @@ func main() {
 
 	app := kingpin.New("force", "Force is simple CI/CD tool")
 	app.Flag("debug", "Turn on debugging level").Short('d').BoolVar(&cfg.debug)
-	app.Flag("setup", "Path to setup file").Short('s').StringVar(&cfg.setup.Filename)
-	app.Arg("file", "Force file to run").StringVar(&cfg.force.Filename)
 
-	app.Flag("id", "Optional run ID").Envar("FORCE_ID").StringVar(&cfg.id)
-	app.Flag("setup-script", "Setup script contents").Envar("FORCE_SETUP").StringVar(&cfg.setup.Content)
-	app.Arg("file-script", "Force script contents").Envar("FORCE_SCRIPT").StringVar(&cfg.force.Content)
+	runC := app.Command("run", "Run a force fule")
 
-	_, err := app.Parse(os.Args[1:])
+	runC.Flag("setup", "Path to setup file").Short('s').StringVar(&cfg.setup.Filename)
+	runC.Arg("file", "Force file to run").StringVar(&cfg.force.Filename)
+
+	runC.Flag("id", "Optional run ID").Envar("FORCE_ID").StringVar(&cfg.id)
+	runC.Flag("setup-script", "Setup script contents").Envar("FORCE_SETUP").StringVar(&cfg.setup.Content)
+	runC.Arg("file-script", "Force script contents").Envar("FORCE_SCRIPT").StringVar(&cfg.force.Content)
+
+	webC := app.Command("web", "Start a web server")
+	webListenAddr := "127.0.0.1:8087"
+	webC.Arg("listen-addr", "Web Server listen address").Default(webListenAddr).StringVar(&webListenAddr)
+
+	cmd, err := app.Parse(os.Args[1:])
 	if err != nil {
 		fmt.Printf("ERROR: %v", err)
 		os.Exit(1)
@@ -47,36 +54,50 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := cfg.CheckAndSetDefaults(); err != nil {
-		// default file not found, print nicer help
-		if trace.IsNotFound(err) && cfg.setup.Filename == "" {
-			fmt.Printf(noArgsHelpMessage)
-		} else {
-			fmt.Printf("%v\n", err)
+	switch cmd {
+	case runC.FullCommand():
+		if err := cfg.CheckAndSetDefaults(); err != nil {
+			// default file not found, print nicer help
+			if trace.IsNotFound(err) && cfg.setup.Filename == "" {
+				fmt.Printf(noArgsHelpMessage)
+			} else {
+				fmt.Printf("%v\n", err)
+			}
+			os.Exit(1)
 		}
-		os.Exit(1)
-	}
 
-	run, err := generateAndStart(ctx, cfg)
-	if err != nil {
-		if trace.IsDebug() {
-			fmt.Fprintln(os.Stderr, trace.DebugReport(err))
-		} else {
-			fmt.Fprintln(os.Stderr, err.Error())
+		run, err := generateAndStart(ctx, cfg)
+		if err != nil {
+			if trace.IsDebug() {
+				fmt.Fprintln(os.Stderr, trace.DebugReport(err))
+			} else {
+				fmt.Fprintln(os.Stderr, err.Error())
+			}
+			os.Exit(1)
 		}
-		os.Exit(1)
-	}
-	select {
-	case <-ctx.Done():
+		select {
+		case <-ctx.Done():
+			return
+		case <-run.Done():
+			event := run.ExitEvent()
+			if event == nil {
+				log.Debugf("Process group has shut down with unkown status.")
+			} else {
+				log.Debugf("Process group has shut down with event: %v.", event)
+				os.Exit(event.ExitCode())
+			}
+		}
+	case webC.FullCommand():
+		err := runWebServer(ctx, webListenAddr, "./fixtures/cert.pem", "./fixtures/key.pem")
+		if err != nil {
+			if trace.IsDebug() {
+				fmt.Fprintln(os.Stderr, trace.DebugReport(err))
+			} else {
+				fmt.Fprintln(os.Stderr, err.Error())
+			}
+			os.Exit(1)
+		}
 		return
-	case <-run.Done():
-		event := run.ExitEvent()
-		if event == nil {
-			log.Debugf("Process group has shut down with unkown status.")
-		} else {
-			log.Debugf("Process group has shut down with event: %v.", event)
-			os.Exit(event.ExitCode())
-		}
 	}
 }
 

@@ -1,0 +1,21 @@
+func(){
+	// Prune the build cache	
+	Defer(builder.Prune())
+
+	image := ExpectEnv("BUILDBOX_IMG")
+	gogoProtoVer := ExpectEnv("GOGO_PROTO_VER")
+	protocVer := ExpectEnv("PROTOC_VER")
+	platform := ExpectEnv("PLATFORM")
+	Infof("Going to build %v with gogoproto %v, protoc %v, platform", image, gogoProtoVer, protocVer, platform)
+	// Build builds dockerfile and tags it in the local storage
+	builder.Build(builder.Image{
+		Dockerfile: "./Dockerfile",
+		Context: "./",
+		Tag: image,
+		Args: []builder.Arg{
+			{Key: "PROTOC_VER", Val: protocVer},
+			{Key: "GOGO_PROTO_VER", Val: gogoProtoVer},
+			{Key: "PLATFORM", Val: platform},
+		},
+	})
+}

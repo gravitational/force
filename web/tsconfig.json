@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+
+    // Set React as the JSX factory
+    "jsx": "react",
+
+    // Modern module resolution works with webpack
+    "module": "commonjs",
+
+    // https://stackoverflow.com/questions/56238356/understanding-esmoduleinterop-in-tsconfig-file
+    "esModuleInterop": true,
+
+    // Target ES6
+    "target": "es6",
+
+    // Include typings from built-in lib declarations
+    "lib": ["es2015", "es2017", "dom", "dom.iterable"],
+
+    // Include module source maps for debugging
+    "sourceMap": true,
+
+    // strict typescript
+    "strict" : true,
+
+    // Allow javascript,
+    "allowJs": true,
+
+    // Ouptut to dist
+    "outDir": "./dist/",
+
+    "noImplicitAny": true,
+
+  },
+  "include": ["src"]
+}

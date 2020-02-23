@@ -33,7 +33,30 @@ module.exports = {
         enforce: "pre",
         test: /\.js$/,
         loader: "source-map-loader"
-      }
+      },
+      // This fix is required to fix google protobuf code gen
+      // that generates this line:
+      //
+      // var global = Function('return this')();
+      // 
+      // violating CSP policy script-src 'self'.
+      // Thankfully, it's trivial to fix by using this code instead:
+      //
+      // var global = (function(){ return this }).call(null);
+      // 
+      //
+      // Read more here:
+      //
+      // https://github.com/improbable-eng/ts-protoc-gen/issues/128
+      // https://github.com/protocolbuffers/protobuf/issues/6770
+      {
+        test: /\.js$/,
+        loader: 'string-replace-loader',
+        options: {
+          search: "var global = Function('return this')();",
+          replace: "var global = (function(){ return this }).call(null);",
+        }
+      },
     ]
   },
   plugins: [

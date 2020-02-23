@@ -12,7 +12,7 @@ start:
 .PHONY: install
 install:
 # install webpack 
-	yarn add --dev webpack webpack-cli webpack-dev-server html-webpack-plugin copy-webpack-plugin
+	yarn add --dev webpack webpack-cli webpack-dev-server html-webpack-plugin copy-webpack-plugin string-replace-loader
 # react
 	yarn add react redux react-redux
 # react typescript types

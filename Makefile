@@ -157,10 +157,13 @@ sloccount:
 	find . -path ./vendor -prune -o -name "*.go" -print0 | xargs -0 wc -l
 
 
-.PHONY: web-install
-web-install:
+.PHONY: install-web
+install-web:
 	$(MAKE) -C web install
 
+.PHONY: run-web
+run-web: all
+	force web
 
 BUILDBOX_IMG := gcr.io/kubeadm-167321/force-grpc-buildbox:0.0.1
 

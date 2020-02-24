@@ -1,0 +1,8 @@
+Setup(
+	git.Setup(git.Config{
+		PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
+		KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
+	}),
+)
+
+

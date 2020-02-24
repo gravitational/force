@@ -1,0 +1,28 @@
+// This is a one-shot process, but could also be run inside a watch-and-run loop.
+// In this example, we run some command against the repository from one remote,
+// before commiting the output to a secondary remote
+func(){
+	repo := TempDir("", "")
+	Defer(RemoveAll(repo))
+
+	git.Clone(git.Repo{
+		URL: "git@github.com:pierrebeaucamp/example1.git",
+		Into: repo,
+	})
+
+	Command(Sprintf("cd %s && mkdir build && date > build/output", repo))
+
+	git.Commit(git.CommitOptions{
+		Directory: repo,
+		PathSpecs: Strings("build/output"),
+		Message: "Update latest build artifact",
+		AuthorName: "Boaty McBoatface",
+		AuthorEmail: "boaty@mcboatface.org",
+	})
+
+	git.Push(git.PushOptions{
+		Directory: repo,
+		RemoteName: "example2",
+		RemoteURL: "git@github.com:pierrebeaucamp/example2.git",
+	})
+}()

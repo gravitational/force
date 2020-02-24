@@ -1,6 +1,7 @@
-// This is a one-shot process, but could also be run inside a watch-and-run loop.
-// In this example, we run some command against the repository from one remote,
-// before commiting the output to a secondary remote
+// The following example clones one specifc repository before merging changes
+// from a secondary one. Then, new build artifacts are commited & pushed.
+// For example, this workflow could be used to keep a fork up-to-date with
+// upstream changes (as long as they don't cause merge conflicts).
 func(){
 	repo := TempDir("", "")
 	Defer(RemoveAll(repo))
@@ -10,12 +11,18 @@ func(){
 		Into: repo,
 	})
 
-	Command(Sprintf("cd %s && mkdir build && date > build/output", repo))
+	git.Pull(git.PullOptions{
+		Directory: repo,
+		RemoteName: "example2",
+		RemoteURL: "git@github.com:pierrebeaucamp/example2.git",
+	})
+
+	Command(Sprintf("cd %s && mkdir -p build && date > build/output", repo))
 
 	git.Commit(git.CommitOptions{
 		Directory: repo,
 		PathSpecs: Strings("build/output"),
-		Message: "Update latest build artifact",
+		Message: "Update latest build artifacts",
 		AuthorName: "Boaty McBoatface",
 		AuthorEmail: "boaty@mcboatface.org",
 	})
@@ -23,6 +30,5 @@ func(){
 	git.Push(git.PushOptions{
 		Directory: repo,
 		RemoteName: "example2",
-		RemoteURL: "git@github.com:pierrebeaucamp/example2.git",
 	})
 }()

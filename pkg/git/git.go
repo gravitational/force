@@ -21,6 +21,7 @@ func Scope() (force.Group, error) {
 	err := force.ImportStructsIntoAST(scope,
 		reflect.TypeOf(Config{}),
 		reflect.TypeOf(Repo{}),
+		reflect.TypeOf(PullOptions{}),
 		reflect.TypeOf(CommitOptions{}),
 		reflect.TypeOf(PushOptions{}),
 	)
@@ -28,6 +29,7 @@ func Scope() (force.Group, error) {
 		return nil, trace.Wrap(err)
 	}
 	scope.AddDefinition(force.FunctionName(Clone), &NewClone{})
+	scope.AddDefinition(KeyPull, &NewPull{})
 	scope.AddDefinition(KeyCommit, &NewCommit{})
 	scope.AddDefinition(KeyPush, &NewPush{})
 	scope.AddDefinition(KeySetup, &Setup{})
@@ -41,6 +43,7 @@ const (
 	// Key is a name of the github plugin variable
 	Key       = Namespace("git")
 	KeySetup  = "Setup"
+	KeyPull   = "Pull"
 	KeyCommit = "Commit"
 	KeyPush   = "Push"
 )

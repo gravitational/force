@@ -4,7 +4,6 @@
 # FORCE_IMAGE_NAME must be set here to be 'global' so it can be referenced by the second stage
 ARG BUILDBOX
 ARG FORCE_IMAGE_NAME
-ARG ARTEFACT_EXTENSION
 FROM $BUILDBOX
 
 ARG UID
@@ -13,8 +12,6 @@ ARG OS
 ARG ARCH
 ARG RUNTIME=""
 ARG FIPS=""
-ARG ARTEFACT_EXTENSION
-ARG WINDOWS_EXTRA_BUILD_STANZA="echo"
 
 COPY ./build.assets/pam/pam_teleport.so /lib/x86_64-linux-gnu/security
 COPY ./build.assets/pam/teleport-acct-failure /etc/pam.d
@@ -28,11 +25,27 @@ RUN (groupadd jenkins --gid=$GID -o && useradd jenkins --uid=$UID --gid=$GID --c
 WORKDIR /gopath/src/github.com/gravitational/teleport
 
 RUN make release -e OS=${OS} ARCH=${ARCH} RUNTIME=${RUNTIME} FIPS=${FIPS}
-RUN ${WINDOWS_EXTRA_BUILD_STANZA}
+
+# rename binaries for CentOS 6 
+RUN echo -e '#!/bin/bash\n\
+    find . -type f -name "teleport-*.tar.gz" | while read FILE ;\n\
+    do NEW_FILE=$(echo ${FILE} | sed "s|linux-amd64|linux-amd64-centos6|") ;\n\
+    mv -v ${FILE} ${NEW_FILE} ;\n\
+    done'\
+    > ./rename-centos6.sh && bash ./rename-centos6.sh && rm -f ./rename-centos6.sh && ls -l . && ls -l e
+
+# conditionally rename binaries for FIPS
+RUN echo -e '#!/bin/bash\n\
+    export FIPS="'$FIPS'"; if [[ "${FIPS}" != "" ]]; then\n\
+    find . -type f -name "teleport-*.tar.gz" | while read FILE ;\n\
+    do NEW_FILE=$(echo ${FILE} | sed "s|linux-amd64-centos6|linux-amd64-centos6-fips|") ;\n\
+    mv -v ${FILE} ${NEW_FILE} ;\n\
+    done; fi'\
+    > ./rename-fips.sh && bash ./rename-fips.sh && rm -f ./rename-fips.sh && ls -l . && ls -l e
 
 # calculate SHA256 hash and write to file
 RUN echo -e '#!/bin/bash\n\
-find . -mindepth 1 -maxdepth 1 -type f -name "teleport-*'${ARTEFACT_EXTENSION}'" | while read FILE ;\n\
+find . -mindepth 1 -maxdepth 1 -type f -name "teleport-*.tar.gz" | while read FILE ;\n\
 do FILENAME=$(echo ${FILE} | sed "s|^\./||") ;\n\
 sha256sum ${FILENAME} > ${FILENAME}.sha256 ;\n\
 echo ${FILENAME}.sha256 ;\n\
@@ -43,8 +56,8 @@ WORKDIR /gopath/src/github.com/gravitational/teleport/e
 # this script renames the enterprise tarball as it doesn't get named automatically by the build process
 RUN echo -e '#!/bin/bash\n\
 find . -type f -name "teleport-*.tar.gz" | while read FILE ;\n\
-do NEWFILE=$(echo ${FILE} | sed -e "s/teleport/teleport-ent/") ;\n\
-mv ${FILE} ${NEWFILE} ;\n\
+do NEWFILE=$(echo ${FILE} | sed -e "s|teleport|teleport-ent|") ;\n\
+mv -v ${FILE} ${NEWFILE} ;\n\
 done'\
 > ./ent-rename.sh && bash ./ent-rename.sh && rm -f ./ent-rename.sh && ls -l .
 
@@ -55,14 +68,13 @@ RUN cp ../sha256.sh . && rm -f ../sha256.sh && bash ./sha256.sh && rm -f ./sha25
 FROM $FORCE_IMAGE_NAME
 ARG TELEPORT_VERSION
 ARG TARGET_S3_BUCKET
-ARG ARTEFACT_EXTENSION
 # annoyingly this has to be present for now
 ENV AWS_REGION=us-west-2
 RUN mkdir -p build
-COPY --from=0 /gopath/src/github.com/gravitational/teleport/*$ARTEFACT_EXTENSION build/
-COPY --from=0 /gopath/src/github.com/gravitational/teleport/*$ARTEFACT_EXTENSION.sha256 build/
-COPY --from=0 /gopath/src/github.com/gravitational/teleport/e/*$ARTEFACT_EXTENSION build/
-COPY --from=0 /gopath/src/github.com/gravitational/teleport/e/*$ARTEFACT_EXTENSION.sha256 build/
+COPY --from=0 /gopath/src/github.com/gravitational/teleport/*.tar.gz build/
+COPY --from=0 /gopath/src/github.com/gravitational/teleport/*.tar.gz.sha256 build/
+COPY --from=0 /gopath/src/github.com/gravitational/teleport/e/*.tar.gz build/
+COPY --from=0 /gopath/src/github.com/gravitational/teleport/e/*.tar.gz.sha256 build/
 RUN echo 'Setup(\n\
      aws.Setup(aws.Config{\n\
           Region: ExpectEnv("AWS_REGION"),\n\

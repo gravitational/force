@@ -4,56 +4,38 @@ func(){
 		Name: "teleport-release",
 		Run: func() {
 			Defer(Exit())
-			armBuildHost := ExpectEnv("FORCE_ARM_BUILD_HOST")
-			fipsBuildHost := ExpectEnv("FORCE_FIPS_BUILD_HOST")
-			macBuildHost := ExpectEnv("FORCE_MAC_BUILD_HOST")
-			// mac extras
+			// build hosts
 			macTeleportBuildHost := ExpectEnv("FORCE_MAC_BUILD_HOST_TELEPORT")
 			armTeleportBuildHost := ExpectEnv("FORCE_ARM_BUILD_HOST_TELEPORT")
+			fipsTeleportBuildHost := ExpectEnv("FORCE_FIPS_BUILD_HOST_TELEPORT")
+			// mac extras
 			keychainPassword := ExpectEnv("MAC_KEYCHAIN_PASSWORD")
 			appleIDUsername := ExpectEnv("MAC_APPLE_ID_USERNAME")
 			appleIDPassword := ExpectEnv("MAC_APPLE_ID_PASSWORD")
 			// version does not include v
-			teleportVersion := "4.1.4"
-			// branch to build
-			branchToBuild := "gus/teleport-release"
-			/* Parallel(
-				// mac amd64 oss pkg via teleport cluster
-				//BuildTeleportPackageMac(_{Host: macTeleportBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
-				//BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
-				//ReleaseTeleportRemote(_{Host: armTeleportBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "arm", UseTmpFS: "true"}), // works
-			) */
+			teleportVersion := "4.2.3"
 			Parallel(
-				// linux amd64 oss/ent
-				//ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64"}),
-				//ReleaseTeleport(_{BranchToBuild: branchToBuild, GitRepo: "teleport.git", OS: "linux", Arch: "amd64"}),
-
-				// mac amd64 oss pkg via teleport cluster (tsh-only, signed, notarized)
-				BuildTeleportPackageMac(_{
-					Host: macTeleportBuildHost,
-					TeleportType: "oss",
-					TeleportVersion: teleportVersion,
-					BuildTypeModifier: "tsh",
-					KeychainPassword: keychainPassword,
-					AppleIDUsername: appleIDUsername,
-					AppleIDPassword: appleIDPassword,
-				}),
-			)
-			/* Parallel(
 				// linux amd64 oss/ent
 				ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64"}),
 				// linux amd64 fips oss/ent
 				// NOTE: the fips string must currently be set to "yes" in order for the artefacts to get renamed correctly
 				// this is an issue with the build script - https://github.com/gravitational/ops/blob/master/xcloud/release-teleport.sh#L178-L188
-				ReleaseTeleportRemote(_{Host: fipsBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64", FIPS: "yes"}),
+				ReleaseTeleportRemote(_{Host: fipsTeleportBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64", FIPS: "yes", UseTmpFS: "true"}),
+
 				// linux i386 (note GOARCH is '386' not 'i386' because reasons) oss/ent
 				ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "386"}),
+
+				// linux amd64 oss/ent centos6 tarball
+				ReleaseTeleportCentos6(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64", Runtime: "go1.13.2"}),
+
+				// linux amd64 oss/ent centos6 fips tarball
+				ReleaseTeleportCentos6(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "amd64", Runtime: "go1.13.2", FIPS: "yes"}),
 				
 				// arm amd64 oss/ent
-				ReleaseTeleportRemote(_{Host: armBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "arm"}),
+				ReleaseTeleportRemote(_{Host: armTeleportBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "linux", Arch: "arm", UseTmpFS: "true"}),
 				
 				// mac amd64 oss/ent
-				ReleaseTeleportRemote(_{Host: macBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "darwin", Arch: "amd64"}),
+				ReleaseTeleportRemote(_{Host: macTeleportBuildHost, TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "darwin", Arch: "amd64"}),
 				
 				// windows amd64 (tsh only)
 				ReleaseTeleport(_{TeleportVersion: teleportVersion, GitRepo: "teleport.git", OS: "windows", Arch: "amd64"}),
@@ -70,33 +52,50 @@ func(){
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "amd64"}),
 				// linux amd64 enterprise rpm 
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "amd64"}),
+
 				// linux amd64 oss fips rpm
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "amd64", FIPS: "fips"}),
 				// linux amd64 enterprise fips rpm
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "amd64", FIPS: "fips"}),
+
 				// linux i386 oss rpm
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "i386"}),
 				// linux i386 enterprise rpm
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "rpm", Arch: "i386"}),
+
 				// mac amd64 oss pkg
-				BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
+				BuildTeleportPackageMac(_{Host: macTeleportBuildHost, TeleportType: "oss", TeleportVersion: teleportVersion}),
+				// mac amd64 client pkg (tsh-only, signed, notarized)
+				BuildTeleportPackageMac(_{
+					Host: macTeleportBuildHost,
+					TeleportType: "oss", // this doesn't actually matter for client-only builds, tsh is the same for both oss and ent
+					TeleportVersion: teleportVersion,
+					BuildTypeModifier: "tsh",
+					KeychainPassword: keychainPassword,
+					AppleIDUsername: appleIDUsername,
+					AppleIDPassword: appleIDPassword,
+				}),
+				
 			)
 			Parallel(
 				// linux amd64 oss deb 
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64"}),
 				// linux amd64 enterprise deb 
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64"}),
+
 				// linux amd64 oss fips deb
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64", FIPS: "fips"}),
 				// linux amd64 enterprise fips deb
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "amd64", FIPS: "fips"}),
+
 				// linux i386 oss deb
 				BuildTeleportPackageLinux(_{TeleportType: "oss", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "i386"}),
 				// linux i386 enterprise deb
 				BuildTeleportPackageLinux(_{TeleportType: "ent", TeleportVersion: teleportVersion, PackageType: "deb", Arch: "i386"}),
+
 				// mac amd64 enterprise pkg
-				BuildTeleportPackageMac(_{Host: macBuildHost, TeleportType: "ent", TeleportVersion: teleportVersion}),
-			) */
+				BuildTeleportPackageMac(_{Host: macTeleportBuildHost, TeleportType: "ent", TeleportVersion: teleportVersion}),
+			)			
 		},
 	})
 }()

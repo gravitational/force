@@ -127,6 +127,83 @@ func(){
 		})
 	}
 
+	// Runs the Kubernetes job which orchestrates a Teleport release build for RHEL/CentOS 6.x inside a container
+	RunTeleportCentos6ReleaseJob := func(rtc6rj struct{Script string; TeleportVersion string; GitRepo string; OS string; Arch string; FIPS string;}) {
+		containerLabel := If(
+			Contains(Strings(rtc6rj.FIPS), "yes"),
+			Sprintf("%s-%s-centos6-fips", rtc6rj.OS, rtc6rj.Arch),
+			Sprintf("%s-%s-centos6", rtc6rj.OS, rtc6rj.Arch),
+		)
+		fipsLabel := If(
+			Contains(Strings(rtc6rj.FIPS), "yes"),
+			"-fips",
+			"",
+		)
+		//containerLabel := Sprintf("%s-%s-centos6", rtc6rj.OS, rtc6rj.Arch)
+		kube.Run(kube.Job{
+			Name: Sprintf("tele-release-centos6%s-%v-%s-%s", fipsLabel, ID(), rtc6rj.OS, rtc6rj.Arch),
+			Spec: _{
+				Template: _{
+					Spec: _{
+						Volumes: []_{
+							{Name: "creds", Secret: _{SecretName: "creds"}},
+							{Name: "gitkey", Secret: _{SecretName: "gitkey"}},
+							{Name: "aws-creds", Secret: _{SecretName: "aws-creds"}},
+							{Name: "scripts", ConfigMap: _{Name: "scripts"}},
+							{Name: "cache", EmptyDir: _{}},
+							{Name: "tmp", EmptyDir: _{}},
+						},
+						Containers: []_{
+							{
+								Name: containerLabel,
+								Image: forceImage,
+								Command: Strings("force", "-d"),
+								Env: []_{
+									// ID is passed so the job spawned in k8s
+									// will have the same job id, having the same logs
+									{Name: "FORCE_ID", Value: ID()},
+									// Script is passed as an environment variable,
+									// thanks to Marshal the script is inline,
+									// can reference outside variables
+									{Name: "FORCE_SCRIPT", Value: rtc6rj.Script},
+									// Setup is passed as an environment variable
+									{Name: "FORCE_SETUP", Value: containerSetupScript},
+									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
+									{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
+									{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},
+									//TODO(gus): figure this out/remove it
+									//{Name: "AWS_REGION", Value: "us-west-2"}, // this doesn't propagate through to buildkit
+								},
+								VolumeMounts: []_{
+									// tmp is for temporary directory, just in case
+									{Name: "tmp", MountPath: "/tmp"},
+									// cache is for container build cache
+									{Name: "cache", MountPath: "/root/.local"},
+									// creds is for google creds
+									{Name: "creds", MountPath: "/var/secrets/google"},
+									// gitkey is a private key file with appropriate permissions for git
+									{Name: "gitkey", MountPath: "/var/secrets/git"},
+									// scripts is a script with a dockerfile
+									{Name: "scripts", MountPath: "/mnt/scripts"},
+									// aws-creds contains ~/.aws/credentials and ~/.aws/config for use by AWS go SDK
+									{Name: "aws-creds", MountPath: "/root/.aws"},
+								},
+								SecurityContext: _{Privileged: true},
+								Resources: _{
+									Limits: _{
+										// set a higher limit here so buildboxes build quicker (compiling Go)
+										cpu: kube.ParseQuantity("4000m"),
+										memory: kube.ParseQuantity("2Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	}
+
 	// Runs the Kubernetes job which orchestrates a Teleport container build
 	RunTeleportDockerContainerBuildJob := func(rtdcbj struct{Script string; TeleportVersion string; GitRepo string; BuildContainerLabel string}) {
 		kube.Run(kube.Job{
@@ -258,6 +335,7 @@ func(){
 	ReleaseTeleport := func(rt struct{TeleportVersion string; BranchToBuild string; GitRepo string; OS string; Arch string}) {
 		// buildbox is a version of the buildbox
 		// TODO(gus): maybe dynamically put buildbox name together from go runtime version set somewhere
+		// TODO(gus): fix name of runtime to go1.13.2
 		buildbox := "gcr.io/kubeadm-167321/buildbox:1.13.2"
 		// TODO(gus): UID/GID can be set globally
 		// UID is the uid to run the jobs (must be a string and not an int)
@@ -379,6 +457,127 @@ func(){
 			GitRepo: rt.GitRepo,
 			OS: rt.OS,
 			Arch: rt.Arch,
+		})
+	}
+
+	// runs Teleport release for RHEL/CentOS 6.x inside a buildbox container
+	ReleaseTeleportCentos6 := func(rtc6 struct{TeleportVersion string; BranchToBuild string; GitRepo string; OS string; Arch string; Runtime string; FIPS string}) {
+		// buildbox is a version of the buildbox
+		// TODO(gus): maybe dynamically put buildbox name together from go runtime version set somewhere
+		buildbox := If(
+			Contains(Strings(rtc6.FIPS), "yes"),
+			Sprintf("gcr.io/kubeadm-167321/buildbox-centos6-fips:%s", rtc6.Runtime),
+			Sprintf("gcr.io/kubeadm-167321/buildbox-centos6:%s", rtc6.Runtime),
+		)
+		// TODO(gus): UID/GID can be set globally
+		// UID is the uid to run the jobs (must be a string and not an int)
+		uid := "1000"
+		// GID is the gid to run the jobs (must be a string and not an int)
+		gid := "1000" 
+		// gitRepoURL is the expanded form of the gitRepo which is passed to git
+		gitRepoURL := Sprintf("git@github.com:gravitational/%s", rtc6.GitRepo)
+		// TODO(gus): implement this
+		gitRepoTag := Sprintf("v%s", rtc6.TeleportVersion)
+		// artefactExtension is the extension of the built artefact, used to conditionally copy and upload
+		//artefactExtension := ".tar.gz"
+
+		// imageTag is the tag of the container we build and output (conditionally set on FIPS status)
+		imageTag := If(
+			Contains(Strings(rtc6.FIPS), "yes"),
+			Sprintf("teleport-centos6-build-fips-%s", rtc6.TeleportVersion),
+			Sprintf("teleport-centos6-build-%s", rtc6.TeleportVersion),
+		)
+
+		// change the dockerfile path if this is a FIPS build
+		buildboxDockerfilePath := If(
+			Contains(Strings(rtc6.FIPS), "yes"),
+			"/mnt/scripts/teleport-centos6-buildbox-fips.dockerfile",
+			"/mnt/scripts/teleport-centos6-buildbox.dockerfile",
+		)
+
+		// conditionally set FIPS key
+		fipsKey := If(
+			Contains(Strings(rtc6.FIPS), "yes"),
+			"FIPS",
+			"FIPS_UNSET",
+		)
+
+		// build script is a build script to run
+		buildScript := Marshal(
+			Process(Spec{
+				Name: "kbuild",
+				Run: func(){
+					Defer(Exit())
+					// Create temporary directory for ops and remove at the end of the sequence
+					tempDir := TempDir("", "")
+					
+					// Clone repo into a temporary directory
+					//TODO(gus): implement a checkout function that can replace the arguments
+					//gitCheckoutFunction()
+					git.Clone(git.Repo{
+						URL: Unquote(gitRepoURL),
+							Into: tempDir,
+							Tag: Unquote(gitRepoTag),
+							Submodules: Strings("e"),
+					})
+										
+					// build the buildbox first
+					builder.Build(builder.Image{
+						Context: tempDir,
+						// Dockerfile is a dockerfile to build (from current dir),
+						Dockerfile: Unquote(buildboxDockerfilePath),
+						// Tag is the tag to build
+						Tag: Unquote(buildbox),
+						// Args are build arguments
+						Args: []_{
+							{Key: "UID", Val: Sprintf("%s", Unquote(uid))},
+							{Key: "GID", Val: Sprintf("%s", Unquote(gid))},
+							{Key: "RUNTIME", Val: Unquote(rtc6.Runtime)},
+						},
+					})
+
+					// push the buildbox image to repository (as the builds take a while)
+					builder.Push(builder.Image{Tag: Unquote(buildbox)})
+					
+					// then build the actual binary inside the buildbox
+					builder.Build(builder.Image{
+						// Set build context to the cloned repository
+						Context: tempDir,
+						// Dockerfile is a dockerfile to build (from current dir),
+						Dockerfile: "/mnt/scripts/teleport-release-centos6.dockerfile",
+						// Tag is the tag to build
+						Tag: Unquote(imageTag),
+						// Args are build arguments
+						Args: []_{
+							{Key: "BUILDBOX", Val: Unquote(buildbox)},
+							{Key: "UID", Val: Sprintf("%s", Unquote(uid))},
+							{Key: "GID", Val: Sprintf("%s", Unquote(gid))},
+							{Key: "OS", Val: Unquote(rtc6.OS)},
+							{Key: "ARCH", Val: Unquote(rtc6.Arch)},
+							{Key: Sprintf("%s", Unquote(fipsKey)), Val: Unquote(rtc6.FIPS)},
+							{Key: "FORCE_IMAGE_NAME", Val: Unquote(forceImage)},
+							{Key: "TELEPORT_VERSION", Val: Unquote(rtc6.TeleportVersion)},
+							{Key: "TARGET_S3_BUCKET", Val: Unquote(s3Bucket)},
+						},
+						// Secrets are build secrets exposed to docker container during the run
+						Secrets: []_{
+							{
+								ID: "aws-creds",
+								File: "/root/.aws/credentials",
+							},
+						},
+					})
+				},
+			}),
+		)
+		// call Kubernetes helper function to run job
+		RunTeleportCentos6ReleaseJob(_{
+			Script: buildScript,
+			TeleportVersion: rtc6.TeleportVersion,
+			GitRepo: rtc6.GitRepo,
+			OS: rtc6.OS,
+			Arch: rtc6.Arch,
+			FIPS: rtc6.FIPS,
 		})
 	}
 

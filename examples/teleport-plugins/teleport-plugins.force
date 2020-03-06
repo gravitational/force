@@ -1,5 +1,5 @@
 func() {
-	Include("setup-local.force")
+	Include("setup.force")
 	Include("build.force")
 	Process(Spec{
 		Name: "teleport-plugins-ci",

@@ -1,0 +1,41 @@
+export LANGUAGE=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export LC_CTYPE=en_US.UTF-8
+
+export LESSCHARSET=utf-8
+export PAGER=/usr/bin/less
+export LESS="-isM"
+
+[ -z "$PS1" ] && return
+case "$TERM" in
+    xterm-color) color_prompt=yes;;
+esac
+
+force_color_prompt=yes
+
+if [ -x /usr/bin/dircolors ]; then
+    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+    alias fgrep='fgrep --color=auto'
+    alias egrep='egrep --color=auto'
+fi
+
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+
+if [ -f /etc/bash_completion ] && ! shopt -oq posix; then
+    . /etc/bash_completion
+fi
+
+shopt -s extglob
+
+alias du='du --max-depth=1 -h'
+alias ll="ls -lh"
+alias la="ls -a"
+alias df="df -hT"
+export EDITOR=/usr/bin/vim
+
+export PS1='\[\033[32;1m\]\h\[\033[0;32m\] \w\[\033[00m\]: '

@@ -1,0 +1,24 @@
+// Watch teleport script to be updated, reload and run it
+Process(_{
+	Watch: FanIn(
+		Oneshot(),
+		github.Branches(github.Source{
+			Repo:   "gravitational/force",
+			Branch: "master",
+			Path:   "examples/teleport-plugins",
+		}),
+	),
+	Run: func() {
+		// Create temporary directory
+		tempDir := TempDir("", "")
+		// Remove it at the end of this sequence
+		Defer(RemoveAll(tempDir))
+		// Clone clones git repository into temp dir
+		git.Clone(git.Repo{
+			URL:    "git@github.com:gravitational/force.git",
+			Into:   tempDir,
+			Branch: "master",
+		})
+		Reload(Sprintf("%v/examples/teleport-plugins/teleport-plugins.force", tempDir))
+	},
+})

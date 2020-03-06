@@ -1,0 +1,36 @@
+func() {
+	Include("setup-local.force")
+	Include("build.force")
+	Process(Spec{
+		Name: "teleport-plugins-ci",
+		Watch: github.PullRequests(github.Source{
+			Repo: "gravitational/teleport-plugins",
+			BranchPattern: "^master|branch/.*$",
+		}),
+		Run: github.PostStatusOf(func(){
+			image := Sprintf("gcr.io/kubeadm-167321/teleport-plugins-tests:%v", event.Commit)
+			// BuildAndPublishImage builds and publishes image via job
+			BuildAndPublishImage(image, event.Commit)
+			Parallel(
+				RunTestJob(
+					image,
+					Sprintf("tele-plugins-slackbot-test-%v", ID()),
+					Strings(
+						"/bin/bash",
+						"-c",
+						"make -C access/slackbot test",
+					),
+				),
+				RunTestJob(
+					image,
+					Sprintf("tele-plugins-jirabot-test-%v", ID()),
+					Strings(
+						"/bin/bash",
+						"-c",
+						"make -C access/jirabot test",
+					),
+				),
+			)
+		}()),
+	})
+}()

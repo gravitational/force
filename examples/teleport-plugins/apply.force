@@ -1,0 +1,7 @@
+// This should be:
+// Watch files in this folder, update configmap
+// trigger new version of the deployment
+func(){
+	Include("build.force")
+	ApplyDeployment()
+}()

@@ -1,0 +1,260 @@
+func(){
+	containerSetupScript := Marshal(
+		// Setup configures force plugins, configurations
+		// all other force files share the configuration defined in this file
+		Setup(
+			// Logging sets up logging to stackdriver
+			// and stdout as well, with the current implementation,
+			// it should go first so other plugins can use it
+			log.Setup(log.Config{
+				Level: "info",
+				Outputs: []log.Output{
+					{
+						Type: "stdout",
+					},
+					{
+						Type: "stackdriver",
+						CredentialsFile: ExpectEnv("GOOGLE_CREDENTIALS"),
+					},
+				},
+			}),
+			// Git sets up git client for cloning repositories
+			git.Setup(git.Config{
+				PrivateKeyFile: ExpectEnv("GIT_PRIVATE_KEY_FILE"),
+				KnownHostsFile: ExpectEnv("GIT_KNOWN_HOSTS_FILE"),
+			}),
+			// Builder configures docker builder
+			builder.Setup(builder.Config{
+				// Logs into quay io server
+				Server: "gcr.io",
+				// Username is a username to login with the registry server
+				// TODO: think how to best check for defined values?
+				Username: "_json_key",
+				// SecretFile is a registry password
+				SecretFile: ExpectEnv("GOOGLE_CREDENTIALS"),
+			}),
+		),
+	)
+
+	forceImage := "gcr.io/kubeadm-167321/force:0.0.20"
+
+	RunBuildJob := func(image string, script string){
+		kube.Run(kube.Job{
+			Name: Sprintf("teleport-plugins-build-%v", ID()),
+			Spec: _{
+				Template: _{
+					Spec: _{
+						Containers: []_{
+							{
+								Name: "kbuild",
+								Image: forceImage,
+								Command: Strings("force", "-d"),
+								Resources: _{
+									Requests: _{
+										cpu: kube.ParseQuantity("1000m"),
+									},
+									Limits: _{
+										cpu: kube.ParseQuantity("2000m"),
+									},
+								},
+								Env: []_{
+									// ID is passed so the job spawned in k8s
+									// will have the same job id, having the same logs
+									{Name: "FORCE_ID",Value: ID()},
+									// Script is passed as an environment variable,
+									// thanks to Marshal the script is inline,
+									// can reference outside variables
+									{
+										Name: "FORCE_SCRIPT",
+										Value: script,
+									},
+									// Setup is passed as an environment variable
+									{
+										Name: "FORCE_SETUP",
+										Value: containerSetupScript,
+									},
+									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
+									{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
+									{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},
+								},
+								VolumeMounts: []_{
+									// tmp is for temporary directory, just in case
+									{Name: "tmp", MountPath: "/tmp"},
+									// cache is for container build cache
+									{Name: "cache", MountPath: "/root/.local"},
+									// creds is for google creds
+									{Name: "creds", MountPath: "/var/secrets/google"},
+									// scripts is a script with a dockerfile
+									{Name: "gitkey", MountPath: "/var/secrets/git"},
+									// scripts is a script with a dockerfile
+									{Name: "teleport-plugins-ci", MountPath: "/var/teleport-plugins-ci"},
+								},
+								SecurityContext: _{Privileged: true},
+							},
+						},
+						Volumes: []_{
+							{Name: "creds", Secret: _{SecretName: "creds"}},
+						    {Name: "gitkey", Secret: _{SecretName: "gitkey"}},
+							{Name: "teleport-plugins-ci", ConfigMap: _{Name: "teleport-plugins-ci"}},
+							{Name: "cache", EmptyDir: _{}},
+							{Name: "tmp", EmptyDir: _{}},
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// UID is the uid to run the jobs
+	uid := 1000
+	// GID is the gid to run the jobs
+	gid := 1000	
+
+	BuildAndPublishImage := func(image string, commit string) {
+		// buildbox is a version of the buildbox
+		buildbox := "gcr.io/kubeadm-167321/buildbox:1.13.2"
+		// build script is a build script to run
+		buildScript := Marshal(
+			Process(Spec{
+				Name: "kbuild",
+				Run: func(){
+					Defer(Exit())
+					// Create temporary directory
+					tempDir := TempDir("", "")
+					// Remove it at the end of this sequence
+					Defer(RemoveAll(tempDir))
+					// Clone clones git repository into temp dir
+					git.Clone(git.Repo{
+						URL: "git@github.com:gravitational/teleport-plugins.git",
+						Into: tempDir,
+						// Commit is a commit variable defined by pull request watch,
+						// the problem is that there is no namespacing here
+						Hash: Unquote(commit),
+					})
+					// Build builds dockerfile and tags it in the local storage
+					builder.Build(builder.Image{
+						// Set build context to the cloned repository
+						Context: tempDir,
+						// Dockerfile is a dockerfile to build (from current dir),
+						Dockerfile: "/var/teleport-plugins-ci/plugins.dockerfile",
+						// Tag is the tag to build - here, as you see, we need to reimplement
+						// Sprintf and every other method that works with our vars
+						Tag: Unquote(image),
+						// Args are build arguments
+						Args: []builder.Arg{
+							{Key: "BUILDBOX", Val: Unquote(buildbox)},
+							{Key: "UID", Val: Sprintf("%v", Unquote(uid))},
+							{Key: "GID", Val: Sprintf("%v", Unquote(gid))},
+						},
+					})
+					builder.Push(builder.Image{Tag: Unquote(image)})
+				},
+			}),
+		)
+		RunBuildJob(image, buildScript)
+	}	
+
+	// RunTestJob runs test job
+	RunTestJob := func(image string, name string, command []string) {
+		kube.Run(kube.Job{
+			Name: name,
+			Spec: _{
+				TTLSecondsAfterFinished: 120,
+				Template: _{
+					Spec: _{
+						Containers: []_{
+							{
+								Image: image,
+								Name: "teleport-test",
+								Command: command,
+								WorkingDir: "/gopath/src/github.com/gravitational/teleport-plugins/",
+								Resources: _{
+									Requests: _{
+										cpu: kube.ParseQuantity("1000m"),
+									},
+									Limits: _{
+										cpu: kube.ParseQuantity("2000m"),
+									},
+								},
+								Env: []_{{Name: "GOCACHE", Value: "/mnt/gocache"}},
+								VolumeMounts: []_{
+									{Name: "gocache", MountPath: "/mnt/gocache"},
+								},
+								TTY: true,
+								Stdin: true,
+							},
+						},
+						SecurityContext: _{RunAsUser: uid, RunAsGroup: gid},
+						Volumes: []_{
+							{Name: "gocache", EmptyDir: _{}},
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// ApplyDeployment applies kubernetes deployment that
+	// triggers teleport CI jobs
+	ApplyDeployment := func(){
+		kube.Apply(kube.Deployment{
+			Name: "teleport-plugins-ci",
+			Namespace: "default",
+			Spec: _{
+				Replicas: 1,
+				Selector: _{
+					MatchLabels: _{
+						run: "teleport-plugins-ci",
+					},
+				},
+				Template: _{
+					Labels: _{
+						run: "teleport-plugins-ci",
+					},
+					Spec: _{
+						Containers: []_{
+							{
+								Name: "teleport-plugins-ci",
+								Image: forceImage,
+								Command: Strings("force", "-d", "teleport-plugins.force"),
+								WorkingDir: "/var/teleport-plugins-ci",
+								Env: []_{
+									// ID is passed so the job spawned in k8s
+									// will have the same job id, having the same logs
+									{Name: "FORCE_ID", Value: "teleport-ci"},
+									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
+									{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
+									{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},
+									{Name: "GITHUB_ACCESS_TOKEN_FILE", Value: "/var/secrets/github/github-token"},
+								},
+								VolumeMounts: []_{
+									// tmp is for temporary directory, just in case
+									{Name: "tmp", MountPath: "/tmp"},
+									// cache is for container build cache
+									{Name: "cache", MountPath: "/root/.local"},
+									// creds is for google creds
+									{Name: "creds", MountPath: "/var/secrets/google"},
+									// gitkey contains SSH keys for cloning private repos
+									{Name: "gitkey", MountPath: "/var/secrets/git"},
+									// github mounts github token
+									{Name: "github", MountPath: "/var/secrets/github"},
+									// scripts with teleport plugins CI spec
+									{Name: "teleport-plugins-ci", MountPath: "/var/teleport-plugins-ci"},
+								},
+								SecurityContext: _{Privileged: false},
+							},
+						},
+						Volumes: []_{
+							{Name: "creds", Secret: _{SecretName: "creds"}},
+						    {Name: "gitkey", Secret: _{SecretName: "gitkey"}},
+						    {Name: "github", Secret: _{SecretName: "github"}},
+							{Name: "teleport-plugins-ci", ConfigMap: _{Name: "teleport-plugins-ci"}},
+							{Name: "cache", EmptyDir: _{}},
+							{Name: "tmp", EmptyDir: _{}},
+						},
+					},
+				},
+			},
+		})
+	}
+}()

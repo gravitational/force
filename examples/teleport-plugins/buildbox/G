@@ -1,0 +1,34 @@
+// Process defines a set of actions triggered by a channel
+// Buildbox builds a buildbox for teleport tests and builds
+Process(Spec{
+	// Name is used for reporting and debugging purposes
+	Name: "buildbox",
+	// Build on demand
+	Watch: Oneshot(),
+	// No namespaces is a problem - how to define modules?
+	// can I just do github.PostStatusOf?
+	// also, should be more strict with variables, reference of an undefined
+	// variable or shadowing of an existing one should be a problem
+	Run: Sequence(
+		// Buildbox version matches go runtime version
+		Define("version", "1.13.2"),
+		// go runtime is a go runtime to build
+		Define("go_runtime", Sprintf("go%v", Var("version"))),
+		// image is a test image to build
+		Define("image", Sprintf(`gcr.io/kubeadm-167321/buildbox:%v`, Var("version"))),
+		// Build builds dockerfile and tags it in the local storage
+		Build(Image{
+			Tag: Var("image"),
+			// Args are build arguments
+			Args: []Arg{
+				{
+					// FORCE_ID is a force run ID
+					Key: "GO_RUNTIME",
+					Val: Var("go_runtime"),
+				},
+			},
+		}),
+		Push(Image{Tag: Var("image")}),
+		Exit(),
+	),
+})

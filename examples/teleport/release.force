@@ -74,8 +74,7 @@ func(){
 					KeychainPassword: keychainPassword,
 					AppleIDUsername: appleIDUsername,
 					AppleIDPassword: appleIDPassword,
-				}),
-				
+				}),				
 			)
 			Parallel(
 				// linux amd64 oss deb 

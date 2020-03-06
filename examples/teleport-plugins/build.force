@@ -221,7 +221,7 @@ func(){
 								Env: []_{
 									// ID is passed so the job spawned in k8s
 									// will have the same job id, having the same logs
-									{Name: "FORCE_ID", Value: "teleport-ci"},
+									{Name: "FORCE_ID", Value: "teleport-plugins-ci"},
 									{Name: "GOOGLE_CREDENTIALS", Value: "/var/secrets/google/force-creds.json"},
 									{Name: "GIT_PRIVATE_KEY_FILE", Value: "/var/secrets/git/github.key"},
 									{Name: "GIT_KNOWN_HOSTS_FILE", Value: "/var/secrets/git/known_hosts"},

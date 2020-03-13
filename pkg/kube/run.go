@@ -63,7 +63,7 @@ func (r *RunAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 		return nil, trace.Wrap(err)
 	}
 	log.Infof("Created job %v in namespace %v.", spec.Name, spec.Namespace)
-	writer := force.Writer(log.AddFields(map[string]interface{}{"job": job.Name}))
+	writer := log.AddFields(map[string]interface{}{"job": job.Name}).Writer()
 	defer writer.Close()
 
 	// waitCtx will get cancelled once job is done

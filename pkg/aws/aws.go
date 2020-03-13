@@ -1,8 +1,6 @@
 package aws
 
 import (
-	"reflect"
-
 	"github.com/gravitational/force"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -11,24 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gravitational/trace"
 )
-
-// Scope returns a new scope with all the functions and structs
-// defined, this is the entrypoint into plugin as far as force is concerned
-func Scope() (force.Group, error) {
-	scope := force.WithLexicalScope(nil)
-	err := force.ImportStructsIntoAST(scope,
-		reflect.TypeOf(Config{}),
-		reflect.TypeOf(S3{}),
-		reflect.TypeOf(Local{}),
-	)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	scope.AddDefinition(force.FunctionName(Copy), &force.NopScope{Func: Copy})
-	scope.AddDefinition(force.FunctionName(RecursiveCopy), &force.NopScope{Func: RecursiveCopy})
-	scope.AddDefinition(force.StructName(reflect.TypeOf(Setup{})), &Setup{})
-	return scope, nil
-}
 
 //Namespace is a wrapper around string to namespace a variable in the context
 type Namespace string
@@ -66,56 +46,26 @@ func (cfg *Config) CheckAndSetDefaults() (*awssession.Session, error) {
 	return sess, nil
 }
 
+// Setup returns a function that sets up build plugin
+func Setup(cfg Config) force.SetupFunc {
+	return func(group force.Group) error {
+		sess, err := cfg.CheckAndSetDefaults()
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		p := &Plugin{
+			cfg:  cfg,
+			sess: sess,
+		}
+		group.SetPlugin(Key, p)
+		return nil
+	}
+}
+
 // Plugin is a new logging plugin
 type Plugin struct {
 	cfg  Config
 	sess *awssession.Session
-}
-
-// Setup creates new instances of plugins
-type Setup struct {
-	cfg interface{}
-}
-
-func (n *Setup) Type() interface{} {
-	return true
-}
-
-// NewInstance returns a new instance of a plugin bound to group
-func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg interface{}) (force.Action, error) {
-		return &Setup{
-			cfg: cfg,
-		}, nil
-	}
-}
-
-// MarshalCode marshals plugin setup to code
-func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := force.FnCall{
-		Package: string(Key),
-		FnName:  KeySetup,
-		Args:    []interface{}{n.cfg},
-	}
-	return call.MarshalCode(ctx)
-}
-
-// Eval sets up logging plugin for the instance group
-func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	var cfg Config
-	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	sess, err := cfg.CheckAndSetDefaults()
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	p := &Plugin{
-		cfg:  cfg,
-		sess: sess,
-	}
-	ctx.Process().Group().SetPlugin(Key, p)
-	return true, nil
 }
 
 // ConvertS3Error wraps S3 error and returns trace equivalent

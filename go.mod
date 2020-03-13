@@ -39,6 +39,7 @@ require (
 	github.com/shurcooL/githubv4 v0.0.0-20190625031733-ee671ab25ff0
 	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
 	github.com/sirupsen/logrus v1.4.2
+	github.com/wasmerio/go-ext-wasm v0.3.1
 	go.etcd.io/bbolt v1.3.2
 	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d
 	golang.org/x/net v0.0.0-20200222125558-5a598a2470a0

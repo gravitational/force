@@ -102,18 +102,6 @@ func (d *FanInChannel) Events() <-chan Event {
 	return d.eventsC
 }
 
-// MarshalCode marshals channel to code
-func (d *FanInChannel) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	call := &FnCall{
-		Fn:   FanIn,
-		Args: make([]interface{}, len(d.in)),
-	}
-	for i := range d.in {
-		call.Args[i] = d.in[i]
-	}
-	return call.MarshalCode(ctx)
-}
-
 // Duplicate creates a channel that sends the same event
 // count times, used for testing purposes
 func Duplicate(c Channel, count int) Channel {
@@ -168,11 +156,6 @@ func (d *DuplicateChannel) Events() <-chan Event {
 	return d.eventsC
 }
 
-// MarshalCode marshals channel to code
-func (d *DuplicateChannel) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(Duplicate, d.count).MarshalCode(ctx)
-}
-
 // Oneshot returns a channel that fires once
 func Oneshot() (Channel, error) {
 	return &OneshotChannel{
@@ -187,11 +170,6 @@ type OneshotChannel struct {
 
 func (o *OneshotChannel) String() string {
 	return fmt.Sprintf("Oneshot()")
-}
-
-// MarshalCode marshals channel to code
-func (o *OneshotChannel) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(Oneshot).MarshalCode(ctx)
 }
 
 func (o *OneshotChannel) Start(pctx context.Context) error {
@@ -230,7 +208,7 @@ func (e OneshotEvent) AddMetadata(ctx ExecutionContext) {
 }
 
 // Ticker returns a channel that fires with period
-func Ticker(period String) (Channel, error) {
+func Ticker(period string) (Channel, error) {
 	if period == "" {
 		return nil, trace.BadParameter(
 			`set duration parameter, for example Ticker("100s"), supported abbreviations: s (seconds), m (minutes), h (hours), d (days), for example "100m" is tick every 100 minutes`)
@@ -253,11 +231,6 @@ type TickerChannel struct {
 
 func (o *TickerChannel) String() string {
 	return fmt.Sprintf("Ticker()")
-}
-
-// MarshalCode marshals channel to code
-func (o *TickerChannel) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(Ticker, o.period).MarshalCode(ctx)
 }
 
 func (o *TickerChannel) Start(pctx context.Context) error {

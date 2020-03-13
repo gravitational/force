@@ -4,40 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"sync/atomic"
 	"time"
 
 	"github.com/gravitational/trace"
 )
 
-// LexicalScope is a lexical scope with variables
-type LexicalScope interface {
-	// AddDefinition adds variable definition in the current lexical scop
-	AddDefinition(name string, v interface{}) error
+// SetupFunc is a plugin setup function
+type SetupFunc func(ctx Group) error
 
-	// GetDefinition gets a variable defined with DefineVarType
-	// not the actual variable value is returned, but a prototype
-	// value specifying the type
-	GetDefinition(name string) (interface{}, error)
-
-	// Variables returns a list of variable names
-	// defined in this scope (and the parent scopes)
-	Variables() []string
-
-	// GetParent returns a parent scope definition,
-	// NotFound error is returned if scope has no parent
-	GetParent() (interface{}, error)
-
-	// SetParent sets parent type of the scope
-	SetParent(p interface{})
-}
+// NewChannelFunc is a function that returns a new channel
+type NewChannelFunc func(ctx Group) (Channel, error)
 
 // Group represents a group of processes
 type Group interface {
-	// LexicalScope is a lexical scope
-	// represented by this group
-	LexicalScope
 	// BroadcastEvents will broadcast events
 	// to every process in a process group
 	BroadcastEvents() chan<- Event
@@ -66,12 +46,12 @@ type Group interface {
 
 // Process is a process that is triggered by the event
 type Process interface {
-	Expression
+	Action
 	// Name returns a process name
 	Name() string
 	// Channel returns a process channel
 	Channel() Channel
-	// Action returns actions assigned to the process
+	// Action returns a process action
 	Action() Action
 	// Events returns a channel that receives events
 	Events() chan<- Event
@@ -89,26 +69,24 @@ type Process interface {
 
 // Channel produces events
 type Channel interface {
-	// CodeMarshaler allows to marshal action into code
-	CodeMarshaler
 	// Start starts the process
 	Start(ctx context.Context) error
 	Events() <-chan Event
 	Done() <-chan struct{}
 }
 
-// Expression is any expression or variable
-// that can be evaluated to contrete type
-type Expression interface {
-	// CodeMarshaler allows to marshal action into code
-	CodeMarshaler
-	// Eval evaluates variable and returns result of the expression
-	Eval(ctx ExecutionContext) (interface{}, error)
-	// Type returns the type of the expression,
-	// for concrete types it is a zero instance -
-	// empty string or function, for higher level types
-	// like lambda function, returns the value
-	Type() interface{}
+// Action runs and returns a result
+type Action interface {
+	// Run returns result of the expression
+	Run(ctx ExecutionContext) error
+}
+
+// ActionFunc is a wrapper around function
+type ActionFunc func(ctx ExecutionContext) error
+
+// Run returns a result after running
+func (r ActionFunc) Run(ctx ExecutionContext) error {
+	return r(ctx)
 }
 
 // Converter converts one value into another or returns error
@@ -116,22 +94,9 @@ type Converter interface {
 	Convert(i interface{}) (interface{}, error)
 }
 
-// Action is an expression with or without side effects
-type Action interface {
-	Expression
-}
-
-// ScopeAction can run in the context of the scope instead of creating
-// a new one
-type ScopeAction interface {
-	Action
-	// EvalWithScope evaluates action in sequence using the passed scope
-	EvalWithScope(scope ExecutionContext) (interface{}, error)
-}
-
 // Spec is a process specification
 type Spec struct {
-	Name    String
+	Name    string
 	Watch   Channel
 	Run     Action
 	EventsC chan Event `code:"-"`
@@ -148,7 +113,7 @@ func (s *Spec) CheckAndSetDefaults() error {
 	if s.Name == "" {
 		num := atomic.AddInt64(&processNumber, 1)
 		host, _ := os.Hostname()
-		s.Name = String(fmt.Sprintf("%v-%v", host, num))
+		s.Name = fmt.Sprintf("%v-%v", host, num)
 	}
 	if s.Watch == nil {
 		oneshot, err := Oneshot()
@@ -192,303 +157,6 @@ func Error(ctx ExecutionContext) error {
 		return nil
 	}
 	return err
-}
-
-type StringsVar struct {
-	Expression
-}
-
-func (b StringsVar) Eval(ctx ExecutionContext) (interface{}, error) {
-	if b.Expression != nil {
-		return b.Expression.Eval(ctx)
-	}
-	var s []string
-	return s, nil
-}
-
-func (b StringsVar) Type() interface{} {
-	return []string{}
-}
-
-func (b StringsVar) Convert(i interface{}) (interface{}, error) {
-	switch v := i.(type) {
-	case []string:
-		slice := make(StringSlice, len(v))
-		for i := 0; i < len(v); i++ {
-			slice[i] = String(v[i])
-		}
-		return StringsVar{Expression: slice}, nil
-	case StringsVar:
-		return v, nil
-	case Expression:
-		if reflect.TypeOf(v.Type()).AssignableTo(reflect.TypeOf([]string{})) {
-			return StringsVar{Expression: v}, nil
-		}
-		return nil, trace.BadParameter("can not assign type %T to list of strings variable", v.Type())
-	default:
-		return nil, trace.BadParameter("can not assign type %T to list of strings variable", i)
-	}
-}
-
-type BoolVar struct {
-	Expression
-}
-
-func (b BoolVar) Type() interface{} {
-	return false
-}
-
-func (b BoolVar) Eval(ctx ExecutionContext) (interface{}, error) {
-	if b.Expression != nil {
-		return b.Expression.Eval(ctx)
-	}
-	return false, nil
-}
-
-func (b BoolVar) Convert(i interface{}) (interface{}, error) {
-	switch v := i.(type) {
-	case bool:
-		return BoolVar{Expression: Bool(v)}, nil
-	case Bool:
-		return BoolVar{Expression: v}, nil
-	case BoolVar:
-		return v, nil
-	case Expression:
-		if reflect.TypeOf(v.Type()).AssignableTo(reflect.TypeOf(false)) {
-			return BoolVar{Expression: v}, nil
-		}
-		if reflect.TypeOf(v.Type()) == reflect.TypeOf(b) {
-			return BoolVar{Expression: v}, nil
-		}
-		return nil, trace.BadParameter("can not assign type %v to bool variable", v.Type())
-	default:
-		return nil, trace.BadParameter("can not assign type %T to bool variable", i)
-	}
-}
-
-type IntVar struct {
-	Expression
-}
-
-func (i IntVar) Type() interface{} {
-	return 0
-}
-
-func (i IntVar) Eval(ctx ExecutionContext) (interface{}, error) {
-	if i.Expression != nil {
-		return i.Expression.Eval(ctx)
-	}
-	return 0, nil
-}
-
-func (i IntVar) Convert(in interface{}) (interface{}, error) {
-	switch v := in.(type) {
-	case int:
-		return IntVar{Expression: Int(v)}, nil
-	case Int:
-		return IntVar{Expression: v}, nil
-	case IntVar:
-		return v, nil
-	case Expression:
-		if reflect.TypeOf(v.Type()).AssignableTo(reflect.TypeOf(0)) {
-			return IntVar{Expression: v}, nil
-		}
-		if reflect.TypeOf(v.Type()) == reflect.TypeOf(i) {
-			return IntVar{Expression: v}, nil
-		}
-		return nil, trace.BadParameter("can not assign type %v to int variable", v.Type())
-	default:
-		return nil, trace.BadParameter("can not assign type %T to int variable", i)
-	}
-}
-
-type StringVar struct {
-	Expression
-}
-
-func (s StringVar) Type() interface{} {
-	return ""
-}
-
-func (s StringVar) Eval(ctx ExecutionContext) (interface{}, error) {
-	if s.Expression != nil {
-		return s.Expression.Eval(ctx)
-	}
-	return "", nil
-}
-
-func (s StringVar) Convert(i interface{}) (interface{}, error) {
-	switch v := i.(type) {
-	case string:
-		return StringVar{Expression: String(v)}, nil
-	case StringVar:
-		return v, nil
-	case String:
-		return StringVar{Expression: v}, nil
-	case Expression:
-		if reflect.TypeOf(v.Type()).AssignableTo(reflect.TypeOf("")) {
-			return StringVar{Expression: v}, nil
-		}
-		if reflect.TypeOf(v.Type()) == reflect.TypeOf(s) {
-			return StringVar{Expression: v}, nil
-		}
-		return nil, trace.BadParameter("can not assign type %v to string variable", v.Type())
-	default:
-		return nil, trace.BadParameter("can not assign type %T to string variable", i)
-	}
-}
-
-// Bool is a constant bool var
-type Bool bool
-
-// Eval evaluates variable and returns bool
-func (b Bool) Eval(ctx ExecutionContext) (interface{}, error) {
-	return bool(b), nil
-}
-
-func (b Bool) Type() interface{} {
-	return false
-}
-
-func (b Bool) Convert(i interface{}) (interface{}, error) {
-	switch v := i.(type) {
-	case bool:
-		return Bool(v), nil
-	case Bool:
-		return v, nil
-	default:
-		return nil, trace.BadParameter("can not assign type %T to bool variable", i)
-	}
-}
-
-// MarshalCode marshals the variable to code representation
-func (b Bool) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return MarshalCode(ctx, bool(b))
-}
-
-// BoolVarFunc wraps function and returns an interface BoolVar
-type BoolVarFunc func(ctx ExecutionContext) (interface{}, error)
-
-// Eval evaluates variable and returns bool
-func (f BoolVarFunc) Eval(ctx ExecutionContext) (interface{}, error) {
-	return f(ctx)
-}
-
-func (f BoolVarFunc) Type() interface{} {
-	return false
-}
-
-// Int is a constant int var
-type Int int
-
-// MarshalCode marshals the variable to code representation
-func (i Int) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return MarshalCode(ctx, int(i))
-}
-
-func (i Int) Convert(in interface{}) (interface{}, error) {
-	switch v := in.(type) {
-	case int:
-		return Int(v), nil
-	case int32:
-		return Int(v), nil
-	case int64:
-		return Int(v), nil
-	case Int:
-		return v, nil
-	default:
-		return nil, trace.BadParameter("can not assign type %T to int variable", i)
-	}
-}
-
-// Value returns int value
-func (i Int) Eval(ctx ExecutionContext) (interface{}, error) {
-	return int(i), nil
-}
-
-func (i Int) Type() interface{} {
-	return 0
-}
-
-func (i *Int) String() string {
-	return fmt.Sprintf("%v", int(*i))
-}
-
-// IntVarFunc wraps function and returns an interface Var
-type IntVarFunc func(ctx ExecutionContext) (interface{}, error)
-
-// Eval evaluates value and returns error
-func (f IntVarFunc) Eval(ctx ExecutionContext) (interface{}, error) {
-	return f(ctx)
-}
-
-func (f IntVarFunc) Type() interface{} {
-	return 0
-}
-
-// String is a constant string variable
-type String string
-
-// Value evaluates function and returns string
-func (s String) Eval(ctx ExecutionContext) (interface{}, error) {
-	return string(s), nil
-}
-
-// MarshalCode marshals ID action to code
-func (s String) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return MarshalCode(ctx, string(s))
-}
-
-func (s String) Convert(i interface{}) (interface{}, error) {
-	switch v := i.(type) {
-	case string:
-		return String(v), nil
-	case String:
-		return v, nil
-	default:
-		return nil, trace.BadParameter("can not assign type %T to string variable", i)
-	}
-}
-
-// Type returns the type of the variable
-func (s String) Type() interface{} {
-	return ""
-}
-
-// StringVarFunc wraps function and returns an interface StringVar
-type StringVarFunc func(ctx ExecutionContext) (string, error)
-
-// Value returns a string value
-func (f StringVarFunc) Eval(ctx ExecutionContext) (string, error) {
-	return f(ctx)
-}
-
-// Type returns the type of the variable
-func (f StringVarFunc) Type() interface{} {
-	return ""
-}
-
-// ID returns a current Force execution ID
-func ID() Expression {
-	return &IDAction{}
-}
-
-// IDAction returns force ID
-type IDAction struct {
-}
-
-// Eval evaluates id of the current execution context
-func (i *IDAction) Eval(ctx ExecutionContext) (interface{}, error) {
-	return ctx.ID(), nil
-}
-
-func (i *IDAction) Type() interface{} {
-	return ""
-}
-
-// MarshalCode marshals ID action to code
-func (i *IDAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	return NewFnCall(ID).MarshalCode(ctx)
 }
 
 // CloserFunc wraps function

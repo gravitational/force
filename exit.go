@@ -44,7 +44,7 @@ func (e *SendAction) Type() interface{} {
 	return 0
 }
 
-func (e *SendAction) Eval(ctx ExecutionContext) (interface{}, error) {
+func (e *SendAction) Run(ctx ExecutionContext) error {
 	proc := e.Process
 	// no process specified? assume broadcast to the process group
 	if proc == nil {
@@ -52,16 +52,10 @@ func (e *SendAction) Eval(ctx ExecutionContext) (interface{}, error) {
 	}
 	select {
 	case proc.Group().BroadcastEvents() <- e.GetEvent(ctx):
-		return 0, nil
+		return nil
 	case <-ctx.Done():
-		return -1, ctx.Err()
+		return ctx.Err()
 	}
-}
-
-// MarshalCode marshals action to code representation
-func (e *SendAction) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	call := &FnCall{Fn: Exit}
-	return call.MarshalCode(ctx)
 }
 
 // ExitEvent is a special event

@@ -24,14 +24,14 @@ func NewLocalProcess(ctx context.Context, logger force.Logger, spec force.Spec) 
 		logger:  logger,
 		ctx:     cancelCtx,
 		cancel:  cancel,
-		Spec:    spec,
+		spec:    spec,
 		eventsC: make(chan force.Event, 32),
 	}, nil
 }
 
 // LocalProcess implements a process interface
 type LocalProcess struct {
-	force.Spec
+	spec    force.Spec
 	eventsC chan force.Event
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -40,11 +40,11 @@ type LocalProcess struct {
 
 // EventSource returns channel
 func (l *LocalProcess) Channel() force.Channel {
-	return l.Watch
+	return l.spec.Watch
 }
 
 func (l *LocalProcess) Action() force.Action {
-	return l.Run
+	return l.spec.Run
 }
 
 func (l *LocalProcess) Type() interface{} {
@@ -76,18 +76,13 @@ func (l *LocalProcess) fanInEvents(ctx force.ExecutionContext) {
 	}
 }
 
-func (l *LocalProcess) Eval(ctx force.ExecutionContext) (interface{}, error) {
+func (l *LocalProcess) Run(ctx force.ExecutionContext) error {
 	if err := l.Channel().Start(ctx); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 	go l.fanInEvents(ctx)
 	l.triggerActions(ctx)
-	return 0, nil
-}
-
-func (l *LocalProcess) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{FnName: "Process", Args: []interface{}{l.Spec}}
-	return call.MarshalCode(ctx)
+	return nil
 }
 
 // Done returns a channel that signals that process has completed
@@ -108,17 +103,17 @@ func (l *LocalProcess) Start(ctx force.ExecutionContext) error {
 // Runner returns a process group
 // this process belongs to
 func (l *LocalProcess) Group() force.Group {
-	return l.Spec.Group
+	return l.spec.Group
 }
 
 // Name returns a process name
 func (l *LocalProcess) Name() string {
-	return string(l.Spec.Name)
+	return string(l.spec.Name)
 }
 
 // String returns process user friendly string
 func (l *LocalProcess) String() string {
-	return fmt.Sprintf("Process %v", l.Spec.Name)
+	return fmt.Sprintf("Process %v", l.spec.Name)
 }
 
 // ShortID generates short random ids
@@ -160,16 +155,7 @@ func (l *LocalProcess) triggerActions(ctx force.ExecutionContext) {
 				// add optional data from the event
 				event.AddMetadata(execContext)
 				start := time.Now()
-				lambda, ok := l.Run.(*force.LambdaFunction)
-				var err error
-				if ok {
-					// normally, lambda function evaluates to itself,
-					// in Process{Run: func(){}) has to be explicitly callled,
-					//
-					_, err = lambda.Call(execContext)
-				} else {
-					_, err = l.Run.Eval(execContext)
-				}
+				err := l.spec.Run.Run(execContext)
 				if err != nil {
 					logger.WithError(err).Errorf("%v failed after running for %v.", l, time.Now().Sub(start))
 				} else {

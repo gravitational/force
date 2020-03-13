@@ -10,21 +10,17 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// NewPullRequestWatch finds the initialized github plugin and returns a new watch
-type NewPullRequestWatch struct {
-}
-
-// NewInstance returns a function creating new watchers
-func (n *NewPullRequestWatch) NewInstance(group force.Group) (force.Group, interface{}) {
-	group.AddDefinition(force.KeyEvent, PullRequestEvent{})
-	return group, func(srci interface{}) (force.Channel, error) {
+// PullRequests creates an event channel that produces
+// events on every pull request matching the pattern
+func PullRequests(src Source) force.NewChannelFunc {
+	return func(group force.Group) (force.Channel, error) {
 		pluginI, ok := group.GetPlugin(Key)
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
 		}
-		var src Source
-		if err := force.EvalInto(force.EmptyContext(), srci, &src); err != nil {
-			return nil, trace.Wrap(err)
+		plugin, ok := pluginI.(*Plugin)
+		if !ok {
+			return nil, trace.NotFound("github plugin is not properly initialized, use github.Setup to initialize it")
 		}
 		if err := src.CheckAndSetDefaults(); err != nil {
 			return nil, trace.Wrap(err)
@@ -34,7 +30,7 @@ func (n *NewPullRequestWatch) NewInstance(group force.Group) (force.Group, inter
 			return nil, trace.Wrap(err)
 		}
 		return &PullRequestWatcher{
-			plugin: pluginI.(*Plugin),
+			plugin: plugin,
 			source: src,
 			// TODO(klizhentas): queues have to be configurable
 			eventsC: make(chan force.Event, 1024),
@@ -52,16 +48,6 @@ type PullRequestWatcher struct {
 // String returns user friendly representation of the watcher
 func (r *PullRequestWatcher) String() string {
 	return fmt.Sprintf("PullRequestWatcher(%v)", r.source.Repo)
-}
-
-// MarshalCode marshals things to code
-func (r *PullRequestWatcher) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeyWatchPullRequests,
-		Args:    []interface{}{r.source},
-	}
-	return call.MarshalCode(ctx)
 }
 
 // Start starts watch on a repo
@@ -204,8 +190,8 @@ func (r *PullRequestWatcher) processPR(ctx context.Context, approvers map[string
 		}
 	}
 	event := &PullRequestEvent{
-		Commit:      force.String(pr.LastCommit.OID),
-		PR:          force.Int(pr.Number),
+		Commit:      pr.LastCommit.OID,
+		PR:          pr.Number,
 		PullRequest: pr.PullRequest,
 		created:     time.Now().UTC(),
 		Source:      r.source,
@@ -332,6 +318,7 @@ func (r *PullRequestWatcher) Done() <-chan struct{} {
 	return nil
 }
 
+// CommitGetter gets information about commit
 type CommitGetter interface {
 	// GetCommit returns commit associated with the event
 	GetCommit() string
@@ -341,8 +328,8 @@ type CommitGetter interface {
 
 // PullRequestEvent is a pull request event
 type PullRequestEvent struct {
-	PR          force.Int
-	Commit      force.String
+	PR          int
+	Commit      string
 	Source      Source
 	PullRequest PullRequest
 	created     time.Time

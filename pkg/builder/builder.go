@@ -59,8 +59,6 @@ const (
 
 // Config specifies builder config
 type Config struct {
-	// Context is an execution context for the plugin setup
-	Context force.ExecutionContext `code:"-"`
 	// Group is a process group that this plugin sets up for
 	Group force.Group `code:"-"`
 	// GlobalContext is a base directory path for overlayfs other types
@@ -84,9 +82,6 @@ type Config struct {
 
 // CheckAndSetDefaults checks and sets default values
 func (cfg *Config) CheckAndSetDefaults() error {
-	if cfg.Context == nil {
-		return trace.BadParameter("missing parameter Context")
-	}
 	if cfg.Group == nil {
 		return trace.BadParameter("missing parameter Group")
 	}
@@ -227,7 +222,7 @@ func New(cfg Config) (*Builder, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	if err := utils.RuncBinaryExists(cfg.Context); err != nil {
+	if err := utils.RuncBinaryExists(cfg.Group.Context()); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
@@ -248,7 +243,7 @@ func New(cfg Config) (*Builder, error) {
 		root:        root,
 	}
 	// Create the worker opts.
-	opt, err := b.createWorkerOpt(b.cfg.Context, true)
+	opt, err := b.createWorkerOpt(b.cfg.Group.Context(), true)
 	if err != nil {
 		return nil, trace.Wrap(err, "creating worker opt failed")
 	}

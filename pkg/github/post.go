@@ -10,77 +10,32 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// NewPostStatusOf returns a function that wraps underlying action
-// and tracks the result, posting the result back
-type NewPostStatusOf struct {
-}
-
-// NewInstance returns a function creating new post status actions
-func (n *NewPostStatusOf) NewInstance(group force.Group) (force.Group, interface{}) {
-	// PostStatusOf creates a sequence, that's why it has to create a new lexical
-	// scope (as sequence expects one to be created)
-	scope := force.WithLexicalScope(group)
-	return scope, func(inner ...force.Action) (force.Action, error) {
-		pluginI, ok := group.GetPlugin(Key)
-		if !ok {
-			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
-		}
-		seq, err := force.Sequence(inner...)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return &PostStatusOfAction{
-			seq:     seq,
-			actions: inner,
-			plugin:  pluginI.(*Plugin),
-		}, nil
-	}
-}
-
-// NewPostStatus creates actions that posts new status
-type NewPostStatus struct {
-}
-
-// NewInstance returns a function that creates new post status actions
-func (n *NewPostStatus) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(status Status) (force.Action, error) {
-		pluginI, ok := group.GetPlugin(Key)
-		if !ok {
-			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
-		}
-		if err := status.CheckAndSetDefaults(); err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return &PostStatusAction{
-			status: status,
-			plugin: pluginI.(*Plugin),
-		}, nil
+// PostStatusOf returns action that posts status of another action
+func PostStatusOf(action force.ActionFunc) force.Action {
+	return &PostStatusOfAction{
+		action: action,
 	}
 }
 
 // PostStatusAction posts github status
 type PostStatusAction struct {
 	status Status
-	plugin *Plugin
 	repo   Repository
-}
-
-func (p *PostStatusAction) Type() interface{} {
-	return p.status
+	plugin *Plugin
 }
 
 // Run posts github status
-func (p *PostStatusAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+func (p *PostStatusAction) Run(ctx force.ExecutionContext) error {
 	event, ok := ctx.Event().(CommitGetter)
 	if !ok {
 		// it should be possible to execute post status
 		// in the standalone mode given all the parameters
-		return nil, trace.BadParameter(
+		return trace.BadParameter(
 			"PostStatus can only be executed with github watch setup either with github.PullRequests or github.Commits")
 	}
 	repo, err := event.GetSource().Repository()
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	log := force.Log(ctx)
@@ -105,77 +60,60 @@ func (p *PostStatusAction) Eval(ctx force.ExecutionContext) (interface{}, error)
 
 	log.Debugf("Posted %v -> %v.", p.status, err)
 
-	return p.status, trace.Wrap(err)
-}
-
-// MarshalCode marshals the action into code representation
-func (p *PostStatusAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := force.FnCall{
-		Package: string(Key),
-		FnName:  KeyPostStatus,
-		Args:    []interface{}{p.status},
-	}
-	return call.MarshalCode(ctx)
+	return trace.Wrap(err)
 }
 
 // PostStatusOfAction executes an action and posts its status
 // to the github
 type PostStatusOfAction struct {
-	plugin  *Plugin
-	seq     force.ScopeAction
-	actions []force.Action
+	action force.Action
 }
 
-func (p *PostStatusOfAction) Type() interface{} {
-	return p.seq.Type()
-}
+func (p *PostStatusOfAction) Run(ctx force.ExecutionContext) error {
+	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
+	if !ok {
+		return trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
+	}
+	plugin, ok := pluginI.(*Plugin)
+	if !ok {
+		return trace.NotFound("github plugin is not properly initialized, use github.Setup to initialize it")
+	}
 
-func (p *PostStatusOfAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	// First, post pending status
 	pending := Status{State: StatePending}
 	if err := pending.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 	postPending := &PostStatusAction{
 		status: pending,
-		plugin: p.plugin,
+		plugin: plugin,
 	}
 
 	// run the inner action
-	_, err := postPending.Eval(ctx)
+	err := postPending.Run(ctx)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	// Post result of the execution of all actions in a sequence
 	result := Status{State: StateSuccess, Description: "CI executed successfully"}
 	if err := result.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
-	out, err := p.seq.Eval(ctx)
+	err = p.action.Run(ctx)
 	if err != nil {
 		result.State = StateFailure
 		result.Description = err.Error()
 	}
 	postResult := &PostStatusAction{
 		status: result,
-		plugin: p.plugin,
+		plugin: plugin,
 	}
-	_, resultErr := postResult.Eval(ctx)
-	return out, trace.NewAggregate(err, resultErr)
+	resultErr := postResult.Run(ctx)
+	return trace.NewAggregate(err, resultErr)
 }
 
-// MarshalCode marshals the action into code representation
-func (p *PostStatusOfAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		FnName: KeyPostStatusOf,
-	}
-	for i := range p.actions {
-		call.Args = append(call.Args, p.actions[i])
-	}
-	return call.MarshalCode(ctx)
-}
-
+// Status is a github status
 type Status struct {
 	// State is a PR state
 	State string

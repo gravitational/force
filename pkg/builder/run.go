@@ -24,12 +24,7 @@ import (
 )
 
 // Eval runs build
-func (b *Builder) Eval(ectx force.ExecutionContext, iface interface{}) (interface{}, error) {
-	var img Image
-	if err := force.EvalInto(ectx, iface, &img); err != nil {
-		return nil, trace.Wrap(err)
-	}
-
+func (b *Builder) Eval(ectx force.ExecutionContext, img Image) (interface{}, error) {
 	if err := img.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -83,7 +78,7 @@ func (b *Builder) Eval(ectx force.ExecutionContext, iface interface{}) (interfac
 			FrontendAttrs: frontendAttrs,
 		}, statusC)
 	})
-	writer := force.Writer(log)
+	writer := log.Writer()
 	defer writer.Close()
 	eg.Go(func() error {
 		return showProgress(ctx, statusC, writer)

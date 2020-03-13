@@ -11,7 +11,7 @@ import (
 	"github.com/gravitational/trace"
 )
 
-func Files(files ...String) (Channel, error) {
+func Files(files ...string) (Channel, error) {
 	if len(files) == 0 {
 		return nil, trace.BadParameter("Files() needs at least one file")
 	}
@@ -33,18 +33,6 @@ func Files(files ...String) (Channel, error) {
 type FSNotify struct {
 	Files   []string
 	eventsC chan Event
-}
-
-// MarshalCode marshals channel to code
-func (f *FSNotify) MarshalCode(ctx ExecutionContext) ([]byte, error) {
-	call := &FnCall{
-		Fn:   Files,
-		Args: make([]interface{}, len(f.Files)),
-	}
-	for i := range f.Files {
-		call.Args[i] = f.Files[i]
-	}
-	return call.MarshalCode(ctx)
 }
 
 func (f *FSNotify) String() string {

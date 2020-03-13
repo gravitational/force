@@ -1,0 +1,4 @@
+[submodule "webapps"]
+	path = webapps
+	url = git@github.com:gravitational/webapps.git
+	branch = alexey/forceproto

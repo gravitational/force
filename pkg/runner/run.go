@@ -14,10 +14,28 @@ import (
 	"github.com/gravitational/trace"
 )
 
+// New returns a new instance of the runner
+func New(parentCtx context.Context) *Runner {
+	ctx, cancel := context.WithCancel(parentCtx)
+	globalContext := force.NewContext(force.ContextConfig{
+		Parent:  &force.WrapContext{Context: ctx},
+		Process: nil,
+		ID:      ShortID(),
+		Event:   &force.OneshotEvent{Time: time.Now().UTC()},
+	})
+	return &Runner{
+		runners: make(map[string]*Runner),
+		cancel:  cancel,
+		ctx:     ctx,
+		eventsC: make(chan force.Event, 1024),
+		plugins: make(map[interface{}]interface{}),
+		scope:   force.WithRuntimeScope(globalContext),
+	}
+}
+
 // Runner listens for events and launches processes
 type Runner struct {
 	sync.RWMutex
-	*force.LexScope
 	debugOverride bool
 	processes     []force.Process
 	channels      []force.Channel
@@ -28,8 +46,8 @@ type Runner struct {
 	exitEvent     force.ExitEvent
 	plugins       map[interface{}]interface{}
 	logger        force.Logger
-	parser        *gParser
 	runners       map[string]*Runner
+	scope         *force.RuntimeScope
 }
 
 // RemoveRunner removes the runner if it matches
@@ -129,7 +147,7 @@ func (r *Runner) AddProcess(p force.Process) {
 	defer r.Unlock()
 	r.processes = append(r.processes, p)
 	if r.isRunning() {
-		p.Start(r.parser.scope)
+		p.Start(r.scope)
 		go r.wait(p)
 	}
 }
@@ -298,7 +316,7 @@ func (r *Runner) Start() {
 	}
 	go r.fanOutEvents()
 	for _, p := range r.processes {
-		if err := p.Start(r.parser.scope); err != nil {
+		if err := p.Start(r.scope); err != nil {
 			log.Errorf("%v has failed to start: %v.", p, err)
 		}
 		log.Debugf("Started process %v.", p)
@@ -314,22 +332,8 @@ func (r *Runner) Close() error {
 
 // OneshotWithExit creates a oneshot process that wraps actions and exits
 func (r *Runner) OneshotWithExit(actions ...force.Action) (force.Process, error) {
-	// convert lambda with no arguments to their calls,
-	// this allows for syntax sugar when G file is just a lambda
-	out := make([]force.Action, 0, len(actions)+1)
-	for i := range actions {
-		if lambda, ok := actions[i].(*force.LambdaFunction); ok {
-			call, err := lambda.NewCall()
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			out = append(out, call)
-		} else {
-			out = append(out, actions[i])
-		}
-	}
-	out = append(out, force.Defer(force.Exit()))
-	return r.Oneshot("", out...)
+	actions = append(actions, force.Defer(force.Exit()))
+	return r.Oneshot("", actions...)
 }
 
 // Oneshot creates a new oneshot process
@@ -339,7 +343,7 @@ func (r *Runner) Oneshot(name string, actions ...force.Action) (force.Process, e
 		return nil, trace.Wrap(err)
 	}
 	spec := force.Spec{
-		Name:  force.String(name),
+		Name:  name,
 		Run:   seq,
 		Group: r,
 	}

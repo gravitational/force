@@ -1,0 +1,7 @@
+Process(_{
+	Name: "multiline",
+	Run:  func(){
+		Defer(Exit())
+		Command(`go test -v .`)
+	},
+})

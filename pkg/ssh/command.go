@@ -55,7 +55,7 @@ func (s *CommandAction) Type() interface{} {
 
 // Eval evaluates variable and returns string
 func (s *CommandAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	w := force.Writer(force.Log(ctx))
+	w := force.Log(ctx).Writer()
 	defer w.Close()
 	buf := force.NewSyncBuffer()
 	err := s.run(ctx, io.MultiWriter(w, buf))

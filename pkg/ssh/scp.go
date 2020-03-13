@@ -131,7 +131,7 @@ func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 		return nil, trace.BadParameter("source and destination can't be both local")
 	}
 
-	w := force.Writer(log)
+	w := log.Writer()
 	defer w.Close()
 
 	// upload

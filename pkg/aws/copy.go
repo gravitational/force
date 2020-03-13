@@ -61,61 +61,51 @@ func (s S3) String() string {
 
 // RecursiveCopy copies files between buckets from source to destination
 // using directory as a source or destination
-func RecursiveCopy(src interface{}, dest interface{}) (force.Action, error) {
-	return makeCopy(src, dest, true)
+func RecursiveCopy(ctx force.ExecutionContext, src interface{}, dest interface{}) error {
+	return runCopy(ctx, src, dest, true)
 }
 
 // Copy copies files between buckets from source to destination
-func Copy(src interface{}, dest interface{}) (force.Action, error) {
-	return makeCopy(src, dest, false)
+func Copy(ctx force.ExecutionContext, src interface{}, dest interface{}) error {
+	return runCopy(ctx, src, dest, false)
 }
 
-// makeCopy copies files between buckets from source to destination
-func makeCopy(src interface{}, dest interface{}, recursive bool) (force.Action, error) {
-	zeroSrc, err := force.ZeroFromAST(src)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	zeroDest, err := force.ZeroFromAST(dest)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
+// runCopy copies files between buckets from source to destination
+func runCopy(ctx force.ExecutionContext, src interface{}, dest interface{}, recursive bool) error {
 	var sourceIsLocal bool
 	var destIsLocal bool
 	var sourceIsRemote bool
 	var destIsRemote bool
-	switch zeroSrc.(type) {
+	switch src.(type) {
 	case Local:
 		sourceIsLocal = true
 	case S3:
 		sourceIsRemote = true
 	default:
-		return nil, trace.BadParameter("either S3 or Local are supported for source")
+		return trace.BadParameter("either S3 or Local are supported for source")
 	}
-	switch zeroDest.(type) {
+	switch dest.(type) {
 	case Local:
 		destIsLocal = true
 	case S3:
 		destIsRemote = true
 	default:
-		return nil, trace.BadParameter("either S3 or Local are supported for destination")
+		return trace.BadParameter("either S3 or Local are supported for destination")
 	}
 
 	if sourceIsLocal && destIsLocal {
-		return nil, trace.BadParameter("both source and destination can't be local")
+		return trace.BadParameter("both source and destination can't be local")
 	}
 
 	if sourceIsRemote && destIsRemote {
-		return nil, trace.BadParameter("both source and destination can't be local")
+		return trace.BadParameter("both source and destination can't be local")
 	}
-
-	return &CopyAction{
+	action := &CopyAction{
 		src:       src,
 		dest:      dest,
 		recursive: recursive,
-	}, nil
+	}
+	return action.Run(ctx)
 }
 
 type CopyAction struct {
@@ -124,100 +114,86 @@ type CopyAction struct {
 	dest      interface{}
 }
 
-func (s *CopyAction) Type() interface{} {
-	return 0
-}
-
-func (s *CopyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+func (s *CopyAction) Run(ctx force.ExecutionContext) error {
 	log := force.Log(ctx)
 
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return nil, trace.NotFound("initialize AWS plugin in the setup section")
+		return trace.NotFound("initialize AWS plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 
-	src, err := force.EvalFromAST(ctx, s.src)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	dest, err := force.EvalFromAST(ctx, s.dest)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	switch source := src.(type) {
+	switch source := s.src.(type) {
 	case Local:
-		destination, ok := dest.(S3)
+		destination, ok := s.dest.(S3)
 		if !ok {
-			return nil, trace.BadParameter("unsupported configuration, expected S3, got %T", dest)
+			return trace.BadParameter("unsupported configuration, expected S3, got %T", s.dest)
 		}
 		if err := destination.CheckAndSetDefaults(); err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 		if err := source.CheckAndSetDefaults(); err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 		fi, err := os.Stat(source.Path)
 		if err != nil {
-			return nil, trace.ConvertSystemError(err)
+			return trace.ConvertSystemError(err)
 		}
 		start := time.Now()
 		if fi.Mode().IsDir() {
 			if !s.recursive {
-				return nil, trace.BadParameter("path %v is a directory, use RecursiveCopy", source.Path)
+				return trace.BadParameter("path %v is a directory, use RecursiveCopy", source.Path)
 			}
 			err := uploadDir(ctx, plugin.sess, source.Path, destination)
 			if err != nil {
-				return nil, trace.Wrap(err)
+				return trace.Wrap(err)
 			}
 		} else {
 			err := uploadFile(ctx, plugin.sess, source.Path, destination)
 			if err != nil {
-				return nil, trace.Wrap(err)
+				return trace.Wrap(err)
 			}
 		}
 		diff := time.Now().Sub(start)
 		log.Infof("Uploaded %v to %v in %v.", source.Path, destination, diff)
-		return 0, nil
+		return nil
 	case S3:
 		if err := source.CheckAndSetDefaults(); err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
-		destination, ok := dest.(Local)
+		destination, ok := s.dest.(Local)
 		if !ok {
-			return nil, trace.BadParameter("unsupported configuration, expected Local, got %T", dest)
+			return trace.BadParameter("unsupported configuration, expected Local, got %T", s.dest)
 		}
 		if err := destination.CheckAndSetDefaults(); err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 		start := time.Now()
 		fi, err := os.Stat(destination.Path)
 		err = trace.ConvertSystemError(err)
 		if err != nil {
 			if !trace.IsNotFound(err) {
-				return nil, err
+				return err
 			}
 		}
 		if fi != nil && fi.Mode().IsDir() {
 			if !s.recursive {
-				return nil, trace.BadParameter("path %v is a directory, use RecursiveCopy", destination.Path)
+				return trace.BadParameter("path %v is a directory, use RecursiveCopy", destination.Path)
 			}
 			err := downloadDir(ctx, plugin.sess, source, destination)
 			if err != nil {
-				return nil, trace.Wrap(err)
+				return trace.Wrap(err)
 			}
 		} else {
 			if err := downloadFile(ctx, plugin.sess, source, destination); err != nil {
-				return nil, trace.Wrap(err)
+				return trace.Wrap(err)
 			}
 		}
 		diff := time.Now().Sub(start)
 		log.Infof("Downloaded %v to %v in %v.", source, destination, diff)
-		return 0, nil
+		return nil
 	default:
-		return nil, trace.BadParameter("unsupported type %T", src)
+		return trace.BadParameter("unsupported type %T", s.src)
 	}
 }
 
@@ -289,20 +265,6 @@ func uploadFile(ctx context.Context, sess *awssession.Session, path string, dest
 		return trace.Wrap(err)
 	}
 	return nil
-}
-
-// MarshalCode marshals the action into code representation
-func (s *CopyAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		Args:    []interface{}{s.src, s.dest},
-	}
-	if s.recursive {
-		call.Fn = Copy
-	} else {
-		call.Fn = RecursiveCopy
-	}
-	return call.MarshalCode(ctx)
 }
 
 // String returns a copy of the software

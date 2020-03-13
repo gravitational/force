@@ -2,10 +2,10 @@ package log
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/url"
 	"os"
-	"reflect"
 
 	"github.com/gravitational/force"
 	"github.com/gravitational/force/pkg/log/stack"
@@ -13,22 +13,6 @@ import (
 	"github.com/gravitational/trace"
 	log "github.com/sirupsen/logrus"
 )
-
-// Scope returns a new scope with all the functions and structs
-// defined, this is the entrypoint into plugin as far as force is concerned
-func Scope() (force.Group, error) {
-	scope := force.WithLexicalScope(nil)
-	err := force.ImportStructsIntoAST(scope,
-		reflect.TypeOf(Config{}),
-		reflect.TypeOf(Output{}),
-	)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	scope.AddDefinition(force.FunctionName(Infof), &force.NopScope{Func: Infof})
-	scope.AddDefinition(force.StructName(reflect.TypeOf(Setup{})), &Setup{})
-	return scope, nil
-}
 
 //Namespace is a wrapper around string to namespace a variable in the context
 type Namespace string
@@ -102,17 +86,25 @@ func (cfg *Config) CheckAndSetDefaults() error {
 
 // Plugin is a new logging plugin
 type Plugin struct {
-	cfg Config
+	cfg    Config
+	logger force.Logger
 }
 
 // NewLogger generates a new logger for a process
 func (p *Plugin) NewLogger() force.Logger {
-	return &Logger{FieldLogger: log.StandardLogger(), plugin: p}
+	if p.logger != nil {
+		return p.logger
+	}
+	return &Logger{plugin: p, FieldLogger: log.StandardLogger()}
 }
 
 type Logger struct {
 	log.FieldLogger
 	plugin *Plugin
+}
+
+func (l *Logger) Writer() io.WriteCloser {
+	return Writer(&MultilineWriter{logger: l})
 }
 
 // WithError returns a logger bound to an error
@@ -150,143 +142,74 @@ func (l *Logger) AddFields(fields map[string]interface{}) force.Logger {
 	return &Logger{FieldLogger: fieldLogger, plugin: l.plugin}
 }
 
-// Log returns action that sets up log plugin
-func Log(cfg interface{}) (force.Action, error) {
-	return &Setup{
-		cfg: cfg,
-	}, nil
-}
-
-// Setup creates new instances of plugins
-type Setup struct {
-	cfg interface{}
-}
-
-// NewInstance returns a new instance of a plugin bound to group
-func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, Log
-}
-
-// MarshalCode marshals plugin setup to code
-func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := force.FnCall{
-		Package: string(Key),
-		FnName:  KeySetup,
-		Args:    []interface{}{n.cfg},
-	}
-	return call.MarshalCode(ctx)
-}
-
-func (n *Setup) Type() interface{} {
-	return false
-}
-
-// Eval sets up logging plugin for the instance group
-func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	var cfg Config
-	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if err := cfg.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	level, err := log.ParseLevel(cfg.Level)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	group := ctx.Process().Group()
-	if group.IsDebug() {
-		level = log.DebugLevel
-	}
-	if level >= log.DebugLevel {
-		trace.SetDebug(true)
-	}
-	log.SetLevel(level)
-	var hasTerminal bool
-	for _, o := range cfg.Outputs {
-		switch o.Type {
-		case TypeStackdriver:
-			h, err := stack.NewHook(stack.Config{
-				Context: group.Context(),
-				Creds:   []byte(o.Credentials),
-			})
-			if err != nil {
-				return nil, trace.Wrap(err)
-			}
-			log.AddHook(h)
-		case TypeStdout:
-			hasTerminal = trace.IsTerminal(os.Stdout)
-			log.SetOutput(os.Stdout)
-		default:
-			return nil, trace.BadParameter("unsupported %q, supported are: %q, %q", o.Type, TypeStackdriver, TypeStdout)
+// Plugin sets up build plugin
+func Setup(cfg Config) force.SetupFunc {
+	return func(group force.Group) error {
+		if err := cfg.CheckAndSetDefaults(); err != nil {
+			return trace.Wrap(err)
 		}
-	}
-	// disable line and file info in case if it's not debug
-	var formatCaller func() string
-	if level < log.DebugLevel {
-		formatCaller = func() string { return "" }
-	}
-	log.SetFormatter(&trace.TextFormatter{
-		DisableTimestamp: true,
-		EnableColors:     hasTerminal,
-		FormatCaller:     formatCaller,
-	})
-	p := &Plugin{
-		cfg: cfg,
-	}
-	group.SetPlugin(Key, p)
-	return true, nil
-}
-
-// Infof returns an action that logs in info
-func Infof(format force.Expression, args ...interface{}) (force.Action, error) {
-	if err := force.ExpectString(format); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return &InfofAction{
-		format: format,
-		args:   args,
-	}, nil
-}
-
-type InfofAction struct {
-	format force.Expression
-	args   []interface{}
-}
-
-func (s *InfofAction) Type() interface{} {
-	return false
-}
-
-func (s *InfofAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	log := force.Log(ctx)
-	format, err := force.EvalString(ctx, s.format)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	evalArgs := make([]interface{}, len(s.args))
-	for i := range s.args {
-		evalArgs[i], err = force.Eval(ctx, s.args[i])
+		level, err := log.ParseLevel(cfg.Level)
 		if err != nil {
-			// use as is without eval
-			evalArgs[i] = err.Error()
+			return trace.Wrap(err)
 		}
+		if group.IsDebug() {
+			level = log.DebugLevel
+		}
+		if level >= log.DebugLevel {
+			trace.SetDebug(true)
+		}
+		var loggers []force.Logger
+		plugin := &Plugin{
+			cfg: cfg,
+		}
+		for _, o := range cfg.Outputs {
+			switch o.Type {
+			case TypeStackdriver:
+				l := log.New()
+				l.SetLevel(level)
+				l.SetOutput(ioutil.Discard)
+				h, err := stack.NewHook(stack.Config{
+					Context: group.Context(),
+					Creds:   []byte(o.Credentials),
+				})
+				if err != nil {
+					return trace.Wrap(err)
+				}
+				l.AddHook(h)
+				// disable line and file info in case if it's not debug
+				var formatCaller func() string
+				if level < log.DebugLevel {
+					formatCaller = func() string { return "" }
+				}
+				l.SetFormatter(&trace.TextFormatter{
+					DisableTimestamp: true,
+					EnableColors:     false,
+					FormatCaller:     formatCaller,
+				})
+				loggers = append(loggers, &Logger{FieldLogger: l, plugin: plugin})
+			case TypeStdout:
+				l := log.New()
+				l.SetLevel(level)
+				l.SetOutput(os.Stdout)
+				l.SetFormatter(&TerminalFormatter{})
+				loggers = append(loggers, &Logger{FieldLogger: l, plugin: plugin})
+			default:
+				return trace.BadParameter("unsupported %q, supported are: %q, %q", o.Type, TypeStackdriver, TypeStdout)
+			}
+		}
+		plugin.logger = force.NewMultiLogger(loggers...)
+		group.SetPlugin(Key, plugin)
+		return nil
 	}
-	log.Infof(format, evalArgs...)
-	return true, nil
 }
 
-// MarshalCode marshals the action into code representation
-func (s *InfofAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		Fn:      Infof,
-		Args:    []interface{}{s.format},
-	}
-	call.Args = append(call.Args, s.args...)
-	return call.MarshalCode(ctx)
-}
+// TerminalFormatter outputs message optimized for terminal
+type TerminalFormatter struct{}
 
-func (s *InfofAction) String() string {
-	return fmt.Sprintf("Infof()")
+// Format formats the log message
+func (*TerminalFormatter) Format(e *log.Entry) (data []byte, err error) {
+	if e == nil {
+		return nil, nil
+	}
+	return []byte(e.Message + "\n"), nil
 }

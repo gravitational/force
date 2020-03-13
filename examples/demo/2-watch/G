@@ -1,4 +1,0 @@
-Process(Spec{
-	Watch: Files("*.go"),
-	Run: Command(`go install -mod=vendor -v github.com/gravitational/force/tool/force`),
-})

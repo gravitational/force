@@ -1,0 +1,9 @@
+Process(_{
+	Name: "thinkpad",
+	Run: func(){
+		Defer(Exit())
+		Command(`cd ../teleport && GO111MODULE="off" go test -v ./lib/...`)
+	},
+})
+
+

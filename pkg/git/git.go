@@ -3,7 +3,6 @@ package git
 import (
 	"io/ioutil"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 
@@ -17,22 +16,6 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
-
-// Scope returns a new scope with all the functions and structs
-// defined, this is the entrypoint into plugin as far as force is concerned
-func Scope() (force.Group, error) {
-	scope := force.WithLexicalScope(nil)
-	err := force.ImportStructsIntoAST(scope,
-		reflect.TypeOf(Config{}),
-		reflect.TypeOf(Repo{}),
-	)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	scope.AddDefinition(force.FunctionName(Clone), &NewClone{})
-	scope.AddDefinition(KeySetup, &Setup{})
-	return scope, nil
-}
 
 // Namespace is a wrapper around string to namespace a variable
 type Namespace string
@@ -144,99 +127,37 @@ type Plugin struct {
 	cfg   Config
 }
 
-// Setup creates new plugins
-type Setup struct {
-	cfg interface{}
-}
-
-// NewInstance returns function creating new client bound to the process group
-// and registers plugin variable
-func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg interface{}) (force.Action, error) {
-		return &Setup{
-			cfg: cfg,
-		}, nil
+// Setup returns a function that sets up github plugin
+func Setup(cfg Config) force.SetupFunc {
+	return func(group force.Group) error {
+		err := cfg.CheckAndSetDefaults()
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		plugin := &Plugin{cfg: cfg, start: time.Now().UTC()}
+		group.SetPlugin(Key, plugin)
+		return nil
 	}
 }
 
-func (n *Setup) Type() interface{} {
-	return true
-}
-
-// Run sets up git plugin for the process group
-func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	var cfg Config
-	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return false, trace.Wrap(err)
-	}
-	err := cfg.CheckAndSetDefaults()
-	if err != nil {
-		return false, trace.Wrap(err)
-	}
-	plugin := &Plugin{cfg: cfg, start: time.Now().UTC()}
-	ctx.Process().Group().SetPlugin(Key, plugin)
-	return true, nil
-}
-
-// MarshalCode marshals plugin code to representation
-func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeySetup,
-		Args:    []interface{}{n.cfg},
-	}
-	return call.MarshalCode(ctx)
-}
-
-// Clone executes inner action and posts result of it's execution
-// to github
-func Clone(repo interface{}) (force.Action, error) {
-	return &CloneAction{
-		repo: repo,
-	}, nil
-}
-
-// NewClone creates functions cloning repositories
-type NewClone struct {
-}
-
-// NewInstance returns a function that wraps underlying action
-// and tracks the result, posting the result back
-func (n *NewClone) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, Clone
-}
-
-// CloneAction clones repository
-type CloneAction struct {
-	repo interface{}
-}
-
-func (p *CloneAction) Type() interface{} {
-	return ""
-}
-
-func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+// Clone clones the repository
+func Clone(ctx force.ExecutionContext, repo Repo) error {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return nil, trace.NotFound("initialize Git plugin in the setup section")
+		return trace.NotFound("initialize Git plugin in the setup section")
 	}
 	plugin := pluginI.(*Plugin)
 
-	var repo Repo
-	if err := force.EvalInto(ctx, p.repo, &repo); err != nil {
-		return nil, trace.Wrap(err)
-	}
-
 	log := force.Log(ctx)
 	if repo.Into == "" {
-		return nil, trace.BadParameter("got empty Into variable")
+		return trace.BadParameter("got empty Into variable")
 	}
 	fi, err := os.Stat(repo.Into)
 	if err != nil {
-		return nil, trace.ConvertSystemError(err)
+		return trace.ConvertSystemError(err)
 	}
 	if !fi.IsDir() {
-		return nil, trace.BadParameter("Into variable is not an existing directory")
+		return trace.BadParameter("Into variable is not an existing directory")
 	}
 
 	log.Infof("Cloning repository %v into %v.", repo.URL, repo.Into)
@@ -244,7 +165,7 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 
 	auth, err := plugin.cfg.Auth()
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	r, err := git.PlainClone(repo.Into, false, &git.CloneOptions{
@@ -252,7 +173,7 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 		URL:  string(repo.URL),
 	})
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	err = r.Fetch(&git.FetchOptions{
@@ -260,7 +181,7 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 		RefSpecs: []gitconfig.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
 	})
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	log.Infof("Cloned %v into %v in %v.", repo.URL, repo.Into, time.Now().Sub(start))
@@ -268,14 +189,14 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	if repo.Hash != "" {
 		w, err := r.Worktree()
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 
 		err = w.Checkout(&git.CheckoutOptions{
 			Hash: plumbing.NewHash(repo.Hash),
 		})
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 
 		log.Infof("Checked out repository %v commit %v.", repo.URL, repo.Hash)
@@ -284,14 +205,14 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	if repo.Tag != "" {
 		w, err := r.Worktree()
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 
 		err = w.Checkout(&git.CheckoutOptions{
 			Branch: plumbing.NewTagReferenceName(repo.Tag),
 		})
 		if err != nil {
-			return nil, trace.BadParameter("failed to clone tag %v: %v", repo.Tag, err)
+			return trace.BadParameter("failed to clone tag %v: %v", repo.Tag, err)
 		}
 
 		log.Infof("Checked out repository %v tag %v.", repo.URL, repo.Tag)
@@ -300,14 +221,14 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	if repo.Branch != "" {
 		w, err := r.Worktree()
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 
 		err = w.Checkout(&git.CheckoutOptions{
 			Branch: plumbing.NewBranchReferenceName(repo.Branch),
 		})
 		if err != nil {
-			return nil, trace.BadParameter("failed to clone branch %v: %v", repo.Branch, err)
+			return trace.BadParameter("failed to clone branch %v: %v", repo.Branch, err)
 		}
 
 		log.Infof("Checked out repository %v branch %v.", repo.URL, repo.Branch)
@@ -315,35 +236,25 @@ func (p *CloneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 
 	for i, subName := range repo.Submodules {
 		if subName == "" {
-			return nil, trace.BadParameter("got empty submodule name at %v", i)
+			return trace.BadParameter("got empty submodule name at %v", i)
 		}
 		w, err := r.Worktree()
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 		log.Infof("Updating submodule %v.", subName)
 		sub, err := w.Submodule(subName)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 		err = sub.UpdateContext(ctx, &git.SubmoduleUpdateOptions{
 			Init: true,
 			Auth: auth,
 		})
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
 	}
 
-	return repo.URL, nil
-}
-
-// MarshalCode marshals action into code representation
-func (c *CloneAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		Fn:      Clone,
-		Args:    []interface{}{c.repo},
-	}
-	return call.MarshalCode(ctx)
+	return nil
 }

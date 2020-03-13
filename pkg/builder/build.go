@@ -1,31 +1,10 @@
 package builder
 
 import (
-	"fmt"
-	"reflect"
-
 	"github.com/gravitational/force"
 
 	"github.com/gravitational/trace"
 )
-
-// Scope returns a new scope with all the functions and structs
-// defined, this is the entrypoint into plugin as far as force is concerned
-func Scope() (force.Group, error) {
-	scope := force.WithLexicalScope(nil)
-	err := force.ImportStructsIntoAST(scope,
-		reflect.TypeOf(Config{}),
-		reflect.TypeOf(Image{}),
-	)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	scope.AddDefinition(KeySetup, &Setup{})
-	scope.AddDefinition(KeyBuild, &NewBuild{})
-	scope.AddDefinition(KeyPush, &NewPush{})
-	scope.AddDefinition(KeyPrune, &NewPrune{})
-	return scope, nil
-}
 
 // Namespace is a wrapper around string
 // to namespace a variable
@@ -40,91 +19,28 @@ const (
 	KeyPrune = "Prune"
 )
 
-// Setup specifies builder plugins
-type Setup struct {
-	group force.Group
-	cfg   interface{}
-}
-
-func (n *Setup) Type() interface{} {
-	return false
-}
-
-// NewInstance returns function creating new plugins based on configs
-func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg interface{}) force.Action {
-		return &Setup{
-			group: group,
-			cfg:   cfg,
+// Setup returns a function that sets up build plugin
+func Setup(cfg Config) force.SetupFunc {
+	return func(group force.Group) error {
+		cfg.Group = group
+		builder, err := New(cfg)
+		if err != nil {
+			return trace.Wrap(err)
 		}
+		group.SetPlugin(Key, builder)
+		return nil
 	}
 }
 
-// Eval sets up plugin for the given process group
-func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	var cfg Config
-	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return nil, trace.Wrap(err)
+// Build builds docker image
+func Build(ctx force.ExecutionContext, img Image) error {
+	if err := img.CheckAndSetDefaults(); err != nil {
+		return trace.Wrap(err)
 	}
-	cfg.Context = ctx
-	cfg.Group = n.group
-	builder, err := New(cfg)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	cfg.Group.SetPlugin(Key, builder)
-	return true, nil
-}
-
-// MarshalCode marshals plugin to code representation
-func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeySetup,
-		Args:    []interface{}{n.cfg},
-	}
-	return call.MarshalCode(ctx)
-}
-
-// NewBuild creates build actions
-type NewBuild struct {
-}
-
-// NewInstance creates functions creating new Build action
-func (n *NewBuild) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(img interface{}) (force.Action, error) {
-		return &BuildAction{image: img}, nil
-	}
-}
-
-// BuildAction specifies biuldkit driven docker builds
-type BuildAction struct {
-	image interface{}
-}
-
-func (b *BuildAction) Type() interface{} {
-	return ""
-}
-
-// Eval runs build process
-func (b *BuildAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return nil, trace.NotFound("initialize Builder plugin in the setup section")
+		return trace.NotFound("initialize Builder plugin in the setup section")
 	}
-	return pluginI.(*Builder).Eval(ctx, b.image)
-}
-
-func (b *BuildAction) String() string {
-	return fmt.Sprintf("Build(tag=%v)", b.image)
-}
-
-// MarshalCode marshals the action into code representation
-func (b *BuildAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeyBuild,
-		Args:    []interface{}{b.image},
-	}
-	return call.MarshalCode(ctx)
+	_, err := pluginI.(*Builder).Eval(ctx, img)
+	return err
 }

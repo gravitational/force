@@ -1,4 +1,0 @@
-Process(Spec{
-	Watch: Oneshot(),
-	Run: Build(Image{Tag: `example`}),
-})

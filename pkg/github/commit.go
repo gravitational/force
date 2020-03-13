@@ -10,21 +10,17 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// NewBranchWatch finds the initialized github plugin and returns a new commit watch
-type NewBranchWatch struct {
-}
-
-// NewInstance returns a function creating new watchers
-func (n *NewBranchWatch) NewInstance(group force.Group) (force.Group, interface{}) {
-	group.AddDefinition(force.KeyEvent, BranchEvent{})
-	return group, func(srci interface{}) (force.Channel, error) {
+// Branches creates an event channel that produces
+// events on every pull request matching the pattern
+func Branches(src Source) force.NewChannelFunc {
+	return func(group force.Group) (force.Channel, error) {
 		pluginI, ok := group.GetPlugin(Key)
 		if !ok {
 			return nil, trace.NotFound("github plugin is not initialized, use github.Setup to initialize it")
 		}
-		var src Source
-		if err := force.EvalInto(force.EmptyContext(), srci, &src); err != nil {
-			return nil, trace.Wrap(err)
+		plugin, ok := pluginI.(*Plugin)
+		if !ok {
+			return nil, trace.NotFound("github plugin is not properly initialized, use github.Setup to initialize it")
 		}
 		if err := src.CheckAndSetDefaults(); err != nil {
 			return nil, trace.Wrap(err)
@@ -34,7 +30,7 @@ func (n *NewBranchWatch) NewInstance(group force.Group) (force.Group, interface{
 			return nil, trace.Wrap(err)
 		}
 		return &BranchWatcher{
-			plugin: pluginI.(*Plugin),
+			plugin: plugin,
 			source: src,
 			// TODO(klizhentas): queues have to be configurable
 			eventsC: make(chan force.Event, 1024),
@@ -52,16 +48,6 @@ type BranchWatcher struct {
 // String returns user friendly representation of the watcher
 func (r *BranchWatcher) String() string {
 	return fmt.Sprintf("BranchWatcher(%v)", r.source.Repo)
-}
-
-// MarshalCode marshals things to code
-func (r *BranchWatcher) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeyWatchBranches,
-		Args:    []interface{}{r.source},
-	}
-	return call.MarshalCode(ctx)
 }
 
 // Start starts watch on a repo
@@ -182,8 +168,8 @@ func (r *BranchWatcher) processBranch(ctx context.Context, approvers map[string]
 		log.Infof("Last commit was made by user %v who is on approval list, letting it through.", branch.Author.User.Login)
 	}
 	event := &BranchEvent{
-		Commit:  force.String(branch.OID),
-		Branch:  force.String(branch.Name),
+		Commit:  branch.OID,
+		Branch:  branch.Name,
 		branch:  branch,
 		created: time.Now().UTC(),
 		Source:  r.source,
@@ -216,10 +202,10 @@ func (r *BranchWatcher) Done() <-chan struct{} {
 	return nil
 }
 
-// BranchEvent is a commit event
+// BranchEvent is a branch event
 type BranchEvent struct {
-	Commit  force.String
-	Branch  force.String
+	Commit  string
+	Branch  string
 	branch  Branch
 	Source  Source
 	created time.Time

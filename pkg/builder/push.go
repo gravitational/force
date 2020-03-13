@@ -2,7 +2,6 @@ package builder
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/gravitational/force"
 
@@ -14,60 +13,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// NewPush specifies new push actions
-type NewPush struct {
-}
-
-// NewInstance returns functions creating new push action
-func (n *NewPush) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(img interface{}) (force.Action, error) {
-		return &PushAction{
-			image: img,
-		}, nil
-	}
-}
-
-// PushAction returns new push actions
-type PushAction struct {
-	image interface{}
-}
-
-func (p *PushAction) Type() interface{} {
-	return ""
-}
-
-// MarshalCode marshals the action into code representation
-func (p *PushAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeyPush,
-		Args:    []interface{}{p.image},
-	}
-	return call.MarshalCode(ctx)
-}
-
-// Eval pushes image to remote repository
-func (p *PushAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+func Push(ctx force.ExecutionContext, img Image) error {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return nil, trace.NotFound("initialize Builder plugin in the setup section")
+		return trace.NotFound("initialize Builder plugin in the setup section")
 	}
-	return pluginI.(*Builder).Push(ctx, p.image)
-}
-
-func (b *PushAction) String() string {
-	return fmt.Sprintf("Push(image=%v)", b.image)
+	return pluginI.(*Builder).Push(ctx, img)
 }
 
 // Push pushes image to remote registry
-func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) (interface{}, error) {
-	var img Image
-	if err := force.EvalInto(ectx, iface, &img); err != nil {
-		return nil, trace.Wrap(err)
-	}
-
+func (b *Builder) Push(ectx force.ExecutionContext, img Image) error {
 	if err := img.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 	log := force.Log(ectx)
 
@@ -75,7 +32,7 @@ func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) (interfac
 
 	sess, sessDialer, err := b.Session(ectx, img)
 	if err != nil {
-		return nil, trace.Wrap(err, "failed to create session")
+		return trace.Wrap(err, "failed to create session")
 	}
 
 	ctx := session.NewContext(ectx, sess.ID())
@@ -90,11 +47,11 @@ func (b *Builder) Push(ectx force.ExecutionContext, iface interface{}) (interfac
 	})
 
 	if err := eg.Wait(); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 	log.Infof("Successfully pushed %v.", img.Tag)
 
-	return img.Tag, nil
+	return nil
 }
 
 // push sends an image to a remote registry.

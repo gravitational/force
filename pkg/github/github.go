@@ -2,7 +2,6 @@ package github
 
 import (
 	"io/ioutil"
-	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -10,25 +9,6 @@ import (
 	"github.com/gravitational/force"
 	"github.com/gravitational/trace"
 )
-
-// Scope returns a new scope with all the functions and structs
-// defined, this is the entrypoint into plugin as far as force is concerned
-func Scope() (force.Group, error) {
-	scope := force.WithLexicalScope(nil)
-	err := force.ImportStructsIntoAST(scope,
-		reflect.TypeOf(Config{}),
-		reflect.TypeOf(Source{}),
-	)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	scope.AddDefinition(KeySetup, &Setup{})
-	scope.AddDefinition(KeyWatchPullRequests, &NewPullRequestWatch{})
-	scope.AddDefinition(KeyWatchBranches, &NewBranchWatch{})
-	scope.AddDefinition(KeyPostStatusOf, &NewPostStatusOf{})
-	scope.AddDefinition(KeyPostStatus, &NewPostStatus{})
-	return scope, nil
-}
 
 //Namespace is a wrapper around string to namespace a variable in the context
 type Namespace string
@@ -192,52 +172,20 @@ type Plugin struct {
 	client *GithubClient
 }
 
-// Github creates a new action setting up a github plugin
-func Github(cfg interface{}) (force.Action, error) {
-	return &Setup{
-		cfg: cfg,
-	}, nil
-}
-
-// Setup creates new instances of plugins
-type Setup struct {
-	cfg interface{}
-}
-
-func (n *Setup) Type() interface{} {
-	return true
-}
-
-// NewInstance returns a new instance
-func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, Github
-}
-
-func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	var cfg Config
-	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return nil, trace.Wrap(err)
+// Setup returns a function that sets up github plugin
+func Setup(cfg Config) force.SetupFunc {
+	return func(group force.Group) error {
+		if err := cfg.CheckAndSetDefaults(); err != nil {
+			return trace.Wrap(err)
+		}
+		client, err := newGithubClient(group.Context(), cfg)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		p := &Plugin{cfg: cfg, client: client, start: time.Now().UTC()}
+		group.SetPlugin(Key, p)
+		return nil
 	}
-	if err := cfg.CheckAndSetDefaults(); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	client, err := newGithubClient(ctx, cfg)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	p := &Plugin{cfg: cfg, client: client, start: time.Now().UTC()}
-	ctx.Process().Group().SetPlugin(Key, p)
-	return true, nil
-}
-
-// MarshalCode marshals plugin setup to code representation
-func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := force.FnCall{
-		Package: string(Key),
-		FnName:  "Setup",
-		Args:    []interface{}{n.cfg},
-	}
-	return call.MarshalCode(ctx)
 }
 
 const (

@@ -10,52 +10,16 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// NewPrune specifies prune action - cleaning up
-// dangled leftovers from builds - images and tags, layers
-type NewPrune struct {
-}
-
-// NewInstance returns function creating new prune actions
-func (n *NewPrune) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func() (force.Action, error) {
-		return &PruneAction{}, nil
-	}
-}
-
-// PruneAction prunes all leftover
-// build layers and snapshots from the local storage
-type PruneAction struct {
-	builder *Builder
-}
-
-func (p *PruneAction) Type() interface{} {
-	return 0
-}
-
-// Eval runs prune action
-func (p *PruneAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+func Prune(ctx force.ExecutionContext) error {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return nil, trace.NotFound("initialize Builder plugin in the setup section")
+		return trace.NotFound("initialize Builder plugin in the setup section")
 	}
 	return pluginI.(*Builder).Prune(ctx)
 }
 
-func (p *PruneAction) String() string {
-	return "Prune()"
-}
-
-// MarshalCode marshals the action into code representation
-func (p *PruneAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeyPrune,
-	}
-	return call.MarshalCode(ctx)
-}
-
 // Prune clears build cache
-func (b *Builder) Prune(ectx force.ExecutionContext) (interface{}, error) {
+func (b *Builder) Prune(ectx force.ExecutionContext) error {
 	log := force.Log(ectx)
 	log.Infof("Prune.")
 
@@ -64,7 +28,7 @@ func (b *Builder) Prune(ectx force.ExecutionContext) (interface{}, error) {
 	// Create the new worker.
 	w, err := base.NewWorker(*b.opt)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	eg, ctx := errgroup.WithContext(ectx)
@@ -99,7 +63,7 @@ func (b *Builder) Prune(ectx force.ExecutionContext) (interface{}, error) {
 	})
 
 	if err := eg2.Wait(); err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
-	return 0, nil
+	return nil
 }

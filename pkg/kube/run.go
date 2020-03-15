@@ -20,49 +20,39 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// NewRun specifies new job runners
-type NewRun struct {
-}
-
-// NewRun returns functions creating kubernetes job runner action
-func (n *NewRun) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(job interface{}) force.Action {
-		return &RunAction{job: job}
-	}
+// Run runs Kubernetes job
+func Run(ctx force.ExecutionContext, job batchv1.Job) error {
+	action := RunAction{job: job}
+	return action.Run(ctx)
 }
 
 // RunAction runs kubernetes job to it's completion
 type RunAction struct {
-	job interface{}
+	job batchv1.Job
 }
 
-func (r *RunAction) Type() interface{} {
-	return 0
-}
-
-// Eval runs kubernetes job
-func (r *RunAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+// Run runs kubernetes job to completion
+func (r *RunAction) Run(ctx force.ExecutionContext) error {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return nil, trace.BadParameter("initialize kube plugin")
+		return trace.BadParameter("initialize kube plugin using kube.Setup")
 	}
-	plugin := pluginI.(*Plugin)
+	plugin, ok := pluginI.(*Plugin)
+	if !ok {
+		return trace.BadParameter("initialize kube plugin using kube.Setup")
+	}
 
-	var spec batchv1.Job
-	if err := force.EvalInto(ctx, r.job, &spec); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if err := checkAndSetJobDefaults(&spec); err != nil {
-		return nil, trace.Wrap(err)
+	if err := checkAndSetJobDefaults(&r.job); err != nil {
+		return trace.Wrap(err)
 	}
 	log := force.Log(ctx)
 
-	jobs := plugin.client.BatchV1().Jobs(spec.Namespace)
-	job, err := jobs.Create(&spec)
+	jobs := plugin.client.BatchV1().Jobs(r.job.Namespace)
+	job, err := jobs.Create(&r.job)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
-	log.Infof("Created job %v in namespace %v.", spec.Name, spec.Namespace)
+	log.Infof("Created job %v in namespace %v.", r.job.Name, r.job.Namespace)
 	writer := log.AddFields(map[string]interface{}{"job": job.Name}).Writer()
 	defer writer.Close()
 
@@ -87,11 +77,11 @@ func (r *RunAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
 	select {
 	case err := <-waitC:
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return trace.Wrap(err)
 		}
-		return 0, nil
+		return nil
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return ctx.Err()
 	}
 }
 
@@ -117,16 +107,6 @@ func jobCheckAndSetDefaults(j *batchv1.Job) error {
 		return trace.BadParameter("the job needs at least one container")
 	}
 	return nil
-}
-
-// MarshalCode marshals the action into code representation
-func (s *RunAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeyRun,
-		Args:    []interface{}{s.job},
-	}
-	return call.MarshalCode(ctx)
 }
 
 // streamLogs streams logs until the job is either failed or done, the context

@@ -14,15 +14,9 @@ import (
 	"github.com/gravitational/trace"
 )
 
-// NewApply specifies new job runners
-type NewApply struct {
-}
-
-// NewApply returns functions creating kubernetes job runner action
-func (n *NewApply) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(objects ...interface{}) force.Action {
-		return &ApplyAction{objects: objects}
-	}
+func Apply(ctx force.ExecutionContext, objects ...interface{}) error {
+	a := &ApplyAction{objects: objects}
+	return a.Run(ctx)
 }
 
 // ApplyAction runs kubernetes job to it's completion
@@ -30,48 +24,37 @@ type ApplyAction struct {
 	objects []interface{}
 }
 
-// Type returns apply action type
-func (r *ApplyAction) Type() interface{} {
-	return 0
-}
-
-// Eval creates or updates K8s object
-func (r *ApplyAction) Eval(ctx force.ExecutionContext) (interface{}, error) {
+// Run creates or updates K8s object
+func (r *ApplyAction) Run(ctx force.ExecutionContext) error {
 	pluginI, ok := ctx.Process().Group().GetPlugin(Key)
 	if !ok {
-		return nil, trace.BadParameter("initialize Kube plugin")
+		return trace.BadParameter("initialize Kube plugin, use kube.Setup in Setup section")
 	}
-	plugin := pluginI.(*Plugin)
-
-	out := make([]interface{}, len(r.objects))
-	for i := 0; i < len(r.objects); i++ {
-		eval, err := force.EvalFromAST(ctx, r.objects[i])
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		out[i] = eval
+	plugin, ok := pluginI.(*Plugin)
+	if !ok {
+		return trace.BadParameter("initialize Kube plugin, use kube.Setup in Setup section")
 	}
 
-	for _, iface := range out {
+	for _, iface := range r.objects {
 		switch obj := iface.(type) {
 		case batchv1.Job:
 			if err := r.applyJob(ctx, plugin.client, obj); err != nil {
-				return nil, trace.Wrap(err)
+				return trace.Wrap(err)
 			}
 		case appsv1.Deployment:
 			if err := r.applyDeployment(ctx, plugin.client, obj); err != nil {
-				return nil, trace.Wrap(err)
+				return trace.Wrap(err)
 			}
 		case corev1.Service:
 			if err := r.applyService(ctx, plugin.client, obj); err != nil {
-				return nil, trace.Wrap(err)
+				return trace.Wrap(err)
 			}
 		default:
-			return nil, trace.BadParameter("object %T is not supported", obj)
+			return trace.BadParameter("object %T is not supported", obj)
 		}
 	}
 
-	return 0, nil
+	return nil
 }
 
 func (r *ApplyAction) applyJob(ctx context.Context, client *kubernetes.Clientset, j batchv1.Job) error {
@@ -131,14 +114,4 @@ func (r *ApplyAction) applyService(ctx context.Context, client *kubernetes.Clien
 	s.ResourceVersion = current.ResourceVersion
 	_, err = services.Update(&s)
 	return ConvertError(err)
-}
-
-// MarshalCode marshals the action into code representation
-func (s *ApplyAction) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeyApply,
-		Args:    s.objects,
-	}
-	return call.MarshalCode(ctx)
 }

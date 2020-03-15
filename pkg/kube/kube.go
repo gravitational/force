@@ -3,16 +3,12 @@ package kube
 import (
 	"fmt"
 	"net/http"
-	"reflect"
 	"regexp"
 	"strings"
 
 	"github.com/gravitational/force"
 
 	"github.com/gravitational/trace"
-	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,39 +16,22 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// Scope returns a new scope with all the functions and structs
-// defined, this is the entrypoint into plugin as far as force is concerned
-func Scope() (force.Group, error) {
-	scope := force.WithLexicalScope(nil)
-	err := force.ImportStructsIntoAST(scope,
-		reflect.TypeOf(Config{}),
-		reflect.TypeOf(corev1.Service{}),
-		reflect.TypeOf(batchv1.Job{}),
-		reflect.TypeOf(appsv1.Deployment{}),
-	)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
+var kubeNameCharset = regexp.MustCompile(`[^a-z0-9\-\.]`)
 
-	importedFunctions := []interface{}{
-		Name,
-		resource.ParseQuantity,
-	}
-	for _, fn := range importedFunctions {
-		outFn, err := force.ConvertFunctionToAST(fn)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		scope.AddDefinition(force.FunctionName(fn), outFn)
-	}
-
-	scope.AddDefinition(KeySetup, &Setup{})
-	scope.AddDefinition(KeyRun, &NewRun{})
-	scope.AddDefinition(KeyApply, &NewApply{})
-	return scope, nil
+// BoolPtr returns bool pointer from bool
+func BoolPtr(v bool) *bool {
+	return &v
 }
 
-var kubeNameCharset = regexp.MustCompile(`[^a-z0-9\-\.]`)
+// Int32Ptr returns a pointer to int32
+func Int32Ptr(i int32) *int32 {
+	return &i
+}
+
+// Int64Ptr returns a pointer to int64
+func Int64Ptr(i int64) *int64 {
+	return &i
+}
 
 // Name converts string to a safe to use k8s resource
 func Name(in string) (string, error) {
@@ -66,15 +45,22 @@ func Name(in string) (string, error) {
 	return out, nil
 }
 
+// MustParseQuantity parses resource quantity,
+// panics on incorrect format
+func MustParseQuantity(qs string) resource.Quantity {
+	q, err := resource.ParseQuantity(qs)
+	if err != nil {
+		panic(err)
+	}
+	return q
+}
+
 // Namespace is a wrapper around string to namespace a variable
 type Namespace string
 
 const (
 	// Key is a name of the github plugin variable
-	Key      = Namespace("kube")
-	KeySetup = "Setup"
-	KeyRun   = "Run"
-	KeyApply = "Apply"
+	Key = Namespace("kube")
 )
 
 // Config specifies kube plugin configuration
@@ -84,59 +70,31 @@ type Config struct {
 }
 
 // CheckAndSetDefaults checks and sets defaults
-func (cfg *Config) CheckAndSetDefaults(ctx force.ExecutionContext) error {
+func (cfg *Config) CheckAndSetDefaults() error {
 	return nil
 }
 
-// Setup creates new plugins
-type Setup struct {
-	cfg interface{}
-}
-
-func (n *Setup) Type() interface{} {
-	return true
-}
-
-// NewInstance returns a new kubernetes client bound to the process group
-// and registers plugin within variable
-func (n *Setup) NewInstance(group force.Group) (force.Group, interface{}) {
-	return group, func(cfg interface{}) force.Action {
-		return &Setup{cfg: cfg}
+// Setup returns a function that sets up github plugin
+func Setup(cfg Config) force.SetupFunc {
+	return func(group force.Group) error {
+		if err := cfg.CheckAndSetDefaults(); err != nil {
+			return trace.Wrap(err)
+		}
+		client, config, err := GetClient(cfg.Path)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		plugin := &Plugin{
+			cfg:    cfg,
+			client: client,
+			config: config,
+		}
+		group.SetPlugin(Key, plugin)
+		return nil
 	}
 }
 
-// MarshalCode marshals plugin to code representation
-func (n *Setup) MarshalCode(ctx force.ExecutionContext) ([]byte, error) {
-	call := &force.FnCall{
-		Package: string(Key),
-		FnName:  KeySetup,
-		Args:    []interface{}{n.cfg},
-	}
-	return call.MarshalCode(ctx)
-}
-
-func (n *Setup) Eval(ctx force.ExecutionContext) (interface{}, error) {
-	var cfg Config
-	if err := force.EvalInto(ctx, n.cfg, &cfg); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	if err := cfg.CheckAndSetDefaults(ctx); err != nil {
-		return nil, trace.Wrap(err)
-	}
-	client, config, err := GetClient(cfg.Path)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	plugin := &Plugin{
-		cfg:    cfg,
-		client: client,
-		config: config,
-	}
-	ctx.Process().Group().SetPlugin(Key, plugin)
-	return true, nil
-}
-
-// Plugin is a new plugin
+// Plugin is a kubernetes plugin
 type Plugin struct {
 	cfg    Config
 	client *kubernetes.Clientset

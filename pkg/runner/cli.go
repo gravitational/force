@@ -37,7 +37,7 @@ func RunFunc(fn force.ActionFunc) {
 	Setup().Run(force.ActionFunc(fn))
 }
 
-// Setup sets up force plugins
+// Setup sets up force plugins and creates a command line tool
 func Setup(setupFns ...force.SetupFunc) *CLIRunner {
 	app := kingpin.New("force", "Force is simple CI/CD tool")
 	var debug bool
@@ -47,8 +47,15 @@ func Setup(setupFns ...force.SetupFunc) *CLIRunner {
 	ExitIf(err)
 	InitLogger(debug)
 	rand.Seed(time.Now().UnixNano())
+	ctx := SetupSignalHandlers()
+	return SetupInCLI(ctx, setupFns...)
+}
 
-	runner := New(SetupSignalHandlers())
+// SetupInCLI sets up force plugins assuming CLI was already set up
+func SetupInCLI(ctx context.Context, setupFns ...force.SetupFunc) *CLIRunner {
+	rand.Seed(time.Now().UnixNano())
+
+	runner := New(ctx)
 	for _, setupFn := range setupFns {
 		if err := setupFn(runner); err != nil {
 			ExitIf(err)

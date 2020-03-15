@@ -1,16 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/gravitational/force/pkg/runner"
 
-	"github.com/gravitational/trace"
+	_ "github.com/gravitational/force/internal/unshare"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 func main() {
+	runner.Reexec()
 	ctx := runner.SetupSignalHandlers()
 
 	var debug bool
@@ -21,28 +21,28 @@ func main() {
 	webListenAddr := "127.0.0.1:8087"
 	webC.Arg("listen-addr", "Web Server listen address").Default(webListenAddr).StringVar(&webListenAddr)
 
-	cmd, err := app.Parse(os.Args[1:])
-	if err != nil {
-		fmt.Printf("ERROR: %v", err)
-		os.Exit(1)
-	}
+	var publishCfg publishConfig
+	publishC := app.Command("publish", "Build and publish a force program. Run it from current force repo. force publish tool/force/main.go gcr.io/kubeadm-167321/force")
+	publishC.Arg("program", "Path to directory existing go program, e.g. ./tool/force").Required().ExistingDirVar(&publishCfg.program)
+	publishC.Arg("repo", "Set the repo to publish").Required().StringVar(&publishCfg.repo)
+	publishC.Flag("runc", "Set runc version to build").Default("1.0.0-rc8").StringVar(&publishCfg.runcVer)
+	publishC.Flag("go", "Set go version to build").Default("1.13.1").StringVar(&publishCfg.goVer)
+	publishC.Flag("registry-server", "Docker registry server").Default("gcr.io").StringVar(&publishCfg.builderCfg.Server)
+	publishC.Flag("registry-username", "Docker registry username").Envar("REGISTRY_USERNAME").StringVar(&publishCfg.builderCfg.Username)
+	publishC.Flag("registry-secret-file", "Docker registry secret file").Envar("REGISTRY_SECRET").StringVar(&publishCfg.builderCfg.SecretFile)
 
-	if err := runner.InitLogger(debug); err != nil {
-		fmt.Printf("Failed to init logger: %v", err)
-		os.Exit(1)
-	}
+	cmd, err := app.Parse(os.Args[1:])
+	runner.ExitIf(err)
+
+	err = runner.InitLogger(debug)
+	runner.ExitIf(err)
 
 	switch cmd {
 	case webC.FullCommand():
 		err := runWebServer(ctx, webListenAddr, "./fixtures/cert.pem", "./fixtures/key.pem")
-		if err != nil {
-			if trace.IsDebug() {
-				fmt.Fprintln(os.Stderr, trace.DebugReport(err))
-			} else {
-				fmt.Fprintln(os.Stderr, err.Error())
-			}
-			os.Exit(1)
-		}
-		return
+		runner.ExitIf(err)
+	case publishC.FullCommand():
+		err := publish(ctx, publishCfg)
+		runner.ExitIf(err)
 	}
 }

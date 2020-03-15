@@ -1,9 +1,0 @@
-// This process ticks every 10 seconds and logs info messages
-Process(_{
-	Name: "run",
-	Watch: Ticker("1s"),
-	Run: func(){
-		Infof("Hello, I am running!")
-		TempDir("", "runner")
-	},
-})

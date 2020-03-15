@@ -132,7 +132,7 @@ hello-lambda:
 .PHONY: inception
 inception:
 	$(MAKE) all
-	cd inception && force -d inception.force --setup=./setup.force
+	force publish -d ./tool/force/ gcr.io/kubeadm-167321/force
 
 .PHONY: mkdocs
 mkdocs:

@@ -1,8 +1,0 @@
-// Watch script to be updated,
-// reload and run it
-Process(_{
-	Watch: Ticker("3s"),
-	Run: func(){
-		Reload("run.force")
-	},
-})

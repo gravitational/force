@@ -118,17 +118,17 @@ func checkAndSetJobDefaults(j *batchv1.Job) error {
 	}
 	// by default, do not retry the job
 	if j.Spec.BackoffLimit == nil {
-		j.Spec.BackoffLimit = force.PInt32(0)
+		j.Spec.BackoffLimit = Int32Ptr(0)
 	}
 	if j.Spec.Template.Spec.RestartPolicy == "" {
 		j.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
 	}
 	if j.Spec.TTLSecondsAfterFinished == nil {
 		// 48 hours to clean up old jobs
-		j.Spec.TTLSecondsAfterFinished = force.PInt32(JobTTLSeconds)
+		j.Spec.TTLSecondsAfterFinished = Int32Ptr(JobTTLSeconds)
 	}
 	if j.Spec.ActiveDeadlineSeconds == nil {
-		j.Spec.ActiveDeadlineSeconds = force.PInt64(ActiveDeadlineSeconds)
+		j.Spec.ActiveDeadlineSeconds = Int64Ptr(ActiveDeadlineSeconds)
 	}
 	if j.Namespace == "" {
 		j.Namespace = DefaultNamespace

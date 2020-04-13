@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gravitational/force/proto"
 
@@ -15,8 +14,12 @@ import (
 // NewGRPCHandler returns a new instance of GRPC handler
 func NewGRPCHandler(handler http.Handler) http.Handler {
 	grpcServer := grpc.NewServer()
+	options := []grpcweb.Option{
+		grpcweb.WithWebsockets(true),
+	}
+
 	proto.RegisterTickServiceServer(grpcServer, &Handler{})
-	wrappedGrpcServer := grpcweb.WrapServer(grpcServer)
+	wrappedGrpcServer := grpcweb.WrapServer(grpcServer, options...)
 
 	return &GRPCHandler{
 		log: log.WithFields(log.Fields{
@@ -43,12 +46,8 @@ type GRPCHandler struct {
 
 // ServeHTTP dispatches requests based on the request type
 func (g *GRPCHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if g.webGRPCHandler.IsGrpcWebRequest(r) {
+	if g.webGRPCHandler.IsGrpcWebSocketRequest(r) || g.webGRPCHandler.IsGrpcWebRequest(r) {
 		g.webGRPCHandler.ServeHTTP(w, r)
-	} else if r.ProtoMajor == 2 && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
-		// magic combo match signifying GRPC request
-		// https://grpc.io/blog/coreos
-		g.grpcHandler.ServeHTTP(w, r)
 	} else {
 		g.httpHandler.ServeHTTP(w, r)
 	}
